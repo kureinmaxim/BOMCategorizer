@@ -1,4 +1,5 @@
 import os
+import json
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -36,10 +37,22 @@ def run_cli_async(args_list, on_finish):
     threading.Thread(target=worker, daemon=True).start()
 
 
+def load_config() -> dict:
+    cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"app_info": {"version": "dev", "description": "BOM Categorizer"}}
+
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("BOM Categorizer")
+        cfg = load_config()
+        ver = cfg.get("app_info", {}).get("version", "dev")
+        name = cfg.get("app_info", {}).get("description", "BOM Categorizer")
+        self.title(f"{name} v{ver}")
         self.geometry("720x520")
 
         self.input_files: list[str] = []
