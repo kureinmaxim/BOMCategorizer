@@ -50,9 +50,25 @@ python3 app.py
 - `--inputs` — список входных файлов (XLSX/DOCX/DOC/TXT).
 - `--sheets` — номера/имена листов для XLSX (например `3,4`).
 - `--xlsx` — путь к выходному XLSX (по умолчанию `categorized.xlsx`).
+- `--txt-dir` — папка для создания TXT файлов по категориям (дополнительно к XLSX).
 - `--combine` — добавить лист `SUMMARY` с суммарной комплектацией.
 - `--interactive` — интерактивная разметка «Не распределено».
 - `--assign-json rules.json` — JSON‑правила автоклассификации; обновляется после интерактива.
+
+## Интерактивная классификация
+
+**Важно:** Интерактивный режим не поддерживается в GUI. Используйте командную строку:
+
+```bash
+# Простой способ
+python interactive_classify.py --input "example/Plata_Preobrz.xlsx" --output "categorized.xlsx"
+
+# С указанием листов
+python interactive_classify.py --input "example/Plata_Preobrz.xlsx" --output "categorized.xlsx" --sheets "3,4"
+
+# Прямой вызов split_bom
+python split_bom.py --inputs "example/Plata_Preobrz.xlsx" --xlsx "categorized.xlsx" --interactive --combine
+```
 
 ## Список категорий
 `resistors`, `capacitors`, `inductors`, `ics`, `connectors`, `dev_boards`, `optics`, `rf_modules`, `cables`, `power_modules`, `diods`, `our_developments`, `others`.
@@ -61,6 +77,22 @@ python3 app.py
 ```powershell
 .\.venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
 ```
+
+## Экспорт в TXT файлы (новое!)
+Создание отдельных TXT файлов для каждой категории в удобочитаемом формате:
+
+```powershell
+# Базовое использование
+.\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+
+# С несколькими входными файлами
+.\.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+```
+
+**Что создаётся:**
+- Папка с TXT файлами: `Резисторы.txt`, `Конденсаторы.txt`, `Оптические компоненты.txt`, и т.д.
+- Каждый файл содержит список компонентов в удобочитаемом формате
+- Подробности в файле `TXT_EXPORT_GUIDE.md`
 
 ## Проблемы активации PowerShell
 Если PowerShell запрещает выполнение скриптов:

@@ -61,8 +61,10 @@ class App(tk.Tk):
         self.merge_into = tk.StringVar()
         self.combine = tk.BooleanVar(value=True)
         self.loose = tk.BooleanVar(value=False)
-        self.interactive = tk.BooleanVar(value=True)
+        self.interactive = tk.BooleanVar(value=False)
         self.assign_json = tk.StringVar()
+        self.txt_dir = tk.StringVar()
+        self.create_txt = tk.BooleanVar(value=False)
 
         self.create_widgets()
 
@@ -99,6 +101,11 @@ class App(tk.Tk):
         ttk.Label(frm, text="JSON с правилами автоклассификации (опционально):").grid(row=row, column=0, sticky="w", **pad)
         ttk.Entry(frm, textvariable=self.assign_json).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Выбрать...", command=self.on_pick_assign).grid(row=row, column=2, sticky="w", **pad)
+
+        row += 1
+        ttk.Checkbutton(frm, text="Создать TXT по категориям", variable=self.create_txt, command=self.on_toggle_txt).grid(row=row, column=0, sticky="w", **pad)
+        ttk.Entry(frm, textvariable=self.txt_dir).grid(row=row, column=1, sticky="ew", **pad)
+        ttk.Button(frm, text="Выбрать папку...", command=self.on_pick_txt_dir).grid(row=row, column=2, sticky="w", **pad)
 
         row += 1
         ttk.Checkbutton(frm, text="Интерактивная разметка", variable=self.interactive).grid(row=row, column=0, sticky="w", **pad)
@@ -144,6 +151,24 @@ class App(tk.Tk):
         if f:
             self.output_xlsx.set(f)
 
+    def on_pick_txt_dir(self):
+        from tkinter import filedialog
+        d = filedialog.askdirectory(title="Выберите папку для TXT файлов")
+        if d:
+            self.txt_dir.set(d)
+            self.create_txt.set(True)
+
+    def on_toggle_txt(self):
+        if self.create_txt.get() and not self.txt_dir.get().strip():
+            # Auto-suggest directory name based on output XLSX
+            import os
+            xlsx_path = self.output_xlsx.get().strip()
+            if xlsx_path:
+                base_dir = os.path.dirname(xlsx_path) or "."
+                base_name = os.path.splitext(os.path.basename(xlsx_path))[0]
+                suggested_dir = os.path.join(base_dir, f"{base_name}_txt")
+                self.txt_dir.set(suggested_dir)
+
     def on_run(self):
         if not self.input_files:
             messagebox.showerror("Ошибка", "Добавьте хотя бы один входной файл (XLSX/DOCX/DOC/TXT)")
@@ -158,11 +183,14 @@ class App(tk.Tk):
         if self.combine.get():
             args += ["--combine"]
         if self.interactive.get():
-            args += ["--interactive"]
+            messagebox.showwarning("Предупреждение", "Интерактивный режим не поддерживается в GUI. Используйте командную строку для интерактивной классификации.")
+            return
         if self.loose.get():
             args += ["--loose"]
         if self.assign_json.get().strip():
             args += ["--assign-json", self.assign_json.get().strip()]
+        if self.create_txt.get() and self.txt_dir.get().strip():
+            args += ["--txt-dir", self.txt_dir.get().strip()]
 
         self.txt.insert(tk.END, f"Запуск: split_bom {" ".join(args)}\n")
         self.txt.see(tk.END)
