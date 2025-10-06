@@ -674,57 +674,6 @@ def main():
             save_df = save_df.rename(columns=inverse_rename)
             save_df.to_csv(out_path, index=False, encoding="utf-8-sig")
 
-    # Optional TXT files per category
-    if args.txt_dir:
-        os.makedirs(args.txt_dir, exist_ok=True)
-        for name, part_df in outputs.items():
-            if part_df.empty:
-                continue
-            rus_name = rus_sheet_names.get(name, name)
-            txt_path = os.path.join(args.txt_dir, f"{rus_name}.txt")
-            with open(txt_path, "w", encoding="utf-8") as f:
-                f.write(f"=== {rus_name.upper()} ===\n")
-                f.write(f"Всего элементов: {len(part_df)}\n")
-                f.write("=" * 80 + "\n\n")
-                
-                for idx, row in part_df.iterrows():
-                    # Collect available columns
-                    ref = row.get(ref_col) if ref_col and ref_col in part_df.columns else None
-                    desc = row.get(desc_col) if desc_col and desc_col in part_df.columns else None
-                    val = row.get(value_col) if value_col and value_col in part_df.columns else None
-                    part = row.get(part_col) if part_col and part_col in part_df.columns else None
-                    qty = row.get(qty_col) if qty_col and qty_col in part_df.columns else None
-                    mr = row.get("Код МР") if "Код МР" in part_df.columns else None
-                    
-                    # Format output
-                    if pd.notna(ref) and str(ref).strip():
-                        f.write(f"[{ref}] ")
-                    
-                    if pd.notna(desc) and str(desc).strip():
-                        f.write(f"{desc}")
-                    
-                    if pd.notna(val) and str(val).strip():
-                        f.write(f" | Значение: {val}")
-                    
-                    if pd.notna(part) and str(part).strip():
-                        f.write(f" | Part: {part}")
-                    
-                    if pd.notna(qty):
-                        try:
-                            qty_int = int(float(qty))
-                            f.write(f" | Кол-во: {qty_int} шт")
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    if pd.notna(mr) and str(mr).strip() and str(mr) != "-":
-                        f.write(f" | Код МР: {mr}")
-                    
-                    f.write("\n")
-                
-                f.write("\n" + "=" * 80 + "\n")
-                f.write(f"Всего записей: {len(part_df)}\n")
-        
-        print(f"TXT files written to: {args.txt_dir}")
 
     # XLSX with sheets
     def merge_existing_if_needed(writer, new_outputs: Dict[str, pd.DataFrame], existing_path: Optional[str]):
@@ -832,13 +781,69 @@ def main():
         """
         Извлечь номинал из текста и преобразовать в число для сортировки.
         Примеры: "180 Ом" -> 180, "1 кОм" -> 1000, "100 пФ" -> 100e-12
+        Также парсит SMD коды: GRM1555C1H102J (конденсатор 1 нФ), AC0402JR-0710KL (резистор 710 кОм)
         """
         import re
         
         if not isinstance(text, str):
             return 0
         
-        # Множители для разных единиц
+        # 1. Попробовать парсить SMD код резистора (например AC0402JR-0710KL)
+        # Формат: цифры + R/K/M (R=Ом, K=кОм, M=МОм)
+        resistor_smd_pattern = r'-0*(\d+(?:\.\d+)?)\s*([RKM])(?:\d|L)'
+        resistor_match = re.search(resistor_smd_pattern, text.upper())
+        if resistor_match:
+            value = float(resistor_match.group(1))
+            unit = resistor_match.group(2)
+            if unit == 'R':
+                return value  # Ом
+            elif unit == 'K':
+                return value * 1e3  # кОм
+            elif unit == 'M':
+                return value * 1e6  # МОм
+        
+        # 1a. Попробовать парсить SMD код индуктивности (например 0603HP-47NXJ_LW, 1206CS-821XJB)
+        # Формат 1: цифры-буква-цифры (например 3N3 = 3.3 нГн, 47N = 47 нГн)
+        inductor_pattern1 = r'-(\d+)N(\d+)(?:X|_)'
+        inductor_match1 = re.search(inductor_pattern1, text.upper())
+        if inductor_match1:
+            # Формат XNY означает X.Y нГн
+            value = float(inductor_match1.group(1) + '.' + inductor_match1.group(2))
+            return value * 1e-9  # нГн в Генри
+        
+        # Формат 2: просто цифры+N (например 47N = 47 нГн)
+        inductor_pattern2 = r'-(\d+)N(?:X|J)'
+        inductor_match2 = re.search(inductor_pattern2, text.upper())
+        if inductor_match2:
+            value = float(inductor_match2.group(1))
+            return value * 1e-9  # нГн в Генри
+        
+        # Формат 3: трёхзначный код (например 821 = 82 × 10^1 = 820 мкГн)
+        inductor_pattern3 = r'-(\d{3})(?:X|J)'
+        inductor_match3 = re.search(inductor_pattern3, text.upper())
+        if inductor_match3:
+            code = inductor_match3.group(1)
+            mantissa = int(code[:2])
+            exponent = int(code[2])
+            uh_value = mantissa * (10 ** exponent)  # В микрогенри
+            return uh_value * 1e-6  # мкГн в Генри
+        
+        # 2. Попробовать парсить SMD код конденсатора (например GRM1555C1H102J, NFM21CC102R1H3D)
+        # Последние 3 цифры перед буквой - это код емкости (первые 2 цифры × 10^последняя в пФ)
+        # Ищем ВСЕ вхождения 3 цифр перед буквой, берем последнее
+        cap_smd_pattern = r'(\d{3})(?=[A-Z])'
+        cap_matches = re.findall(cap_smd_pattern, text.upper())
+        if cap_matches:
+            # Берем последнее вхождение
+            code = cap_matches[-1]
+            if code.isdigit() and len(code) == 3:
+                # Первые 2 цифры - значение, последняя - степень десяти
+                mantissa = int(code[:2])
+                exponent = int(code[2])
+                pf_value = mantissa * (10 ** exponent)  # В пикофарадах
+                return pf_value * 1e-12  # Преобразуем в фарады для сортировки
+        
+        # 3. Множители для разных единиц (для текстовых описаний)
         multipliers = {
             # Сопротивление
             'мом': 1e6, 'мегаом': 1e6,
@@ -861,17 +866,23 @@ def main():
         pattern = r'([\d.,]+)\s*([а-яА-Яa-zA-Z]+)'
         matches = re.findall(pattern, text.lower())
         
-        for num_str, unit in matches:
-            # Преобразовать число
-            try:
-                num = float(num_str.replace(',', '.'))
-            except ValueError:
-                continue
-            
-            # Найти множитель для единицы
-            for unit_key, mult in multipliers.items():
-                if unit_key in unit:
-                    return num * mult
+        # Ищем значение с правильной единицей измерения (приоритет: пФ, нФ, мкФ, мФ, Ф)
+        # Сначала ищем единицы емкости, потом сопротивления, потом индуктивности
+        priority_units = ['пф', 'нф', 'мкф', 'мф', 'ф', 'ом', 'ком', 'мом', 'гн', 'мгн', 'мкгн']
+        
+        for priority_unit in priority_units:
+            for num_str, unit in matches:
+                if priority_unit in unit.lower():
+                    try:
+                        num = float(num_str.replace(',', '.'))
+                        # Найти множитель для единицы
+                        # ВАЖНО: проверяем от самых ДЛИННЫХ к КОРОТКИМ чтобы "пф" не схватило "ф"
+                        sorted_multipliers = sorted(multipliers.items(), key=lambda x: len(x[0]), reverse=True)
+                        for unit_key, mult in sorted_multipliers:
+                            if unit_key in unit.lower():
+                                return num * mult
+                    except ValueError:
+                        continue
         
         return 0
 
@@ -914,6 +925,16 @@ def main():
                 cleaned_data = result_df.apply(lambda row: clean_component_name(row, desc_col_name), axis=1)
                 result_df[desc_col_name] = [item[0] for item in cleaned_data]
                 
+                # Для "Наших разработок" - если название пустое, взять из source_file
+                if sheet_name == 'Наши разработки' and 'source_file' in result_df.columns:
+                    for idx in result_df.index:
+                        if not result_df.loc[idx, desc_col_name] or pd.isna(result_df.loc[idx, desc_col_name]) or str(result_df.loc[idx, desc_col_name]).strip() == '':
+                            source_file = result_df.loc[idx, 'source_file']
+                            if source_file and pd.notna(source_file):
+                                # Извлечь название файла без расширения
+                                file_name = os.path.splitext(os.path.basename(str(source_file)))[0]
+                                result_df.loc[idx, desc_col_name] = file_name
+                
                 # Вставить ТУ сразу после наименования (а не в конец)
                 tu_data = [item[1] for item in cleaned_data]
                 desc_idx = list(result_df.columns).index(desc_col_name)
@@ -944,37 +965,50 @@ def main():
                 
                 result_df.insert(desc_idx + 2, 'Примечание', primechanie)
                 
-                # Сортировка: сначала импортные, потом отечественные
-                # Создаем вспомогательные столбцы для сортировки
-                result_df['_is_domestic'] = result_df['ТУ'].apply(
-                    lambda x: 1 if (x and x != '-' and str(x).strip() != '') else 0
-                )
+                # Сортировка зависит от категории
+                # Для конденсаторов, дросселей - сортируем ВСЕ по номиналу
+                # Для микросхем - сначала импортные, потом отечественные по первым цифрам
                 
-                # Для отечественных: извлечь первые цифры из названия
-                def get_domestic_number(row):
-                    if row['_is_domestic'] == 1:
-                        import re
-                        name = str(row[desc_col_name])
-                        match = re.match(r'(\d+)', name)
-                        if match:
-                            return int(match.group(1))
+                if sheet_name in ['Конденсаторы', 'Дроссели', 'Резисторы']:
+                    # Сортировка только по номиналу для всех компонентов
+                    result_df['_nominal'] = result_df[desc_col_name].apply(extract_nominal_value)
+                    result_df = result_df.sort_values(
+                        by=['_nominal', desc_col_name],
+                        ascending=[True, True]
+                    )
+                    result_df = result_df.drop(columns=['_nominal'])
+                else:
+                    # Сортировка: сначала импортные, потом отечественные
+                    result_df['_is_domestic'] = result_df['ТУ'].apply(
+                        lambda x: 1 if (x and x != '-' and str(x).strip() != '') else 0
+                    )
+                    
+                    # Для отечественных: извлечь первые цифры из названия
+                    def get_domestic_number(row):
+                        if row['_is_domestic'] == 1:
+                            import re
+                            name = str(row[desc_col_name])
+                            match = re.match(r'(\d+)', name)
+                            if match:
+                                return int(match.group(1))
+                            else:
+                                return 999999
                         else:
-                            return 999999
-                    else:
-                        return 0
+                            return 0
+                    
+                    result_df['_domestic_num'] = result_df.apply(get_domestic_number, axis=1)
+                    
+                    # Для импортных: сортировка по номиналу
+                    result_df['_nominal'] = result_df[desc_col_name].apply(extract_nominal_value)
+                    
+                    # Сортируем: сначала по типу (импортные/отечественные), потом по номиналу/номеру, потом по имени
+                    result_df = result_df.sort_values(
+                        by=['_is_domestic', '_domestic_num', '_nominal', desc_col_name],
+                        ascending=[True, True, True, True]
+                    )
+                    
+                    result_df = result_df.drop(columns=['_is_domestic', '_domestic_num', '_nominal'])
                 
-                result_df['_domestic_num'] = result_df.apply(get_domestic_number, axis=1)
-                
-                # Для импортных: сортировка по номиналу
-                result_df['_nominal'] = result_df[desc_col_name].apply(extract_nominal_value)
-                
-                # Сортируем: сначала по типу (импортные/отечественные), потом по номиналу/номеру, потом по имени
-                result_df = result_df.sort_values(
-                    by=['_is_domestic', '_domestic_num', '_nominal', desc_col_name],
-                    ascending=[True, True, True, True]
-                )
-                
-                result_df = result_df.drop(columns=['_is_domestic', '_domestic_num', '_nominal'])
                 result_df = result_df.reset_index(drop=True)
             
             # Добавить новую колонку № п/п в начало (ПОСЛЕ сортировки!)
@@ -1046,6 +1080,61 @@ def main():
                 adjusted_width = min(max_length + 2, 50)  # максимум 50 символов
                 ws.column_dimensions[column_letter].width = adjusted_width
 
+    # Optional TXT files per category - создаем ПОСЛЕ записи Excel из обработанных данных
+    if args.txt_dir:
+        os.makedirs(args.txt_dir, exist_ok=True)
+        # Читаем только что созданный Excel файл с обработанными данными
+        for key, _ in outputs.items():
+            rus_name = rus_sheet_names.get(key, key)
+            sheet_name = rus_sheet_names.get(key, key)[:31]
+            
+            try:
+                # Читаем обработанные данные из Excel
+                processed_df = pd.read_excel(args.xlsx, sheet_name=sheet_name, engine='openpyxl')
+                if processed_df.empty:
+                    continue
+                    
+                txt_path = os.path.join(args.txt_dir, f"{rus_name}.txt")
+                with open(txt_path, "w", encoding="utf-8") as f:
+                    f.write(f"=== {rus_name.upper()} ===\n")
+                    f.write(f"Всего элементов: {len(processed_df)}\n")
+                    f.write("=" * 80 + "\n\n")
+                    
+                    for num, (_, row) in enumerate(processed_df.iterrows(), start=1):
+                        # Используем обработанные столбцы
+                        name_val = row.get('Наименование ИВП', '')
+                        tu_val = row.get('ТУ', '')
+                        qty_val = row.get('Кол-во', '')
+                        mr_val = row.get('Код МР', '')
+                        
+                        # Форматируем вывод
+                        f.write(f"{num}. ")
+                        
+                        if pd.notna(name_val) and str(name_val).strip():
+                            f.write(f"{name_val}")
+                        
+                        if tu_val and pd.notna(tu_val) and str(tu_val).strip() and str(tu_val) != '-' and str(tu_val).lower() != 'nan':
+                            f.write(f" | ТУ: {tu_val}")
+                        
+                        if pd.notna(qty_val):
+                            try:
+                                qty_int = int(float(qty_val))
+                                f.write(f" | Кол-во: {qty_int} шт")
+                            except (ValueError, TypeError):
+                                pass
+                        
+                        if pd.notna(mr_val) and str(mr_val).strip() and str(mr_val) != "-":
+                            f.write(f" | Код МР: {mr_val}")
+                        
+                        f.write("\n")
+                    
+                    f.write("\n" + "=" * 80 + "\n")
+                    f.write(f"Всего записей: {len(processed_df)}\n")
+            except Exception as e:
+                print(f"Warning: Could not create TXT for {rus_name}: {e}")
+        
+        print(f"TXT files written to: {args.txt_dir}")
+    
     # Print counts
     print("Split complete:")
     for name, part_df in outputs.items():
