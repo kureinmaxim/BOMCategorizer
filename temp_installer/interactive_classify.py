@@ -1,46 +1,275 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Интерактивный классификатор BOM файлов
-Запуск: python interactive_classify.py
+Улучшенный интерактивный классификатор BOM файлов
+Запуск: python interactive_classify.py --input "БЗ.doc"
 """
 
 import os
 import sys
+import json
 import argparse
-from split_bom import main as cli_main
+import pandas as pd
+from typing import List, Dict, Any
 
-def main():
-    print("=== Интерактивный классификатор BOM файлов ===")
-    print("Этот скрипт позволяет интерактивно классифицировать компоненты")
-    print("Для выхода нажмите Ctrl+C\n")
+# Исправление кодировки для Windows консоли
+if sys.platform == "win32":
+    import codecs
+    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
+    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
+
+from split_bom import (
+    parse_docx, parse_txt_like, normalize_column_names, 
+    find_column, classify_row, has_any, main as run_split_bom_main
+)
+
+
+def load_rules(rules_path: str = "rules.json") -> List[Dict[str, Any]]:
+    """Загрузка существующих правил"""
+    if os.path.exists(rules_path):
+        try:
+            with open(rules_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"⚠️  Не удалось загрузить правила: {e}")
+    return []
+
+
+def save_rules(rules: List[Dict[str, Any]], rules_path: str = "rules.json"):
+    """Сохранение правил"""
+    try:
+        with open(rules_path, "w", encoding="utf-8") as f:
+            json.dump(rules, f, ensure_ascii=False, indent=2)
+        print(f"✅ Правила сохранены в {rules_path}")
+    except Exception as e:
+        print(f"❌ Не удалось сохранить правила: {e}")
+
+
+def get_category_display() -> List[tuple]:
+    """Возвращает список категорий для отображения"""
+    return [
+        ("resistors", "Резисторы"),
+        ("capacitors", "Конденсаторы"),
+        ("inductors", "Дроссели/Катушки"),
+        ("ics", "Микросхемы"),
+        ("connectors", "Разъемы"),
+        ("dev_boards", "Отладочные платы"),
+        ("optics", "Оптические компоненты"),
+        ("rf_modules", "СВЧ модули"),
+        ("cables", "Кабели"),
+        ("power_modules", "Модули питания"),
+        ("diods", "Диоды/Индикаторы"),
+        ("our_developments", "Наши разработки"),
+        ("others", "Другие компоненты"),
+        ("skip", "⏭️  Пропустить этот элемент"),
+    ]
+
+
+def interactive_classify(input_file: str, output_file: str = "categorized.xlsx", 
+                         rules_path: str = "rules.json", sheets: str = None):
+    """Интерактивная классификация с автоматическим созданием правил"""
     
-    # Получаем аргументы командной строки
-    parser = argparse.ArgumentParser(description="Интерактивная классификация BOM файлов")
-    parser.add_argument("--input", required=True, help="Путь к входному файлу")
-    parser.add_argument("--output", default="categorized.xlsx", help="Путь к выходному файлу")
-    parser.add_argument("--sheets", help="Номера листов (например: 3,4)")
+    print("\n" + "="*80)
+    print("🔍 ИНТЕРАКТИВНЫЙ КЛАССИФИКАТОР BOM ФАЙЛОВ")
+    print("="*80)
+    print(f"📁 Входной файл: {input_file}")
+    print(f"📄 Выходной файл: {output_file}")
+    print(f"📋 Файл правил: {rules_path}")
+    print("="*80 + "\n")
     
-    args = parser.parse_args()
+    # Загрузка данных
+    ext = os.path.splitext(input_file)[1].lower()
+    df = None
     
-    # Формируем аргументы для split_bom
-    cli_args = ["--inputs", args.input, "--xlsx", args.output, "--interactive", "--combine"]
+    try:
+        if ext == ".txt":
+            df = parse_txt_like(input_file)
+        elif ext == ".docx":
+            df = parse_docx(input_file)
+        elif ext == ".doc":
+            try:
+                from win32com.client import Dispatch
+                word = Dispatch("Word.Application")
+                word.Visible = False
+                doc_path = os.path.abspath(input_file)
+                doc = word.Documents.Open(doc_path)
+                tmp_docx = os.path.splitext(doc_path)[0] + "_conv_temp.docx"
+                doc.SaveAs(tmp_docx, FileFormat=12)
+                doc.Close(False)
+                word.Quit()
+                df = parse_docx(tmp_docx)
+                os.remove(tmp_docx)
+            except Exception:
+                print("⚠️  Не удалось конвертировать .doc через Word, пробую как текст...")
+                df = parse_txt_like(input_file)
+        else:
+            sheets_to_read = sheets.split(',') if sheets else [0]
+            all_dfs = []
+            for sheet in sheets_to_read:
+                try:
+                    sheet_name_or_index = int(sheet)
+                except ValueError:
+                    sheet_name_or_index = sheet
+                all_dfs.append(pd.read_excel(input_file, sheet_name=sheet_name_or_index, engine="openpyxl"))
+            df = pd.concat(all_dfs, ignore_index=True)
+
+    except FileNotFoundError:
+        print(f"❌ Ошибка: Файл не найден - {input_file}")
+        return
+    except Exception as e:
+        print(f"❌ Ошибка при чтении файла {input_file}: {e}")
+        return
+
+    # Нормализация колонок
+    original_cols = list(df.columns)
+    lower_cols = normalize_column_names(original_cols)
+    rename_map = {orig: norm for orig, norm in zip(original_cols, lower_cols)}
+    df = df.rename(columns=rename_map)
     
-    if args.sheets:
-        cli_args.extend(["--sheets", args.sheets])
+    ref_col = find_column(["ref", "reference", "designator", "обозначение", "позиционное обозначение"], list(df.columns))
+    desc_col = find_column(["description", "desc", "наименование", "имя", "item", "part name"], list(df.columns))
+    value_col = find_column(["value", "значение", "номинал"], list(df.columns))
+    part_col = find_column(["partnumber", "mfr part", "mpn", "pn", "art", "артикул", "part"], list(df.columns))
     
-    print(f"Входной файл: {args.input}")
-    print(f"Выходной файл: {args.output}")
-    if args.sheets:
-        print(f"Листы: {args.sheets}")
-    print("\nЗапуск интерактивной классификации...\n")
+    print("⏳ Выполняю первичную классификацию...\n")
+    categories = []
+    for _, row in df.iterrows():
+        ref = row.get(ref_col) if ref_col else None
+        desc = row.get(desc_col) if desc_col else None
+        val = row.get(value_col) if value_col else None
+        part = row.get(part_col) if part_col else None
+        categories.append(classify_row(ref, desc, val, part, strict=True))
     
-    # Заменяем sys.argv для передачи в cli_main
+    df["category"] = categories
+    
+    unclassified = df[df["category"] == "unclassified"].copy()
+    
+    if len(unclassified) == 0:
+        print("✅ Все элементы успешно классифицированы автоматически!")
+        return
+    
+    print(f"📊 Статистика первичной классификации:")
+    print(f"   ✅ Классифицировано: {len(df) - len(unclassified)}")
+    print(f"   ❓ Требует уточнения: {len(unclassified)}")
+    print("\n" + "="*80 + "\n")
+    
+    rules = load_rules(rules_path)
+    cat_display = get_category_display()
+    new_rules_count = 0
+    
+    for idx, (df_idx, row) in enumerate(unclassified.iterrows(), start=1):
+        ref = row.get(ref_col, "")
+        desc = row.get(desc_col, "")
+        val = row.get(value_col, "")
+        
+        display_parts = []
+        if pd.notna(ref) and str(ref).strip(): display_parts.append(f"[{ref}]")
+        if pd.notna(desc) and str(desc).strip(): display_parts.append(str(desc))
+        if pd.notna(val) and str(val).strip(): display_parts.append(f"(Знач: {val})")
+        
+        display_text = " ".join(display_parts)
+        if not display_text.strip(): continue
+        
+        print(f"\n{'─'*80}\nЭлемент {idx} из {len(unclassified)}:\n{'─'*80}\n📝 {display_text[:150]}\n{'─'*80}\n\nВыберите категорию:")
+        
+        for i, (_, cat_name) in enumerate(cat_display, start=1): print(f"  {i:2d}. {cat_name}")
+        print("\n  0. ❌ Оставить нераспределенным\n  q. 🚪 Выйти и сохранить")
+        
+        while True:
+            try:
+                choice = input("\n👉 Ваш выбор: ").strip().lower()
+                
+                if choice == "q":
+                    print("\n💾 Сохраняю результаты...")
+                    if new_rules_count > 0: save_rules(rules, rules_path)
+                    break
+                
+                if choice in ["", "0"]:
+                    print("⏭️  Пропущено")
+                    break
+                
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(cat_display):
+                    selected_cat, _ = cat_display[choice_num - 1]
+                    
+                    if selected_cat == "skip":
+                        print("⏭️  Пропущено")
+                        break
+                    
+                    df.loc[df_idx, "category"] = selected_cat
+                    
+                    rule_text = str(desc)[:100].strip() if pd.notna(desc) else ""
+                    if rule_text:
+                        rule_exists = any(r.get("contains", "").lower() in rule_text.lower() or rule_text.lower() in r.get("contains", "").lower() for r in rules)
+                        
+                        if not rule_exists:
+                            rules.append({"contains": rule_text, "category": selected_cat})
+                            new_rules_count += 1
+                            print(f"✅ Правило создано! (всего новых: {new_rules_count})")
+                        else:
+                            print(f"✅ Категория назначена (правило уже существует)")
+                    else:
+                        print(f"✅ Категория назначена")
+                    break
+                else:
+                    print("❌ Неверный выбор, попробуйте снова")
+            except ValueError:
+                print(f"❌ Введите число от 0 до {len(cat_display)}, или 'q' для выхода")
+            except KeyboardInterrupt:
+                print("\n\n⚠️  Прервано пользователем")
+                if new_rules_count > 0: save_rules(rules, rules_path)
+                return
+        if choice == 'q': break
+    
+    print("\n" + "="*80 + "\n🎉 Интерактивная классификация завершена!\n" + "="*80)
+    if new_rules_count > 0: print(f"✅ Новых правил создано: {new_rules_count}")
+    
+    print("\n🔄 Запускаю полную обработку с обновленными правилами...")
+    
+    cli_args = ["--inputs", input_file, "--xlsx", output_file, "--assign-json", rules_path, "--combine"]
+    if sheets: cli_args.extend(["--sheets", sheets])
+
     old_argv = sys.argv
     try:
         sys.argv = ["split_bom.py"] + cli_args
-        cli_main()
+        run_split_bom_main()
+        print(f"\n✅ Обработка завершена! Результат в файле: {output_file}")
+    except Exception as e:
+        print(f"\n❌ Ошибка во время финальной обработки: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         sys.argv = old_argv
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Улучшенный интерактивный классификатор BOM файлов",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Примеры использования:
+  python interactive_classify.py --input "example/БЗ.doc"
+  python interactive_classify.py --input "example/bom.xlsx" --output result.xlsx
+  python interactive_classify.py --input "bom.xlsx" --rules custom_rules.json
+        """
+    )
+    
+    parser.add_argument("--input", required=True, help="Путь к входному файлу (XLSX/DOC/DOCX/TXT)")
+    parser.add_argument("--output", default="categorized.xlsx", help="Путь к выходному XLSX файлу")
+    parser.add_argument("--rules", default="rules.json", help="Путь к файлу с правилами")
+    parser.add_argument("--sheets", help="Номера/имена листов для XLSX (например: 3,4)")
+    
+    args = parser.parse_args()
+    
+    try:
+        interactive_classify(args.input, args.output, args.rules, args.sheets)
+    except KeyboardInterrupt:
+        print("\n\n👋 До свидания!")
+    except Exception as e:
+        print(f"\n❌ Непредвиденная ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()

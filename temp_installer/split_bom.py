@@ -194,11 +194,24 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     val = to_text(value)
     part = to_text(partname)
 
+    # Create text blob early for use in reference-based checks
+    text_blob = " ".join([desc, val, part])
+
     # Refdes first where reliable
     ref_prefix = ref.split(" ")[0].upper() if ref else ""
     ref_prefix = re.sub(r"\d.*$", "", ref_prefix)  # take letters before digits
 
-    # Heuristics by ref (only if we have a real ref column)
+    # PRIORITY 1: Check context-specific categories FIRST (before generic prefixes)
+    # Our developments - check before "A" prefix
+    if has_any(text_blob, ["мвок", "наша разработ", "собственной разработ", "шск-м", "плата контроллера шск"]):
+        return "our_developments"
+    
+    # Optical modules with U prefix - check before "U" prefix for ICs
+    if ref and ref_prefix.startswith("U"):
+        if has_any(text_blob, ["оптический модуль", "optical module", "передающий оптический", "приемный оптический", "mp2320"]):
+            return "optics"
+    
+    # PRIORITY 2: Heuristics by ref (only if we have a real ref column)
     if ref:
         if ref_prefix.startswith("R"):
             return "resistors"
@@ -210,8 +223,28 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
             return "ics"
         if ref_prefix.startswith(("J", "X", "P", "K", "XS", "XP", "JTAG")):
             return "connectors"
-
-    text_blob = " ".join([desc, val, part])
+        # Russian prefix "А" for attenuators (optics)
+        if ref_prefix.startswith(("А", "A")) and len(ref_prefix) <= 2:
+            # Check if it's really an attenuator, not just "A" prefix IC
+            if has_any(text_blob, ["аттенюат", "ослабител", "attenuator", "fc/apc", "fc/upc", "оптич"]):
+                return "optics"
+        # Prefix "W" often used for RF modules, waveguides, delay lines
+        if ref_prefix.startswith("W"):
+            if has_any(text_blob, ["свч", "rf", "линия задержек", "delay line", "усилитель", "делитель", "сумматор", "splitter", "combiner", "amplifier"]):
+                return "rf_modules"
+        # Prefix "WS" for splitters/dividers
+        if ref_prefix.startswith("WS"):
+            return "rf_modules"
+        # Prefix "WU" for RF components
+        if ref_prefix.startswith("WU"):
+            return "rf_modules"
+        # Prefix "H" for indicators/LEDs
+        if ref_prefix.startswith("H"):
+            return "diods"
+        # Prefix "S" for switches/buttons (when not connectors)
+        if ref_prefix.startswith("S"):
+            if has_any(text_blob, ["переключ", "тумблер", "кнопка", "switch", "button", "toggle"]):
+                return "others"
 
     # Russian and English keywords
     if RESISTOR_VALUE_RE.search(text_blob) or has_any(text_blob, ["резист", "resistor"]):
@@ -244,12 +277,15 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
 
     # New categories
     if has_any(text_blob, [
-        "оптичес", "лазер", "оптопара", "led ", "светодиод", "fiber", "оптоволок", "sfp", "qsfp", "transceiver module"
+        "оптичес", "лазер", "оптопара", "led ", "светодиод", "fiber", "оптоволок", "sfp", "qsfp", "transceiver module",
+        "аттенюат", "ослабител", "fc/apc", "fc/upc", "sc/apc", "lc/apc", "pigtail", "патч-корд оптич"
     ]):
         return "optics"
 
     if has_any(text_blob, [
-        "свч", "вч ", "rf ", "microwave", "mini-circuits", "planar monolithics", "pmi", "qualwave", "ghz", "lna", "rf amp"
+        "свч", "вч ", "rf ", "microwave", "mini-circuits", "planar monolithics", "pmi", "qualwave", "ghz", "lna", "rf amp",
+        "линия задержек", "delay line", "делитель", "сумматор", "splitter", "combiner", "аттенюатор свч", "усилител",
+        "polaris", "gigabaudics", "etl systems", "vat-", "zx60", "pne-l"
     ]):
         return "rf_modules"
 
@@ -300,6 +336,7 @@ def main():
     parser.add_argument("--interactive", action="store_true", help="Interactive classification for unclassified rows")
     parser.add_argument("--loose", action="store_true", help="Use looser heuristics (may misclassify non-electronics)")
     parser.add_argument("--assign-json", dest="assign_json", default="rules.json", help="Path to JSON rules for assigning categories to unclassified rows. Format: [{'contains': 'text', 'category': 'ics'}]")
+    parser.add_argument("--txt-dir", dest="txt_dir", default=None, help="Output directory for TXT files per category (in addition to XLSX)")
     args = parser.parse_args()
 
     if not args.inputs and not args.input:
@@ -589,16 +626,7 @@ def main():
 
     outputs = {name: enrich_with_mr_and_total(df_part) for name, df_part in outputs.items()}
 
-    # Optional CSVs
-    if args.out:
-        for name, part_df in outputs.items():
-            out_path = os.path.join(args.out, f"{name}.csv")
-            save_df = part_df.copy()
-            inverse_rename = {v: k for k, v in rename_map.items()}
-            save_df = save_df.rename(columns=inverse_rename)
-            save_df.to_csv(out_path, index=False, encoding="utf-8-sig")
-
-    # XLSX with sheets
+    # Russian category names for output
     rus_sheet_names = {
         "resistors": "Резисторы",
         "capacitors": "Конденсаторы",
@@ -616,6 +644,68 @@ def main():
         "unclassified": "Не распределено",
     }
 
+    # Optional CSVs
+    if args.out:
+        for name, part_df in outputs.items():
+            out_path = os.path.join(args.out, f"{name}.csv")
+            save_df = part_df.copy()
+            inverse_rename = {v: k for k, v in rename_map.items()}
+            save_df = save_df.rename(columns=inverse_rename)
+            save_df.to_csv(out_path, index=False, encoding="utf-8-sig")
+
+    # Optional TXT files per category
+    if args.txt_dir:
+        os.makedirs(args.txt_dir, exist_ok=True)
+        for name, part_df in outputs.items():
+            if part_df.empty:
+                continue
+            rus_name = rus_sheet_names.get(name, name)
+            txt_path = os.path.join(args.txt_dir, f"{rus_name}.txt")
+            with open(txt_path, "w", encoding="utf-8") as f:
+                f.write(f"=== {rus_name.upper()} ===\n")
+                f.write(f"Всего элементов: {len(part_df)}\n")
+                f.write("=" * 80 + "\n\n")
+                
+                for idx, row in part_df.iterrows():
+                    # Collect available columns
+                    ref = row.get(ref_col) if ref_col and ref_col in part_df.columns else None
+                    desc = row.get(desc_col) if desc_col and desc_col in part_df.columns else None
+                    val = row.get(value_col) if value_col and value_col in part_df.columns else None
+                    part = row.get(part_col) if part_col and part_col in part_df.columns else None
+                    qty = row.get(qty_col) if qty_col and qty_col in part_df.columns else None
+                    mr = row.get("Код МР") if "Код МР" in part_df.columns else None
+                    
+                    # Format output
+                    if pd.notna(ref) and str(ref).strip():
+                        f.write(f"[{ref}] ")
+                    
+                    if pd.notna(desc) and str(desc).strip():
+                        f.write(f"{desc}")
+                    
+                    if pd.notna(val) and str(val).strip():
+                        f.write(f" | Значение: {val}")
+                    
+                    if pd.notna(part) and str(part).strip():
+                        f.write(f" | Part: {part}")
+                    
+                    if pd.notna(qty):
+                        try:
+                            qty_int = int(float(qty))
+                            f.write(f" | Кол-во: {qty_int} шт")
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    if pd.notna(mr) and str(mr).strip() and str(mr) != "-":
+                        f.write(f" | Код МР: {mr}")
+                    
+                    f.write("\n")
+                
+                f.write("\n" + "=" * 80 + "\n")
+                f.write(f"Всего записей: {len(part_df)}\n")
+        
+        print(f"TXT files written to: {args.txt_dir}")
+
+    # XLSX with sheets
     def merge_existing_if_needed(writer, new_outputs: Dict[str, pd.DataFrame], existing_path: Optional[str]):
         if not existing_path or not os.path.exists(existing_path):
             # just write new_outputs as-is
