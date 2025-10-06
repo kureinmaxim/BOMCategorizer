@@ -176,7 +176,7 @@ def normalize_cell(s: Any) -> str:
     return (str(s or "").strip())
 
 
-def classify_row(ref: Optional[str], description: Optional[str], value: Optional[str], partname: Optional[str], strict: bool) -> str:
+def classify_row(ref: Optional[str], description: Optional[str], value: Optional[str], partname: Optional[str], strict: bool, source_file: Optional[str] = None) -> str:
     def to_text(x: Any) -> str:
         if x is None:
             return ""
@@ -193,6 +193,7 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     desc = to_text(description)
     val = to_text(value)
     part = to_text(partname)
+    src_file = to_text(source_file)
 
     # Create text blob early for use in reference-based checks
     text_blob = " ".join([desc, val, part])
@@ -202,6 +203,25 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     ref_prefix = re.sub(r"\d.*$", "", ref_prefix)  # take letters before digits
 
     # PRIORITY 1: Check context-specific categories FIRST (before generic prefixes)
+    # Check if this is a board/PCB file (self-reference: description is just the filename)
+    if src_file and desc:
+        # Extract filename without extension
+        file_base = src_file.split('/')[-1].split('\\')[-1].rsplit('.', 1)[0].lower()
+        desc_lower = desc.lower()
+        
+        # If description is ONLY the filename (board referencing itself), it's our development
+        # AND doesn't contain component keywords
+        component_keywords = ['резистор', 'конденсатор', 'микросхема', 'разъем', 'диод', 'индуктор', 'дроссель',
+                             'транзистор', 'стабилитрон', 'генератор', 'вилка', 'розетка', 'кабель']
+        is_component = any(kw in desc_lower for kw in component_keywords)
+        
+        if not is_component and file_base in desc_lower.replace('.xlsx', '').replace('.xls', ''):
+            # Check if it's just the filename without other text (with tolerance for spaces/extensions)
+            desc_clean = desc_lower.replace('.xlsx', '').replace('.xls', '').replace(' ', '').replace('_', '')
+            file_clean = file_base.replace(' ', '').replace('_', '')
+            if desc_clean == file_clean or desc_clean.startswith(file_clean) or file_clean in desc_clean:
+                return "our_developments"
+    
     # Our developments - check before "A" prefix
     if has_any(text_blob, ["мвок", "наша разработ", "собственной разработ", "шск-м", "плата контроллера шск"]):
         return "our_developments"
@@ -255,6 +275,12 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
 
     if IND_VALUE_RE.search(text_blob) or has_any(text_blob, ["дросс", "индукт", "inductor", "ferrite", "феррит", "катушка", "choke"]):
         return "inductors"
+    
+    # Diodes - check BEFORE ICs (because "стабил" in ICs catches "стабилитрон")
+    if has_any(text_blob, [
+        "диод", "стабилитрон", "индикатор", "led ", "svetodiod", "indicator"
+    ]):
+        return "diods"
 
     if has_any(text_blob, [
         "микросхем", " ic", "mcu", "контроллер", "процессор", "оп-амп", "op-amp", "opamp", "adc", "dac", "fpga",
@@ -300,12 +326,6 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     ]):
         return "power_modules"
 
-    # Diodes/indicators
-    if has_any(text_blob, [
-        "диод", "индикатор", "led ", "svetodiod", "indicator"
-    ]):
-        return "diods"
-
     # Our developments
     if has_any(text_blob, [
         "мвок", "наша разработ", "собственной разработ", "шск-м", "плата контроллера шск"
@@ -315,7 +335,7 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     # OTHER general hardware to bucket into 'others' (cabinets, bolts, shelves, keyboards etc.)
     if has_any(text_blob, [
         "rittal", "шкаф", "станция", "полка", "кронштейн", "ролик", "болт", "гайка", "шайба", "клавиатура", "моноблок",
-        "кабель", "клеммная", "корпус", "шасси", "стеллаж", "стойка", "провод", "розетка", "вентилятор"
+        "кабель", "клеммная", "корпус", "шасси", "стеллаж", "стойка", "провод", "розетка", "вентилятор", "генератор"
     ]):
         return "others"
 
@@ -471,7 +491,8 @@ def main():
             desc = row.get(desc_col) if desc_col else None
             val = row.get(value_col) if value_col else None
             part = row.get(part_col) if part_col else None
-            categories_local.append(classify_row(ref, desc, val, part, strict=not args.loose))
+            src_file = row.get('source_file') if 'source_file' in input_df.columns else None
+            categories_local.append(classify_row(ref, desc, val, part, strict=not args.loose, source_file=src_file))
         input_df = input_df.copy()
         input_df["category"] = categories_local
         return input_df
@@ -750,15 +771,280 @@ def main():
                 combined = pd.DataFrame(columns=list(inverse_rename.values()) + ["category", "source_file", "source_sheet", "Код МР", "Общее количество"])  # type: ignore
             combined.to_excel(writer, sheet_name=sheet_name, index=False)
 
+    def clean_component_name(row, desc_col_name):
+        """Очистить наименование компонента и извлечь ТУ и тип компонента"""
+        import re
+        
+        if desc_col_name not in row or pd.isna(row[desc_col_name]):
+            return '', '', ''
+        
+        text = str(row[desc_col_name])
+        original_text = text
+        
+        # Извлечь ТУ (различные форматы)
+        tu_code = ''
+        
+        # Вариант 1: ТУ с точками и дефисами (например, "АЕНВ.431320.515-01ТУ", "АЛЯР.434110.005ТУ")
+        tu_pattern1 = r'([А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ)'
+        tu_match1 = re.search(tu_pattern1, text)
+        if tu_match1:
+            tu_code = tu_match1.group(1)
+            text = text.replace(tu_code, '').strip()
+        else:
+            # Вариант 2: ТУ в начале (например, "ТУ 6329-019-07614320-99")
+            tu_pattern2 = r'ТУ\s+([\d\-]+)'
+            tu_match2 = re.search(tu_pattern2, text)
+            if tu_match2:
+                tu_code = 'ТУ ' + tu_match2.group(1)
+                text = text.replace(tu_code, '').strip()
+            else:
+                # Вариант 3: Без дефиса но с точками (например, "СМ3.362.805ТУ")
+                tu_pattern3 = r'([А-ЯЁ]{2,}[\d\.]+ТУ)'
+                tu_match3 = re.search(tu_pattern3, text)
+                if tu_match3:
+                    tu_code = tu_match3.group(1)
+                    text = text.replace(tu_code, '').strip()
+                else:
+                    # Вариант 4: Общий паттерн (на случай других форматов)
+                    tu_pattern4 = r'([А-ЯЁ]{2,}[\d\.]+[А-ЯЁ]{0,3})'
+                    tu_match4 = re.search(tu_pattern4, text)
+                    if tu_match4:
+                        tu_code = tu_match4.group(1)
+                        text = text.replace(tu_code, '').strip()
+        
+        # Извлечь и удалить типы компонентов в начале
+        component_types = ['Резистор', 'Конденсатор', 'Микросхема', 'Разъем', 'Диод', 
+                          'Транзистор', 'Индуктивность', 'Дроссель', 'Кабель', 'Модуль',
+                          'Стабилитрон', 'Вилка', 'Розетка', 'Генератор']
+        component_type = ''
+        for comp_type in component_types:
+            if original_text.startswith(comp_type):
+                component_type = comp_type
+                text = text[len(comp_type):].strip() if text.startswith(comp_type) else text
+                break
+        
+        # Очистить от лишних пробелов
+        text = ' '.join(text.split())
+        
+        return text, tu_code, component_type
+    
+    def extract_nominal_value(text):
+        """
+        Извлечь номинал из текста и преобразовать в число для сортировки.
+        Примеры: "180 Ом" -> 180, "1 кОм" -> 1000, "100 пФ" -> 100e-12
+        """
+        import re
+        
+        if not isinstance(text, str):
+            return 0
+        
+        # Множители для разных единиц
+        multipliers = {
+            # Сопротивление
+            'мом': 1e6, 'мегаом': 1e6,
+            'ком': 1e3, 'килоом': 1e3,
+            'ом': 1,
+            # Емкость
+            'ф': 1, 'фарад': 1,
+            'мф': 1e-3, 'миллифарад': 1e-3,
+            'мкф': 1e-6, 'микрофарад': 1e-6, 'µф': 1e-6,
+            'нф': 1e-9, 'нанофарад': 1e-9,
+            'пф': 1e-12, 'пикофарад': 1e-12,
+            # Индуктивность
+            'гн': 1, 'генри': 1,
+            'мгн': 1e-3, 'миллигенри': 1e-3,
+            'мкгн': 1e-6, 'микрогенри': 1e-6, 'µгн': 1e-6,
+        }
+        
+        # Попытаться найти число с единицей измерения
+        # Паттерн: число (с возможной точкой/запятой) + пробелы + единица
+        pattern = r'([\d.,]+)\s*([а-яА-Яa-zA-Z]+)'
+        matches = re.findall(pattern, text.lower())
+        
+        for num_str, unit in matches:
+            # Преобразовать число
+            try:
+                num = float(num_str.replace(',', '.'))
+            except ValueError:
+                continue
+            
+            # Найти множитель для единицы
+            for unit_key, mult in multipliers.items():
+                if unit_key in unit:
+                    return num * mult
+        
+        return 0
+
     with pd.ExcelWriter(args.xlsx, engine="openpyxl") as writer:
-        merge_existing_if_needed(writer, outputs, args.merge_into)
+        # Записать каждую категорию с № п/п
+        for key, part_df in outputs.items():
+            sheet_name = rus_sheet_names.get(key, key)[:31]
+            result_df = part_df.copy()
+            
+            # Удалить ВСЕ старые колонки с номерами (могут быть варианты написания)
+            cols_to_remove = [col for col in result_df.columns 
+                            if col in ['№ п/п', '№ п\п', 'п/п', 'номер', '№']]
+            if cols_to_remove:
+                result_df = result_df.drop(columns=cols_to_remove)
+            
+            # Удалить ненужные столбцы (количество, цена, стоимость, source_sheet, _row_text_, category)
+            cols_to_remove = [col for col in result_df.columns 
+                            if col in ['количество', 'первоначальная цена, тыс.руб.', 
+                                      'первоначальная стоимость, тыс.руб.', 
+                                      'source_sheet', '_row_text_', 'category']]
+            if cols_to_remove:
+                result_df = result_df.drop(columns=cols_to_remove)
+            
+            # Переименовать столбцы
+            if 'Общее количество' in result_df.columns:
+                result_df = result_df.rename(columns={'Общее количество': 'Кол-во'})
+            if 'наименование ивп' in result_df.columns:
+                result_df = result_df.rename(columns={'наименование ивп': 'Наименование ИВП'})
+            
+            # Обработать наименование - очистить и извлечь ТУ
+            # Найти столбец с наименованием (ВАЖНО: сначала ищем переименованный столбец!)
+            desc_col_name = None
+            for possible_name in ['Наименование ИВП', 'наименование ивп', 'описание', 'наименование', desc_col]:
+                if possible_name and possible_name in result_df.columns:
+                    desc_col_name = possible_name
+                    break
+            
+            if desc_col_name:
+                # Применить функцию очистки к каждой строке
+                cleaned_data = result_df.apply(lambda row: clean_component_name(row, desc_col_name), axis=1)
+                result_df[desc_col_name] = [item[0] for item in cleaned_data]
+                
+                # Вставить ТУ сразу после наименования (а не в конец)
+                tu_data = [item[1] for item in cleaned_data]
+                desc_idx = list(result_df.columns).index(desc_col_name)
+                result_df.insert(desc_idx + 1, 'ТУ', tu_data)
+                
+                # Вставить Примечание после ТУ
+                component_types = [item[2] for item in cleaned_data]
+                
+                # Определить стандартный тип для категории
+                category_standard_types = {
+                    'Резисторы': 'Резистор',
+                    'Конденсаторы': 'Конденсатор',
+                    'Дроссели': 'Дроссель',
+                    'Микросхемы': 'Микросхема',
+                    'Разъемы': 'Разъем',
+                    'Диоды': 'Диод',
+                }
+                
+                standard_type = category_standard_types.get(sheet_name, '')
+                
+                # Если тип компонента совпадает со стандартным для категории - ставим "-"
+                primechanie = []
+                for comp_type in component_types:
+                    if not comp_type or comp_type == standard_type:
+                        primechanie.append('-')
+                    else:
+                        primechanie.append(comp_type)
+                
+                result_df.insert(desc_idx + 2, 'Примечание', primechanie)
+                
+                # Сортировка: сначала импортные, потом отечественные
+                # Создаем вспомогательные столбцы для сортировки
+                result_df['_is_domestic'] = result_df['ТУ'].apply(
+                    lambda x: 1 if (x and x != '-' and str(x).strip() != '') else 0
+                )
+                
+                # Для отечественных: извлечь первые цифры из названия
+                def get_domestic_number(row):
+                    if row['_is_domestic'] == 1:
+                        import re
+                        name = str(row[desc_col_name])
+                        match = re.match(r'(\d+)', name)
+                        if match:
+                            return int(match.group(1))
+                        else:
+                            return 999999
+                    else:
+                        return 0
+                
+                result_df['_domestic_num'] = result_df.apply(get_domestic_number, axis=1)
+                
+                # Для импортных: сортировка по номиналу
+                result_df['_nominal'] = result_df[desc_col_name].apply(extract_nominal_value)
+                
+                # Сортируем: сначала по типу (импортные/отечественные), потом по номиналу/номеру, потом по имени
+                result_df = result_df.sort_values(
+                    by=['_is_domestic', '_domestic_num', '_nominal', desc_col_name],
+                    ascending=[True, True, True, True]
+                )
+                
+                result_df = result_df.drop(columns=['_is_domestic', '_domestic_num', '_nominal'])
+                result_df = result_df.reset_index(drop=True)
+            
+            # Добавить новую колонку № п/п в начало (ПОСЛЕ сортировки!)
+            result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
+            result_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         if args.combine:
-            summary = build_summary(df, ref_col, desc_col, value_col, part_col, qty_col, mr_col)
+            # Не создаем SUMMARY - он не нужен или создаем простую сводку
+            summary_rows = []
+            for key, part_df in outputs.items():
+                if len(part_df) == 0:
+                    continue
+                category_name = rus_sheet_names.get(key, key)
+                # Суммировать количество по категории
+                total_qty = part_df['Общее количество'].sum() if 'Общее количество' in part_df.columns else len(part_df)
+                summary_rows.append({
+                    '№ п/п': len(summary_rows) + 1,
+                    'Категория': category_name,
+                    'Кол-во позиций': len(part_df),
+                    'Общее количество': int(total_qty)
+                })
+            
+            summary = pd.DataFrame(summary_rows)
             summary.to_excel(writer, sheet_name="SUMMARY", index=False)
         # SOURCES sheet
         sources = pd.DataFrame(sorted({(r.get("source_file", ""), r.get("source_sheet", "")) for _, r in df.iterrows()}), columns=["source_file", "source_sheet"])
         sources.to_excel(writer, sheet_name="SOURCES", index=False)
+        
+        # Применить форматирование к каждому листу
+        from openpyxl.styles import Alignment
+        
+        for sheet_name in writer.book.sheetnames:
+            ws = writer.book[sheet_name]
+            
+            # Найти индексы столбцов "Наименование ИВП" и "ТУ"
+            desc_col_idx = None
+            tu_col_idx = None
+            for idx, cell in enumerate(ws[1], start=1):
+                cell_val = str(cell.value).lower() if cell.value else ''
+                if 'наименование ивп' in cell_val or 'наименование' in cell_val:
+                    desc_col_idx = idx
+                elif cell_val == 'ту':
+                    tu_col_idx = idx
+            
+            # Центрировать все ячейки, кроме "наименование ивп" и "ТУ"
+            for row_idx, row in enumerate(ws.iter_rows(), start=1):
+                for col_idx, cell in enumerate(row, start=1):
+                    if col_idx == desc_col_idx or col_idx == tu_col_idx:
+                        # Наименование ИВП и ТУ - выравнивание по левому краю
+                        cell.alignment = Alignment(horizontal='left', vertical='center')
+                    else:
+                        # Все остальные - по центру
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Автоматически установить ширину столбцов по содержимому
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                
+                for cell in column:
+                    try:
+                        cell_value = str(cell.value) if cell.value is not None else ""
+                        if len(cell_value) > max_length:
+                            max_length = len(cell_value)
+                    except:
+                        pass
+                
+                # Установить ширину с небольшим запасом
+                adjusted_width = min(max_length + 2, 50)  # максимум 50 символов
+                ws.column_dimensions[column_letter].width = adjusted_width
 
     # Print counts
     print("Split complete:")

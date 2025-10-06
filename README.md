@@ -12,7 +12,7 @@ start_gui.bat
 split_bom.bat --inputs "file.xlsx" --xlsx "output.xlsx" --combine
 ```
 
-📘 **Подробнее:** [docs/BAT_FILES.md](docs/BAT_FILES.md)
+📘 **Подробнее:** [QUICK_COMMANDS.md](QUICK_COMMANDS.md) | [docs/BAT_FILES.md](docs/BAT_FILES.md)
 
 ---
 

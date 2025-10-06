@@ -750,12 +750,105 @@ def main():
                 combined = pd.DataFrame(columns=list(inverse_rename.values()) + ["category", "source_file", "source_sheet", "Код МР", "Общее количество"])  # type: ignore
             combined.to_excel(writer, sheet_name=sheet_name, index=False)
 
-    with pd.ExcelWriter(args.xlsx, engine="openpyxl") as writer:
-        merge_existing_if_needed(writer, outputs, args.merge_into)
+    def prepare_output_df(part_df: pd.DataFrame, category_key: str, 
+                          ref_col_p, desc_col_p, value_col_p, part_col_p) -> pd.DataFrame:
+        """Подготовить DataFrame для вывода с нужными колонками и форматированием"""
+        result = part_df.copy()
+        
+        # Удалить технические столбцы
+        columns_to_remove = ['source_file', 'source_sheet', '_row_text_', 'category', 
+                            'Количество', 'Первоначальная цена, тыс.руб.', 
+                            'Первоначальная стоимость, тыс.руб.']
+        for col in columns_to_remove:
+            if col in result.columns:
+                result = result.drop(columns=[col])
+        
+        # Переименовать "Общее количество" в "Кол-во"
+        if 'Общее количество' in result.columns:
+            result = result.rename(columns={'Общее количество': 'Кол-во'})
+        
+        # Упростить наименование (оставить только partname если есть)
+        if part_col_p and part_col_p in result.columns:
+            result['Наименование'] = result[part_col_p].fillna('')
+        elif desc_col_p and desc_col_p in result.columns:
+            result['Наименование'] = result[desc_col_p].fillna('')
+        
+        # Добавить столбец ТУ (пока пустой, можно заполнить позже по правилам)
+        if 'ТУ' not in result.columns:
+            result['ТУ'] = ''
+        
+        # Сортировка по номиналу (если есть value_col)
+        if value_col_p and value_col_p in result.columns:
+            # Попытка извлечь числовое значение для сортировки
+            def extract_numeric_value(val_str):
+                if pd.isna(val_str):
+                    return 0
+                val_str = str(val_str).lower()
+                import re
+                # Ищем число
+                match = re.search(r'([\d.,]+)', val_str)
+                if not match:
+                    return 0
+                num = float(match.group(1).replace(',', '.'))
+                # Учитываем множители
+                if 'k' in val_str or 'к' in val_str:
+                    num *= 1000
+                elif 'm' in val_str and 'ohm' in val_str or 'м' in val_str and 'ом' in val_str:
+                    num *= 1000000
+                elif 'µ' in val_str or 'u' in val_str or 'мк' in val_str:
+                    num *= 0.000001
+                elif 'n' in val_str or 'н' in val_str:
+                    num *= 0.000000001
+                elif 'p' in val_str or 'п' in val_str:
+                    num *= 0.000000000001
+                return num
+            
+            result['_sort_value'] = result[value_col_p].apply(extract_numeric_value)
+            result = result.sort_values('_sort_value')
+            result = result.drop(columns=['_sort_value'])
+        
+        # Добавить номер п/п
+        result.insert(0, '№ п/п', range(1, len(result) + 1))
+        
+        # Определить порядок колонок
+        final_columns = ['№ п/п']
+        if ref_col_p and ref_col_p in result.columns:
+            final_columns.append(ref_col_p)
+        if 'Наименование' in result.columns:
+            final_columns.append('Наименование')
+        if value_col_p and value_col_p in result.columns:
+            final_columns.append(value_col_p)
+        if 'ТУ' in result.columns:
+            final_columns.append('ТУ')
+        if 'Кол-во' in result.columns:
+            final_columns.append('Кол-во')
+        if 'Код МР' in result.columns:
+            final_columns.append('Код МР')
+        
+        # Добавить остальные колонки которые не перечислены
+        for col in result.columns:
+            if col not in final_columns:
+                final_columns.append(col)
+        
+        # Оставить только существующие колонки
+        final_columns = [c for c in final_columns if c in result.columns]
+        result = result[final_columns]
+        
+        return result
 
+    with pd.ExcelWriter(args.xlsx, engine="openpyxl") as writer:
+        # Записать подготовленные категории
+        for key, part_df in outputs.items():
+            sheet_name = rus_sheet_names.get(key, key)[:31]
+            prepared_df = prepare_output_df(part_df, key, ref_col, desc_col, value_col, part_col)
+            prepared_df.to_excel(writer, sheet_name=sheet_name, index=False)
+        
         if args.combine:
             summary = build_summary(df, ref_col, desc_col, value_col, part_col, qty_col, mr_col)
+            # Применить ту же подготовку к summary
+            summary = summary.rename(columns={'Общее количество': 'Кол-во'})
             summary.to_excel(writer, sheet_name="SUMMARY", index=False)
+        
         # SOURCES sheet
         sources = pd.DataFrame(sorted({(r.get("source_file", ""), r.get("source_sheet", "")) for _, r in df.iterrows()}), columns=["source_file", "source_sheet"])
         sources.to_excel(writer, sheet_name="SOURCES", index=False)
