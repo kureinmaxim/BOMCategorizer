@@ -35,9 +35,15 @@ def normalize_column_names(columns: List[str]) -> List[str]:
 
 
 def find_column(possible_names: List[str], columns: List[str]) -> Optional[str]:
+    # Сначала ищем точное совпадение
     for candidate in possible_names:
         if candidate in columns:
             return candidate
+    # Если не нашли точное совпадение, ищем частичное (колонка начинается с candidate)
+    for candidate in possible_names:
+        for col in columns:
+            if col.startswith(candidate):
+                return col
     return None
 
 
@@ -537,10 +543,22 @@ def main():
                     if isinstance(df_local, dict):
                         # unlikely when specifying a single sheet, but guard anyway
                         for _, dfi in df_local.items():
+                            # Проверка на пустую первую строку
+                            if all(str(col).lower().startswith('unnamed') for col in dfi.columns):
+                                if not dfi.empty and dfi.iloc[0].notna().any():
+                                    new_headers = dfi.iloc[0].fillna('').astype(str)
+                                    dfi = dfi[1:].reset_index(drop=True)
+                                    dfi.columns = new_headers
                             dfi["source_file"] = os.path.basename(input_path)
                             dfi["source_sheet"] = str(sh)
                             all_rows.append(dfi)
                     else:
+                        # Проверка на пустую первую строку
+                        if all(str(col).lower().startswith('unnamed') for col in df_local.columns):
+                            if not df_local.empty and df_local.iloc[0].notna().any():
+                                new_headers = df_local.iloc[0].fillna('').astype(str)
+                                df_local = df_local[1:].reset_index(drop=True)
+                                df_local.columns = new_headers
                         df_local["source_file"] = os.path.basename(input_path)
                         df_local["source_sheet"] = str(sh)
                         all_rows.append(df_local)
@@ -562,6 +580,16 @@ def main():
                     src_sheet = first_key
                 else:
                     src_sheet = sheet if sheet is not None else 0
+                
+                # Проверка: если все колонки unnamed и первая строка содержит текст - это заголовки
+                # (первая строка файла была пустая)
+                if all(str(col).lower().startswith('unnamed') for col in df.columns):
+                    if not df.empty and df.iloc[0].notna().any():
+                        # Первая строка данных содержит настоящие заголовки
+                        new_headers = df.iloc[0].fillna('').astype(str)
+                        df = df[1:].reset_index(drop=True)
+                        df.columns = new_headers
+                
                 df["source_file"] = os.path.basename(input_path)
                 df["source_sheet"] = str(src_sheet)
                 all_rows.append(df)
@@ -581,6 +609,7 @@ def main():
 
     # Common column guesses
     ref_col = find_column(["ref", "reference", "designator", "refdes", "reference designator", "обозначение", "позиционное обозначение"], list(df.columns))
+    # Для description: сначала ищем точные совпадения, потом частичные (наименование мр)
     desc_col = find_column(["description", "desc", "наименование", "имя", "item", "part", "part name", "наим."], list(df.columns))
     value_col = find_column(["value", "значение", "номинал"], list(df.columns))
     part_col = find_column(["partnumber", "mfr part", "mpn", "pn", "art", "артикул", "part", "part name"], list(df.columns))
@@ -591,6 +620,51 @@ def main():
     mr_col = find_column([
         "код мр", "код ивп", "код мр/ивп", "код позиции", "код изделия", "код мр позиции", "код мр ивп"
     ], list(df.columns))
+    
+    # Проверяем, есть ли несколько колонок с description/наименование (из разных файлов)
+    possible_desc_cols = [col for col in df.columns if any(
+        col.startswith(prefix) for prefix in ["description", "наименование", "desc", "имя"]
+    )]
+    
+    if len(possible_desc_cols) > 1:
+        # Объединяем несколько колонок description в одну
+        def merge_desc(row):
+            for col in possible_desc_cols:
+                val = row.get(col)
+                if pd.notna(val) and str(val).strip():
+                    return val
+            return None
+        
+        df["_merged_description_"] = df.apply(merge_desc, axis=1)
+        # Удаляем старые колонки description/наименование
+        for col in possible_desc_cols:
+            if col in df.columns:
+                df = df.drop(columns=[col])
+        desc_col = "_merged_description_"
+    
+    # Проверяем, есть ли несколько колонок с qty/количество (из разных файлов)
+    possible_qty_cols = [col for col in df.columns if any(
+        col.startswith(prefix) for prefix in ["qty", "quantity", "количество", "кол"]
+    )]
+    
+    if len(possible_qty_cols) > 1:
+        # Объединяем несколько колонок qty в одну
+        def merge_qty(row):
+            for col in possible_qty_cols:
+                val = row.get(col)
+                if pd.notna(val):
+                    try:
+                        return float(val) if val != 0 or str(val).strip() == '0' else None
+                    except:
+                        pass
+            return None
+        
+        df["_merged_qty_"] = df.apply(merge_qty, axis=1)
+        # Удаляем старые колонки qty/количество
+        for col in possible_qty_cols:
+            if col in df.columns:
+                df = df.drop(columns=[col])
+        qty_col = "_merged_qty_"
 
     # Ensure we have at least some text to classify against
     if not any([ref_col, desc_col, value_col, part_col]):
@@ -665,21 +739,51 @@ def main():
             print(f"Не удалось сохранить правила: {exc}")
         # Optionally redo classification for remaining items if needed (skipped for simplicity)
 
+    # Объединяем категории для "Отладочные модули"
+    debug_modules_parts = []
+    
+    # 1. Наши разработки
+    our_dev = df[df["category"] == "our_developments"]
+    if not our_dev.empty:
+        debug_modules_parts.append(our_dev)
+    
+    # 2. Пустая строка
+    if debug_modules_parts:
+        empty_row = pd.DataFrame([{col: '' for col in df.columns}])
+        debug_modules_parts.append(empty_row)
+    
+    # 3. Отладочные платы
+    dev_boards = df[df["category"] == "dev_boards"]
+    if not dev_boards.empty:
+        debug_modules_parts.append(dev_boards)
+    
+    # 4. Пустая строка
+    if len(debug_modules_parts) > 0 and not dev_boards.empty:
+        empty_row2 = pd.DataFrame([{col: '' for col in df.columns}])
+        debug_modules_parts.append(empty_row2)
+    
+    # 5. СВЧ модули
+    rf_mods = df[df["category"] == "rf_modules"]
+    if not rf_mods.empty:
+        debug_modules_parts.append(rf_mods)
+    
+    # Объединяем все части
+    debug_modules_combined = pd.concat(debug_modules_parts, ignore_index=True) if debug_modules_parts else pd.DataFrame()
+    
+    # Новый порядок категорий согласно требованиям
     outputs = {
-        "resistors": df[df["category"] == "resistors"],
-        "capacitors": df[df["category"] == "capacitors"],
-        "inductors": df[df["category"] == "inductors"],
-        "ics": df[df["category"] == "ics"],
-        "connectors": df[df["category"] == "connectors"],
-        "dev_boards": df[df["category"] == "dev_boards"],
-        "optics": df[df["category"] == "optics"],
-        "rf_modules": df[df["category"] == "rf_modules"],
-        "cables": df[df["category"] == "cables"],
-        "power_modules": df[df["category"] == "power_modules"],
-        "semiconductors": df[df["category"] == "semiconductors"],
-        "our_developments": df[df["category"] == "our_developments"],
-        "others": df[df["category"] == "others"],
-        "unclassified": df[df["category"] == "unclassified"],
+        "debug_modules": debug_modules_combined,  # Отладочные модули (объединенная)
+        "ics": df[df["category"] == "ics"],  # Микросхемы
+        "resistors": df[df["category"] == "resistors"],  # Резисторы
+        "capacitors": df[df["category"] == "capacitors"],  # Конденсаторы
+        "inductors": df[df["category"] == "inductors"],  # Индуктивности
+        "semiconductors": df[df["category"] == "semiconductors"],  # Полупроводники
+        "connectors": df[df["category"] == "connectors"],  # Разъемы
+        "optics": df[df["category"] == "optics"],  # Оптические компоненты
+        "power_modules": df[df["category"] == "power_modules"],  # Модули питания
+        "cables": df[df["category"] == "cables"],  # Кабели
+        "others": df[df["category"] == "others"],  # Другие
+        "unclassified": df[df["category"] == "unclassified"],  # Не распределено
     }
 
     # Apply assignment rules if provided
@@ -764,9 +868,10 @@ def main():
 
     # Russian category names for output
     rus_sheet_names = {
+        "debug_modules": "Отладочные модули",  # Объединенная категория
         "resistors": "Резисторы",
         "capacitors": "Конденсаторы",
-        "inductors": "Дроссели",
+        "inductors": "Индуктивности",  # Переименовано
         "ics": "Микросхемы",
         "connectors": "Разъемы",
         "dev_boards": "Отладочные платы",
@@ -1073,7 +1178,9 @@ def main():
             if 'наименование ивп' in result_df.columns:
                 result_df = result_df.rename(columns={'наименование ивп': 'Наименование ИВП'})
             # Переименовать нормализованные английские колонки в русские
-            if 'description' in result_df.columns and 'Наименование ИВП' not in result_df.columns:
+            if '_merged_description_' in result_df.columns and 'Наименование ИВП' not in result_df.columns:
+                result_df = result_df.rename(columns={'_merged_description_': 'Наименование ИВП'})
+            elif 'description' in result_df.columns and 'Наименование ИВП' not in result_df.columns:
                 result_df = result_df.rename(columns={'description': 'Наименование ИВП'})
             if 'qty' in result_df.columns and 'Кол-во' not in result_df.columns:
                 result_df = result_df.rename(columns={'qty': 'Кол-во'})
@@ -1113,7 +1220,7 @@ def main():
                 category_standard_types = {
                     'Резисторы': 'Резистор',
                     'Конденсаторы': 'Конденсатор',
-                    'Дроссели': 'Дроссель',
+                    'Индуктивности': 'Дроссель',  # Переименовано
                     'Микросхемы': 'Микросхема',
                     'Разъемы': 'Разъем',
                     'Полупроводники': '',  # Нет стандартного типа - тут разные (диоды, транзисторы, стабилитроны)
