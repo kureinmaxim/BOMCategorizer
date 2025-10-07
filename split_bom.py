@@ -142,7 +142,7 @@ def parse_docx(path: str) -> pd.DataFrame:
         # Переменные для хранения текущего ТУ и типа компонента из заголовка группы
         current_group_tu = ""
         current_group_type = ""
-        
+
         for tr in table.rows[header_idx + 1:]:
             vals = [normalize_cell(c.text) for c in tr.cells]
             if not any(v.strip() for v in vals):
@@ -240,7 +240,7 @@ def parse_docx(path: str) -> pd.DataFrame:
             # (note может содержать ТУ из заголовка группы, но это не основные данные)
             if not ref.strip() and not name.strip():
                 continue
-            
+
             row = {
                 "zone": zone,
                 "reference": ref,
@@ -323,9 +323,21 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     if has_any(text_blob, ["мвок", "наша разработ", "собственной разработ", "шск-м", "плата контроллера шск"]):
         return "our_developments"
     
+    # Dev boards / evaluation boards - check BEFORE optics (для Qualwave, API Technologies, etc.)
+    if has_any(text_blob, ["qualwave", "api technologies", "weinschel"]):
+        return "dev_boards"
+    
+    # Optical components (широкая проверка) - check EARLY
+    if has_any(text_blob, [
+        "оптический модуль", "optical module", "передающий оптический", "приемный оптический",
+        "mp2320", "mp2220", "fc/apc", "fc/upc",
+        "оптич", "optical", "оптоволокон", "fiber"
+    ]):
+        return "optics"
+    
     # Optical modules with U prefix - check before "U" prefix for ICs
     if ref and ref_prefix.startswith("U"):
-        if has_any(text_blob, ["оптический модуль", "optical module", "передающий оптический", "приемный оптический", "mp2320"]):
+        if has_any(text_blob, ["оптический", "optical", "передающий", "приемный"]):
             return "optics"
     
     # PRIORITY 2: Heuristics by ref (only if we have a real ref column)
@@ -346,8 +358,8 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
             return "dev_boards"
         # Russian prefix "А" for attenuators (optics) - only if longer than 2 chars or has optical keywords
         if ref_prefix.startswith(("А", "A")) and len(ref_prefix) > 2:
-            # Check if it's really an attenuator
-            if has_any(text_blob, ["аттенюат", "ослабител", "attenuator", "fc/apc", "fc/upc", "оптич"]):
+            # Check if it's really an attenuator or optical component
+            if has_any(text_blob, ["аттенюат", "ослабител", "attenuator", "fc/apc", "fc/upc", "оптич", "optical"]):
                 return "optics"
         # Prefix "W" often used for RF modules, waveguides, delay lines
         if ref_prefix.startswith("W"):
@@ -416,7 +428,8 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     if has_any(text_blob, [
         "отладоч", " dev board", "evaluation", "eval", "nucleo", "arduino", "raspberry",
         "esp32", "stm32 nucleo", "breakout", "fmc", "carrier", "ultrazed", "microzed", "picozed", "zedboard",
-        "zynq", "som ", "system on module", "voyager", "tinypilot"
+        "zynq", "som ", "system on module", "voyager", "tinypilot", "плата инструментальная", "evaluation board",
+        "development board", "отладочная плата", "aes-zu"
     ]):
         return "dev_boards"
 
@@ -441,7 +454,8 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
 
     if has_any(text_blob, [
         "модуль питания", "power module", "dc-dc", "ac-dc", "buck", "boost", "источник питания", "блок питания", "psu",
-        "converter"
+        "converter", "электропитания", "мдм10", "мдм20", "мдм30", "мдм50", "мдм60", "мдм100", "мдм160", "мдм600",
+        "маа20", "маа400", "маа600"
     ]):
         return "power_modules"
 
@@ -455,7 +469,9 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     if has_any(text_blob, [
         "rittal", "шкаф", "станция", "полка", "кронштейн", "ролик", "болт", "гайка", "шайба", "клавиатура", "моноблок",
         "кабель", "клеммная", "корпус", "шасси", "стеллаж", "стойка", "провод", "розетка", "вентилятор", "генератор",
-        "предохранитель", "держател", "зажим", "fuzetec"
+        "предохранитель", "держател", "зажим", "fuzetec", "реле", "relay", "тумблер", "фильтр", "filter",
+        "сетка защитная", "коммутатор", "switch", "переход", "adapter", "линия задержки", "delay line",
+        "сердечник", "core", "кварц", "quartz", "вставка плавкая"
     ]):
         return "others"
 
@@ -543,56 +559,101 @@ def main():
                     if isinstance(df_local, dict):
                         # unlikely when specifying a single sheet, but guard anyway
                         for _, dfi in df_local.items():
-                            # Проверка на пустую первую строку
-                            if all(str(col).lower().startswith('unnamed') for col in dfi.columns):
-                                if not dfi.empty and dfi.iloc[0].notna().any():
+                            # Проверка на пустую первую строку (ДЛЯ КАЖДОГО ЛИСТА!)
+                            unnamed_count = sum(1 for col in dfi.columns if str(col).lower().startswith('unnamed'))
+                            has_mostly_unnamed = unnamed_count >= len(dfi.columns) * 0.5
+                            
+                            if has_mostly_unnamed and not dfi.empty and dfi.iloc[0].notna().any():
+                                # Проверяем, содержит ли первая строка заголовки
+                                first_row_text = ' '.join(str(val).lower() for val in dfi.iloc[0] if pd.notna(val))
+                                looks_like_header = any(keyword in first_row_text for keyword in 
+                                    ['наименование', 'количество', 'кол.', 'код', 'description', 'qty'])
+                                
+                                if looks_like_header:
+                                    # Первая строка содержит настоящие заголовки
                                     new_headers = dfi.iloc[0].fillna('').astype(str)
                                     dfi = dfi[1:].reset_index(drop=True)
                                     dfi.columns = new_headers
+                            
                             dfi["source_file"] = os.path.basename(input_path)
                             dfi["source_sheet"] = str(sh)
                             all_rows.append(dfi)
                     else:
-                        # Проверка на пустую первую строку
-                        if all(str(col).lower().startswith('unnamed') for col in df_local.columns):
-                            if not df_local.empty and df_local.iloc[0].notna().any():
+                        # Проверка на пустую первую строку (ДЛЯ КАЖДОГО ЛИСТА!)
+                        # Проверяем: если большинство колонок unnamed ИЛИ первая строка похожа на заголовки
+                        unnamed_count = sum(1 for col in df_local.columns if str(col).lower().startswith('unnamed'))
+                        has_mostly_unnamed = unnamed_count >= len(df_local.columns) * 0.5  # Больше 50% unnamed
+                        
+                        if has_mostly_unnamed and not df_local.empty and df_local.iloc[0].notna().any():
+                            # Проверяем, содержит ли первая строка заголовки
+                            first_row_text = ' '.join(str(val).lower() for val in df_local.iloc[0] if pd.notna(val))
+                            looks_like_header = any(keyword in first_row_text for keyword in 
+                                ['наименование', 'количество', 'кол.', 'код', 'description', 'qty'])
+                            
+                            if looks_like_header:
+                                # Первая строка содержит настоящие заголовки
                                 new_headers = df_local.iloc[0].fillna('').astype(str)
                                 df_local = df_local[1:].reset_index(drop=True)
                                 df_local.columns = new_headers
+                        
                         df_local["source_file"] = os.path.basename(input_path)
                         df_local["source_sheet"] = str(sh)
                         all_rows.append(df_local)
             else:
-                # single sheet or first sheet
+                # Если листы не указаны, читаем ВСЕ листы
                 sheet = args.sheet
                 if sheet is not None:
+                    # Пользователь указал конкретный лист через --sheet
                     try:
                         sheet = int(sheet)
                     except ValueError:
                         pass
                     read_kwargs["sheet_name"] = sheet
 
-                df = pd.read_excel(input_path, **read_kwargs)
-                if isinstance(df, dict):
-                    # take first sheet
-                    first_key = next(iter(df))
-                    df = df[first_key]
-                    src_sheet = first_key
+                    df = pd.read_excel(input_path, **read_kwargs)
+                    if isinstance(df, dict):
+                        # take first sheet
+                        first_key = next(iter(df))
+                        df = df[first_key]
+                        src_sheet = first_key
+                    else:
+                        src_sheet = sheet if sheet is not None else 0
+                        
+                        # Проверка: если все колонки unnamed и первая строка содержит текст - это заголовки
+                        # (первая строка файла была пустая)
+                        if all(str(col).lower().startswith('unnamed') for col in df.columns):
+                            if not df.empty and df.iloc[0].notna().any():
+                                # Первая строка данных содержит настоящие заголовки
+                                new_headers = df.iloc[0].fillna('').astype(str)
+                                df = df[1:].reset_index(drop=True)
+                                df.columns = new_headers
+                        
+                    df["source_file"] = os.path.basename(input_path)
+                    df["source_sheet"] = str(src_sheet)
+                    all_rows.append(df)
                 else:
-                    src_sheet = sheet if sheet is not None else 0
-                
-                # Проверка: если все колонки unnamed и первая строка содержит текст - это заголовки
-                # (первая строка файла была пустая)
-                if all(str(col).lower().startswith('unnamed') for col in df.columns):
-                    if not df.empty and df.iloc[0].notna().any():
-                        # Первая строка данных содержит настоящие заголовки
-                        new_headers = df.iloc[0].fillna('').astype(str)
-                        df = df[1:].reset_index(drop=True)
-                        df.columns = new_headers
-                
-                df["source_file"] = os.path.basename(input_path)
-                df["source_sheet"] = str(src_sheet)
-                all_rows.append(df)
+                    # Листы не указаны - читаем ВСЕ листы
+                    all_sheets_data = pd.read_excel(input_path, sheet_name=None, **{k: v for k, v in read_kwargs.items() if k != 'sheet_name'})
+                    for sheet_name, df_local in all_sheets_data.items():
+                        # Проверка на пустую первую строку (ДЛЯ КАЖДОГО ЛИСТА!)
+                        unnamed_count = sum(1 for col in df_local.columns if str(col).lower().startswith('unnamed'))
+                        has_mostly_unnamed = unnamed_count >= len(df_local.columns) * 0.5
+                        
+                        if has_mostly_unnamed and not df_local.empty and df_local.iloc[0].notna().any():
+                            # Проверяем, содержит ли первая строка заголовки
+                            first_row_text = ' '.join(str(val).lower() for val in df_local.iloc[0] if pd.notna(val))
+                            looks_like_header = any(keyword in first_row_text for keyword in 
+                                ['наименование', 'количество', 'кол.', 'код', 'description', 'qty'])
+                            
+                            if looks_like_header:
+                                # Первая строка содержит настоящие заголовки
+                                new_headers = df_local.iloc[0].fillna('').astype(str)
+                                df_local = df_local[1:].reset_index(drop=True)
+                                df_local.columns = new_headers
+                        
+                        df_local["source_file"] = os.path.basename(input_path)
+                        df_local["source_sheet"] = str(sheet_name)
+                        all_rows.append(df_local)
         except Exception as exc:
             raise SystemExit(f"Failed to read Excel '{input_path}': {exc}")
 
@@ -600,6 +661,28 @@ def main():
         raise SystemExit("No data loaded from inputs")
 
     df = pd.concat(all_rows, ignore_index=True)
+
+    # Объединяем source_file и source_sheet для многолистовых файлов
+    if 'source_sheet' in df.columns and 'source_file' in df.columns:
+        # Проверяем, есть ли файлы с несколькими листами
+        file_sheet_counts = df.groupby('source_file')['source_sheet'].nunique()
+        multi_sheet_files = file_sheet_counts[file_sheet_counts > 1].index.tolist()
+        
+        if multi_sheet_files:
+            # Для многолистовых файлов создаем нумерацию листов
+            for file in multi_sheet_files:
+                file_mask = df['source_file'] == file
+                unique_sheets = df.loc[file_mask, 'source_sheet'].unique()
+                sheet_to_num = {sheet: i+1 for i, sheet in enumerate(unique_sheets)}
+                
+                # Обновляем source_file: "Имя_файла Лист_1"
+                df.loc[file_mask, 'source_file'] = df.loc[file_mask].apply(
+                    lambda row: f"{row['source_file']} Лист_{sheet_to_num[row['source_sheet']]}", 
+                    axis=1
+                )
+            
+            # Удаляем колонку source_sheet, так как она уже включена в source_file
+            df = df.drop(columns=['source_sheet'])
 
     # Normalize columns
     original_cols = list(df.columns)
@@ -689,7 +772,11 @@ def main():
     df = run_classification(df)
 
     # Interactive reassignment for unclassified
-    if args.interactive:
+    # Автоматически включаем интерактивный режим, если есть нераспределенные элементы
+    unclassified_count = len(df[df["category"] == "unclassified"])
+    auto_interactive = unclassified_count > 0 and not args.interactive
+    
+    if args.interactive or auto_interactive:
         cat_names = [
             ("resistors", "Резисторы"),
             ("capacitors", "Конденсаторы"),
@@ -704,40 +791,54 @@ def main():
         ]
         uncls = df[df["category"] == "unclassified"].copy()
         max_preview = min(len(uncls), 50)
-        print(f"Нераспределено: {len(uncls)}. Покажу первые {max_preview} для разметки.")
-        # Load existing rules (append new choices)
-        existing_rules: List[Dict[str, Any]] = []
-        if args.assign_json and os.path.exists(args.assign_json):
+        
+        skip_interactive = False
+        if auto_interactive:
+            print(f"\n⚠️  ВНИМАНИЕ: Обнаружено {len(uncls)} нераспределённых элементов!")
+            print(f"Для повышения точности рекомендуется интерактивная классификация.")
+            response = input(f"\nЗапустить интерактивный режим для классификации? (y/n, Enter=y): ").strip().lower()
+            if response and response not in ['y', 'yes', 'д', 'да', '']:
+                print("Интерактивный режим пропущен. Нераспределенные элементы останутся в категории 'Не распределено'.")
+                skip_interactive = True
+            else:
+                print(f"\nНераспределено: {len(uncls)}. Покажу первые {max_preview} для разметки.")
+        else:
+            print(f"Нераспределено: {len(uncls)}. Покажу первые {max_preview} для разметки.")
+        
+        if not skip_interactive:
+            # Load existing rules (append new choices)
+            existing_rules: List[Dict[str, Any]] = []
+            if args.assign_json and os.path.exists(args.assign_json):
+                try:
+                    with open(args.assign_json, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, list):
+                            existing_rules = data
+                except Exception:
+                    pass
+            for idx, (_, row) in enumerate(uncls.head(max_preview).iterrows(), start=1):
+                text_blob = " ".join(str(x) for x in [row.get(desc_col), row.get(value_col), row.get(part_col)] if pd.notna(x))
+                print(f"[{idx}] {text_blob}")
+                for i, (_, ru) in enumerate(cat_names, start=1):
+                    print(f"  {i}. {ru}")
+                choice = input("Выберите номер категории (Enter чтобы пропустить): ").strip()
+                if choice.isdigit():
+                    ci = int(choice)
+                    if 1 <= ci <= len(cat_names):
+                        selected_key = cat_names[ci - 1][0]
+                        df.loc[uncls.index[idx - 1], "category"] = selected_key
+                        # Persist rule by 'contains' text blob
+                        rule = {"contains": text_blob[:160], "category": selected_key}
+                        existing_rules.append(rule)
+            # Save updated rules if any
             try:
-                with open(args.assign_json, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    if isinstance(data, list):
-                        existing_rules = data
-            except Exception:
-                pass
-        for idx, (_, row) in enumerate(uncls.head(max_preview).iterrows(), start=1):
-            text_blob = " ".join(str(x) for x in [row.get(desc_col), row.get(value_col), row.get(part_col)] if pd.notna(x))
-            print(f"[{idx}] {text_blob}")
-            for i, (_, ru) in enumerate(cat_names, start=1):
-                print(f"  {i}. {ru}")
-            choice = input("Выберите номер категории (Enter чтобы пропустить): ").strip()
-            if choice.isdigit():
-                ci = int(choice)
-                if 1 <= ci <= len(cat_names):
-                    selected_key = cat_names[ci - 1][0]
-                    df.loc[uncls.index[idx - 1], "category"] = selected_key
-                    # Persist rule by 'contains' text blob
-                    rule = {"contains": text_blob[:160], "category": selected_key}
-                    existing_rules.append(rule)
-        # Save updated rules if any
-        try:
-            if args.assign_json:
-                with open(args.assign_json, "w", encoding="utf-8") as f:
-                    json.dump(existing_rules, f, ensure_ascii=False, indent=2)
-                print(f"Сохранил правила: {args.assign_json}")
-        except Exception as exc:
-            print(f"Не удалось сохранить правила: {exc}")
-        # Optionally redo classification for remaining items if needed (skipped for simplicity)
+                if args.assign_json:
+                    with open(args.assign_json, "w", encoding="utf-8") as f:
+                        json.dump(existing_rules, f, ensure_ascii=False, indent=2)
+                    print(f"Сохранил правила: {args.assign_json}")
+            except Exception as exc:
+                print(f"Не удалось сохранить правила: {exc}")
+            # Optionally redo classification for remaining items if needed (skipped for simplicity)
 
     # Объединяем категории для "Отладочные модули"
     debug_modules_parts = []
@@ -826,7 +927,11 @@ def main():
                         pass
                 df.loc[mask, "category"] = cat
             # refresh outputs
+            # Сохраняем debug_modules_combined перед перезаписью outputs
+            saved_debug_modules = outputs.get("debug_modules", pd.DataFrame())
             outputs = {k: df[df["category"] == k] for k in outputs.keys()}
+            # Восстанавливаем debug_modules (объединенную категорию)
+            outputs["debug_modules"] = saved_debug_modules
 
     # Enrich each output with MR code and total quantity per item
     def enrich_with_mr_and_total(frame: pd.DataFrame) -> pd.DataFrame:
@@ -1016,9 +1121,42 @@ def main():
         # Извлечь и удалить типы компонентов в начале
         # ПРИОРИТЕТ 1: Тип из самого компонента (в начале описания)
         component_type = ''
-        component_types = ['Резистор', 'Конденсатор', 'Микросхема', 'Разъем', 'Диод', 
-                          'Транзистор', 'Индуктивность', 'Дроссель', 'Кабель', 'Модуль',
-                          'Стабилитрон', 'Вилка', 'Розетка', 'Генератор', 'Транзисторная матрица']
+        component_types = [
+            'ЧИП КОНДЕНСАТОР КЕРАМИЧЕСКИЙ',
+            'ЧИП КОНДЕНСАТОР',
+            'НАБОР РЕЗИСТОРОВ',
+            'НАБОР КОНДЕНСАТОРОВ',
+            'ТРАНЗИСТОРНАЯ МАТРИЦА',
+            'Транзисторная матрица',
+            'Резистор', 
+            'РЕЗИСТОР',
+            'Конденсатор',
+            'КОНДЕНСАТОР',
+            'Микросхема',
+            'МИКРОСХЕМА',
+            'Разъем',
+            'РАЗЪЕМ',
+            'Диод',
+            'ДИОД',
+            'Транзистор',
+            'ТРАНЗИСТОР',
+            'Индуктивность',
+            'ИНДУКТИВНОСТЬ',
+            'Дроссель',
+            'ДРОССЕЛЬ',
+            'Кабель',
+            'КАБЕЛЬ',
+            'Модуль',
+            'МОДУЛЬ',
+            'Стабилитрон',
+            'СТАБИЛИТРОН',
+            'Вилка',
+            'ВИЛКА',
+            'Розетка',
+            'РОЗЕТКА',
+            'Генератор',
+            'ГЕНЕРАТОР'
+        ]
         # Сортируем по длине (от самых длинных к самым коротким), чтобы сначала проверять более специфичные типы
         component_types_sorted = sorted(component_types, key=len, reverse=True)
         type_found_in_text = False
@@ -1036,6 +1174,26 @@ def main():
         
         # Очистить от лишних пробелов
         text = ' '.join(text.split())
+        
+        # Исправить регистр для единиц измерения
+        # Заменяем ОМ на Ом, КОМ на кОм, МОМ на МОм и т.д.
+        import re
+        # Паттерн для единиц измерения (с учетом различных вариантов написания)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*ОМ\b', r'\1 Ом', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*КОМ\b', r'\1 кОм', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*МОМ\b', r'\1 МОм', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*ПФ\b', r'\1 пФ', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*НФ\b', r'\1 нФ', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*МКФ\b', r'\1 мкФ', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*МФ\b', r'\1 мФ', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*ГН\b', r'\1 Гн', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*МГН\b', r'\1 мГн', text, flags=re.IGNORECASE)
+        text = re.sub(r'\b(\d+[,.]?\d*)\s*МКГН\b', r'\1 мкГн', text, flags=re.IGNORECASE)
+        
+        # Также исправляем варианты без пробела между цифрой и единицей
+        text = re.sub(r'(\d+[,.]?\d*)ОМ\b', r'\1 Ом', text, flags=re.IGNORECASE)
+        text = re.sub(r'(\d+[,.]?\d*)КОМ\b', r'\1 кОм', text, flags=re.IGNORECASE)
+        text = re.sub(r'(\d+[,.]?\d*)МОМ\b', r'\1 МОм', text, flags=re.IGNORECASE)
         
         return text, tu_code, component_type
     
@@ -1287,15 +1445,27 @@ def main():
             # Добавить новую колонку № п/п в начало (ПОСЛЕ сортировки!)
             result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
             
+            # Переименовать source_file в Источник
+            if 'source_file' in result_df.columns:
+                result_df = result_df.rename(columns={'source_file': 'Источник'})
+            
+            # Удалить ненужные колонки
+            cols_to_remove = ['ед. изм. ктд', 'код мр', '_merged_qty_', 
+                            'ед. изм. КТД', 'Код МР', 'Код мр', 'ед. изм. КТД', 'Код МР']
+            for col in cols_to_remove:
+                if col in result_df.columns:
+                    result_df = result_df.drop(columns=[col])
+            
             # Упорядочить колонки в правильном порядке
-            # Стандартный порядок: № п/п, Наименование ИВП, ТУ, Примечание, source_file, Код МР, Кол-во
-            desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Примечание', 'source_file', 'Код МР', 'Кол-во']
+            # Стандартный порядок: № п/п, Наименование ИВП, ТУ, Примечание, Источник, Кол-во
+            desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Примечание', 'Источник', 'Кол-во']
             
             # Сначала добавляем колонки в нужном порядке (если они есть)
             ordered_cols = [col for col in desired_order if col in result_df.columns]
             
-            # Затем добавляем оставшиеся колонки (если вдруг есть)
-            remaining_cols = [col for col in result_df.columns if col not in ordered_cols]
+            # Затем добавляем оставшиеся колонки (если вдруг есть), кроме удаленных
+            remaining_cols = [col for col in result_df.columns 
+                            if col not in ordered_cols and col not in cols_to_remove]
             
             # Финальный порядок
             final_cols = ordered_cols + remaining_cols
@@ -1426,7 +1596,7 @@ def main():
                 print(f"Warning: Could not create TXT for {rus_name}: {e}")
         
         print(f"TXT files written to: {args.txt_dir}")
-    
+
     # Print counts
     print("Split complete:")
     for name, part_df in outputs.items():

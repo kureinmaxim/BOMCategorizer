@@ -1,9 +1,9 @@
 {
   "app_info": {
-    "version": "1.4.0",
+    "version": "1.7.0",
     "release_date": "07.10.2025",
     "developer": "Куреин М.Н.",
-    "description": "Категоризатор BOM файлов (A-prefix Dev Boards + Semiconductors Category)",
+    "description": "Категоризатор BOM файлов (Auto Interactive + Fixed Output)",
     "last_updated": "2025-10-07"
   }
 }

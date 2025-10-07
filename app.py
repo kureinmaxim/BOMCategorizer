@@ -65,7 +65,7 @@ class App(tk.Tk):
         ver = cfg.get("app_info", {}).get("version", "dev")
         name = cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("720x520")
+        self.geometry("720x560")
 
         self.input_files: list[str] = []
         self.sheet_spec = tk.StringVar()
@@ -90,48 +90,38 @@ class App(tk.Tk):
         ttk.Label(frm, text="Входные файлы (XLSX/DOCX/DOC/TXT):").grid(row=row, column=0, sticky="w", **pad)
         ttk.Button(frm, text="Добавить файлы", command=self.on_add_files).grid(row=row, column=1, sticky="w", **pad)
         ttk.Button(frm, text="Очистить", command=self.on_clear_files).grid(row=row, column=2, sticky="w", **pad)
-        self.listbox = tk.Listbox(frm, height=6)
+        self.listbox = tk.Listbox(frm, height=5)
         self.listbox.grid(row=row+1, column=0, columnspan=3, sticky="nsew", **pad)
         frm.grid_rowconfigure(row+1, weight=1)
         frm.grid_columnconfigure(2, weight=1)
 
         row += 2
-        ttk.Label(frm, text="Листы (например: 3,4). Для DOC/DOCX/TXT не требуется:").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        ttk.Label(frm, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
         ttk.Entry(frm, textvariable=self.sheet_spec).grid(row=row+1, column=0, columnspan=3, sticky="ew", **pad)
 
         row += 2
-        ttk.Label(frm, text="Существующий XLSX для добавления (опционально):").grid(row=row, column=0, sticky="w", **pad)
-        ttk.Entry(frm, textvariable=self.merge_into).grid(row=row, column=1, sticky="ew", **pad)
-        ttk.Button(frm, text="Выбрать...", command=self.on_pick_merge).grid(row=row, column=2, sticky="w", **pad)
-
-        row += 1
         ttk.Label(frm, text="Выходной XLSX:").grid(row=row, column=0, sticky="w", **pad)
         ttk.Entry(frm, textvariable=self.output_xlsx).grid(row=row, column=1, sticky="ew", **pad)
         ttk.Button(frm, text="Сохранить как...", command=self.on_pick_output).grid(row=row, column=2, sticky="w", **pad)
 
         row += 1
-        ttk.Label(frm, text="JSON с правилами автоклассификации (опционально):").grid(row=row, column=0, sticky="w", **pad)
-        ttk.Entry(frm, textvariable=self.assign_json).grid(row=row, column=1, sticky="ew", **pad)
-        ttk.Button(frm, text="Выбрать...", command=self.on_pick_assign).grid(row=row, column=2, sticky="w", **pad)
-
-        row += 1
-        ttk.Checkbutton(frm, text="Создать TXT по категориям", variable=self.create_txt, command=self.on_toggle_txt).grid(row=row, column=0, sticky="w", **pad)
+        ttk.Label(frm, text="Папка для TXT файлов (опционально):").grid(row=row, column=0, sticky="w", **pad)
         ttk.Entry(frm, textvariable=self.txt_dir).grid(row=row, column=1, sticky="ew", **pad)
-        ttk.Button(frm, text="Выбрать папку...", command=self.on_pick_txt_dir).grid(row=row, column=2, sticky="w", **pad)
+        ttk.Button(frm, text="Выбрать...", command=self.on_pick_txt_dir).grid(row=row, column=2, sticky="w", **pad)
 
         row += 1
-        ttk.Checkbutton(frm, text="Интерактивная разметка", variable=self.interactive).grid(row=row, column=0, sticky="w", **pad)
-        ttk.Checkbutton(frm, text="Суммарная комплектация (SUMMARY)", variable=self.combine).grid(row=row, column=1, sticky="w", **pad)
-        ttk.Checkbutton(frm, text="Более свободные эвристики", variable=self.loose).grid(row=row, column=2, sticky="w", **pad)
+        ttk.Checkbutton(frm, text="Суммарная комплектация (SUMMARY)", variable=self.combine).grid(row=row, column=0, sticky="w", **pad)
+        ttk.Checkbutton(frm, text="Более свободные эвристики", variable=self.loose).grid(row=row, column=1, sticky="w", **pad)
 
         row += 1
-        ttk.Button(frm, text="Запустить", command=self.on_run).grid(row=row, column=0, sticky="w", **pad)
+        ttk.Button(frm, text="Запустить обработку", command=self.on_run).grid(row=row, column=0, columnspan=2, sticky="ew", **pad)
+        ttk.Button(frm, text="Интерактивная классификация", command=self.on_interactive_classify).grid(row=row, column=2, sticky="ew", **pad)
 
         row += 1
         ttk.Label(frm, text="Лог:").grid(row=row, column=0, sticky="w", **pad)
-        self.txt = tk.Text(frm, height=12)
+        self.txt = tk.Text(frm, height=10, wrap=tk.WORD)
         self.txt.grid(row=row+1, column=0, columnspan=3, sticky="nsew", **pad)
-        frm.grid_rowconfigure(row+1, weight=1)
+        frm.grid_rowconfigure(row+1, weight=2)
 
     def on_add_files(self):
         files = filedialog.askopenfilenames(
@@ -148,20 +138,10 @@ class App(tk.Tk):
             if f not in self.input_files:
                 self.input_files.append(f)
                 self.listbox.insert(tk.END, f)
-        self.update_input_files()
-        if not self.output_xlsx.get():
-            self.autofill_output_path()
-        self.update_terminal_commands()
 
     def on_clear_files(self):
+        self.input_files.clear()
         self.listbox.delete(0, tk.END)
-        self.update_input_files()
-        self.update_terminal_commands()
-
-    def on_pick_merge(self):
-        f = filedialog.askopenfilename(title="Выберите существующий XLSX", filetypes=[("Excel", "*.xlsx")])
-        if f:
-            self.merge_into.set(f)
 
     def on_pick_output(self):
         f = filedialog.asksaveasfilename(title="Выберите выходной XLSX", defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
@@ -169,176 +149,265 @@ class App(tk.Tk):
             self.output_xlsx.set(f)
 
     def on_pick_txt_dir(self):
-        from tkinter import filedialog
         d = filedialog.askdirectory(title="Выберите папку для TXT файлов")
         if d:
             self.txt_dir.set(d)
-            self.create_txt.set(True)
 
-    def on_toggle_txt(self):
-        if self.create_txt.get() and not self.txt_dir.get().strip():
-            # Auto-suggest directory name based on output XLSX
-            import os
-            xlsx_path = self.output_xlsx.get().strip()
-            if xlsx_path:
-                base_dir = os.path.dirname(xlsx_path) or "."
-                base_name = os.path.splitext(os.path.basename(xlsx_path))[0]
-                suggested_dir = os.path.join(base_dir, f"{base_name}_txt")
-                self.txt_dir.set(suggested_dir)
-
-    def on_pick_assign(self):
-        f = filedialog.askopenfilename(title="Выберите JSON", filetypes=[("JSON", "*.json")])
-        if f:
-            self.assign_json.set(f)
-
-    def get_base_args(self, interactive_mode=False):
+    def _build_args(self, output_file):
+        """Формирует список аргументов для CLI"""
         args = []
-        
-        # Inputs
-        inputs = list(self.input_files)
-        if not inputs:
-            return None
-
-        if interactive_mode:
-            args += ["--input", f'"{inputs[0]}"'] # Interactive script uses --input for a single file
-        else:
-            args += ["--inputs"] + [f'"{f}"' for f in inputs]
-
-        # Outputs
-        output_xlsx = self.output_xlsx.get().strip()
-        if output_xlsx:
-            if interactive_mode:
-                args += ["--output", f'"{output_xlsx}"']
-            else:
-                args += ["--xlsx", f'"{output_xlsx}"']
-        
-        # Sheets
-        sheets = self.sheet_spec.get().strip()
-        if sheets:
-            args += ["--sheets", f'"{sheets}"']
-
-        # Rules
-        assign_json = self.assign_json.get().strip()
-        if assign_json:
-            if interactive_mode:
-                args += ["--rules", f'"{assign_json}"']
-            else:
-                args += ["--assign-json", f'"{assign_json}"']
-
+        if self.input_files:
+            args.extend(["--inputs"] + self.input_files)
+        sheet_txt = self.sheet_spec.get().strip()
+        if sheet_txt:
+            args.extend(["--sheets", sheet_txt])
+        args.extend(["--xlsx", output_file])
+        if self.combine.get():
+            args.append("--combine")
+        if self.loose.get():
+            args.append("--loose")
+        td = self.txt_dir.get().strip()
+        if td:
+            args.extend(["--txt-dir", td])
         return args
-
-    def update_terminal_commands(self, *args):
-        # --- Command for split_bom.py ---
-        base_args = self.get_base_args(interactive_mode=False)
-        if not base_args:
-            full_command = "# Добавьте входные файлы для генерации команды"
-            interactive_command = "# Добавьте входной файл для генерации команды"
-        else:
-            # Standard command
-            args_split_bom = base_args[:]
-            if self.txt_dir.get().strip():
-                args_split_bom += ["--txt-dir", f'"{self.txt_dir.get().strip()}"']
-            if self.merge_into.get().strip():
-                args_split_bom += ["--merge-into", f'"{self.merge_into.get().strip()}"']
-            if self.combine.get():
-                args_split_bom.append("--combine")
-            if self.loose.get():
-                args_split_bom.append("--loose")
-            
-            full_command = f".\\.venv\\Scripts\\python.exe split_bom.py {' '.join(args_split_bom)}"
-
-            # --- Command for interactive_classify.py ---
-            # Interactive mode only uses the first input file and a subset of args
-            args_interactive = self.get_base_args(interactive_mode=True)
-            interactive_command = f".\\.venv\\Scripts\\python.exe interactive_classify.py {' '.join(args_interactive)}"
-
-        content = (
-            "# Обычная обработка (автоматический режим):\n"
-            f"{full_command}\n\n"
-            "# Интерактивная классификация (для обучения):\n"
-            f"{interactive_command}"
-        )
-        
-        self.cmd_text.config(state=tk.NORMAL)
-        self.cmd_text.delete("1.0", tk.END)
-        self.cmd_text.insert("1.0", content)
-        self.cmd_text.config(state=tk.DISABLED)
-
 
     def on_run(self):
         if not self.input_files:
             messagebox.showerror("Ошибка", "Добавьте хотя бы один входной файл (XLSX/DOCX/DOC/TXT)")
             return
         
-        base_args = self.get_base_args(interactive_mode=False)
-        if not base_args: return # Should not happen due to check above
-        
-        # Start with base args and add the rest
-        args = base_args[1:] # Remove --inputs prefix as it is handled differently by the list
-        args = [arg.strip('"') for arg in args] # Remove quotes for subprocess
-        
-        run_args = ["--inputs"]
-
-        # Find the end of input files list
-        try:
-            xlsx_index = args.index('--xlsx')
-            run_args.extend(args[:xlsx_index])
-            remaining_args = args[xlsx_index:]
-        except ValueError:
-            run_args.extend(args)
-            remaining_args = []
-        
-        if self.txt_dir.get().strip():
-            remaining_args += ["--txt-dir", self.txt_dir.get().strip()]
-        if self.merge_into.get().strip():
-            remaining_args += ["--merge-into", self.merge_into.get().strip()]
-        if self.combine.get():
-            remaining_args += ["--combine"]
-        if self.loose.get():
-            remaining_args += ["--loose"]
-        
-        # Re-add --assign-json if it was in remaining_args
-        if "--assign-json" in remaining_args:
-             pass # it is already there
-        elif self.assign_json.get().strip():
-             # it might have been consumed by get_base_args but we need it for split_bom
-             if "--rules" not in remaining_args:
-                 remaining_args += ["--assign-json", self.assign_json.get().strip()]
-
-        final_args = run_args + remaining_args
-        
-        # Clear log and add new command
+        args = self._build_args(self.output_xlsx.get())
         self.txt.delete("1.0", tk.END)
-        
-        # Ensure all args are strings
-        final_args = [str(arg) for arg in final_args]
-        
-        try:
-            cmd_str = f"Запуск: split_bom {' '.join(final_args)}\n"
-            self.txt.insert(tk.END, cmd_str)
-            self.txt.see(tk.END)
-            self.update()
-        except Exception as e:
-            self.txt.insert(tk.END, f"Ошибка формирования команды: {e}\n")
-            return
+        self.txt.insert(tk.END, f"Запуск: split_bom {' '.join(args)}\n\n")
+        self.update_idletasks()
 
-        try:
-            # Use a list of args for subprocess
-            result = subprocess.run(
-                [".\\.venv\\Scripts\\python.exe", "split_bom.py"] + final_args,
-                capture_output=True, text=True, check=True, encoding='utf-8', creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            if result.stdout:
-                self.txt.insert(tk.END, result.stdout)
-            self.txt.insert(tk.END, "\nГотово.\n")
-        except subprocess.CalledProcessError as e:
-            self.txt.insert(tk.END, f"Ошибка выполнения: {e.stderr}\n")
-        except Exception as e:
-            self.txt.insert(tk.END, f"Непредвиденная ошибка: {e}\n")
+        def after_run(output_text):
+            self.txt.insert(tk.END, output_text)
+            self.txt.insert(tk.END, "\n\nГотово.\n")
+            self.txt.see(tk.END)
+            self.update_idletasks()
         
-        self.txt.see(tk.END)
+        run_cli_async(args, after_run)
+
+    def on_interactive_classify(self):
+        """Интерактивная классификация нераспределенных элементов"""
+        if not self.input_files:
+            messagebox.showerror("Ошибка", "Добавьте хотя бы один входной файл")
+            return
+        
+        # Создаем временный выходной файл
+        temp_output = "temp_for_classification.xlsx"
+        
+        # Запускаем обработку
+        args = self._build_args(temp_output)
+        self.txt.delete("1.0", tk.END)
+        self.txt.insert(tk.END, "Обработка файлов для определения нераспределенных элементов...\n")
+        self.update_idletasks()
+        
+        def after_first_run(output_text):
+            self.txt.insert(tk.END, output_text)
+            self.update_idletasks()
+            
+            # Проверяем наличие нераспределенных элементов
+            try:
+                import pandas as pd
+                df_un = pd.read_excel(temp_output, sheet_name='Не распределено')
+                df_un_valid = df_un[df_un['Наименование ИВП'].notna()]
+                
+                if df_un_valid.empty:
+                    messagebox.showinfo("Информация", "Все элементы успешно классифицированы!")
+                    return
+                
+                # Открываем окно для интерактивной классификации
+                self.open_classification_dialog(df_un_valid, temp_output)
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось прочитать нераспределенные элементы: {e}")
+        
+        run_cli_async(args, after_first_run)
+    
+    def open_classification_dialog(self, df_unclassified, temp_output):
+        """Открывает диалог для классификации элементов"""
+        dialog = tk.Toplevel(self)
+        dialog.title("Интерактивная классификация")
+        dialog.geometry("900x650")
+        dialog.grab_set()  # Модальное окно
+        
+        # Категории
+        categories = [
+            ("1", "Отладочные модули"),
+            ("2", "Микросхемы"),
+            ("3", "Резисторы"),
+            ("4", "Конденсаторы"),
+            ("5", "Индуктивности"),
+            ("6", "Полупроводники"),
+            ("7", "Разъемы"),
+            ("8", "Оптические компоненты"),
+            ("9", "Модули питания"),
+            ("10", "Кабели"),
+            ("11", "Другие"),
+            ("0", "Пропустить"),
+        ]
+        
+        self.current_index = 0
+        self.classifications = []
+        unclassified_list = df_unclassified.to_dict('records')
+        
+        # Верхняя панель
+        top_frame = ttk.Frame(dialog)
+        top_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        progress_label = ttk.Label(top_frame, text="", font=("Arial", 10))
+        progress_label.pack()
+        
+        # Средняя панель - информация об элементе
+        info_frame = ttk.LabelFrame(dialog, text="Информация об элементе", padding=15)
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        name_label = ttk.Label(info_frame, text="", font=("Arial", 12, "bold"), wraplength=850)
+        name_label.pack(pady=10)
+        
+        details_frame = ttk.Frame(info_frame)
+        details_frame.pack(fill=tk.X, pady=5)
+        
+        qty_label = ttk.Label(details_frame, text="", font=("Arial", 10))
+        qty_label.pack(side=tk.LEFT, padx=10)
+        
+        source_label = ttk.Label(details_frame, text="", font=("Arial", 10))
+        source_label.pack(side=tk.LEFT, padx=10)
+        
+        # Панель выбора категории
+        cat_frame = ttk.LabelFrame(dialog, text="Выберите категорию (или нажмите 0-11 на клавиатуре)", padding=10)
+        cat_frame.pack(fill=tk.BOTH, padx=10, pady=10)
+        
+        # Создаем 2 колонки кнопок
+        left_col = ttk.Frame(cat_frame)
+        left_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        
+        right_col = ttk.Frame(cat_frame)
+        right_col.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5)
+        
+        def update_display():
+            if self.current_index >= len(unclassified_list):
+                # Все элементы классифицированы
+                self.save_classifications_and_rerun(dialog, temp_output)
+                return
+            
+            item = unclassified_list[self.current_index]
+            progress_label.config(text=f"Элемент {self.current_index + 1} из {len(unclassified_list)}")
+            name_label.config(text=f"{item.get('Наименование ИВП', 'N/A')}")
+            qty_label.config(text=f"Количество: {item.get('Кол-во', 'N/A')}")
+            source_label.config(text=f"Источник: {item.get('source_file', 'N/A')}")
+        
+        def on_category_select(cat_num):
+            item = unclassified_list[self.current_index]
+            if cat_num != "0":  # Не пропускать
+                self.classifications.append({
+                    "name": str(item.get('Наименование ИВП', '')),
+                    "category_num": cat_num,
+                    "category_name": dict(categories)[cat_num]
+                })
+            self.current_index += 1
+            update_display()
+        
+        def on_key_press(event):
+            key = event.char
+            if key in dict(categories).keys():
+                on_category_select(key)
+        
+        # Bind keyboard shortcuts
+        dialog.bind('<Key>', on_key_press)
+        
+        # Создаем кнопки для каждой категории
+        for i, (num, name) in enumerate(categories):
+            col = left_col if i < len(categories) // 2 + 1 else right_col
+            btn = ttk.Button(col, text=f"{num}. {name}", 
+                            command=lambda n=num: on_category_select(n))
+            btn.pack(fill=tk.X, pady=3)
+        
+        # Нижняя панель
+        bottom_frame = ttk.Frame(dialog)
+        bottom_frame.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttk.Label(bottom_frame, text=f"Правила будут сохранены в rules.json", 
+                 font=("Arial", 9, "italic")).pack(side=tk.LEFT)
+        ttk.Button(bottom_frame, text="Отмена", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
+        
+        update_display()
+        dialog.focus_set()
+    
+    def save_classifications_and_rerun(self, dialog, temp_output):
+        """Сохраняет классификации в rules.json и повторно запускает обработку"""
+        dialog.destroy()
+        
+        if not self.classifications:
+            messagebox.showinfo("Информация", "Никакие элементы не были классифицированы")
+            return
+        
+        # Маппинг номеров категорий на внутренние имена
+        cat_map = {
+            "1": "dev_boards",
+            "2": "ics",
+            "3": "resistors",
+            "4": "capacitors",
+            "5": "inductors",
+            "6": "semiconductors",
+            "7": "connectors",
+            "8": "optics",
+            "9": "power_modules",
+            "10": "cables",
+            "11": "others"
+        }
+        
+        # Загружаем существующие правила
+        rules_file = "rules.json"
+        try:
+            with open(rules_file, "r", encoding="utf-8") as f:
+                rules = json.load(f)
+        except:
+            rules = []
+        
+        # Добавляем новые правила
+        added_count = 0
+        for cls in self.classifications:
+            # Извлекаем первое слово из названия как ключевое
+            name = cls['name']
+            words = name.split()
+            if words:
+                keyword = words[0].lower().strip()
+                category = cat_map.get(cls['category_num'], 'others')
+                
+                # Проверяем, нет ли уже такого правила
+                if not any(r.get('contains') == keyword and r.get('category') == category for r in rules):
+                    rules.append({
+                        "contains": keyword,
+                        "category": category,
+                        "comment": f"Добавлено пользователем для '{name}'"
+                    })
+                    added_count += 1
+        
+        # Сохраняем правила
+        with open(rules_file, "w", encoding="utf-8") as f:
+            json.dump(rules, f, ensure_ascii=False, indent=2)
+        
+        self.txt.insert(tk.END, f"\n\n✅ Сохранено {added_count} новых правил классификации в {rules_file}\n")
+        self.txt.insert(tk.END, "Повторная обработка с новыми правилами...\n\n")
+        self.update_idletasks()
+        
+        # Повторно запускаем обработку с учетом правил
+        args = self._build_args(self.output_xlsx.get())
+        args.extend(["--assign-json", rules_file])
+        
+        def after_rerun(output_text):
+            self.txt.insert(tk.END, output_text)
+            self.txt.insert(tk.END, "\n\n✅ Обработка завершена с учетом новых правил!\n")
+            self.txt.see(tk.END)
+            self.update_idletasks()
+            messagebox.showinfo("Готово", f"Обработка завершена!\n\nПрименено {added_count} новых правил классификации.\nОбщее количество правил: {len(rules)}")
+        
+        run_cli_async(args, after_rerun)
 
 
 if __name__ == "__main__":
     app = App()
     app.mainloop()
+
