@@ -1,4 +1,4 @@
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.4.0"
 [Setup]
 AppName=BOM Categorizer
 AppVersion={#MyAppVersion}
@@ -20,3 +20,4 @@ Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-Exe
 [Icons]
 Name: "{group}\BOM Categorizer"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 2
 Name: "{group}\Uninstall BOM Categorizer"; Filename: "{uninstallexe}"
+Name: "{userdesktop}\BOM Categorizer"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 2

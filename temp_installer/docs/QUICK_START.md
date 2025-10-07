@@ -1,15 +1,59 @@
 # ⚡ Быстрая шпаргалка
 
+## 🚀 Запуск из проекта (Windows)
+
+### Активация виртуального окружения
+
+```powershell
+# В PowerShell (рекомендуется)
+.\.venv\Scripts\Activate.ps1
+
+# Или в CMD
+.venv\Scripts\activate.bat
+```
+
+**После активации** командная строка будет выглядеть так:
+```
+(.venv) PS C:\Project\ProjectSnabjenie>
+```
+
+Теперь можно запускать команды просто через `python`:
+
+```bash
+# Запуск GUI
+python app.py
+
+# Запуск CLI
+python split_bom.py --inputs "myfile.xlsx" --xlsx result.xlsx --combine
+```
+
+### ⚡ Быстрые команды БЕЗ активации
+
+Если не хотите активировать окружение каждый раз:
+
+```powershell
+# Запуск GUI
+.\.venv\Scripts\python.exe app.py
+
+# Запуск CLI
+.\.venv\Scripts\python.exe split_bom.py --inputs "myfile.xlsx" --xlsx result.xlsx --combine
+```
+
+---
+
 ## 🎯 Основные сценарии использования
 
 ### Сценарий 1: Быстрая обработка файла
 
 ```bash
 # Простейший вариант
-.venv\Scripts\python.exe split_bom.py --inputs "myfile.xlsx" --xlsx result.xlsx --combine
+python split_bom.py --inputs "myfile.xlsx" --xlsx result.xlsx --combine
 
 # С экспортом в TXT (рекомендуется!)
-.venv\Scripts\python.exe split_bom.py --inputs "myfile.xlsx" --xlsx result.xlsx --txt-dir result_txt --combine
+python split_bom.py --inputs "myfile.xlsx" --xlsx result.xlsx --txt-dir result_txt --combine
+
+# Или БЕЗ активации виртуального окружения:
+.\.venv\Scripts\python.exe split_bom.py --inputs "myfile.xlsx" --xlsx result.xlsx --txt-dir result_txt --combine
 ```
 
 **Результат:**
@@ -23,7 +67,10 @@
 Это самый эффективный способ "научить" программу правильно распознавать ваши компоненты.
 
 ```bash
-.venv\Scripts\python.exe interactive_classify.py --input "myfile.xlsx" --output result.xlsx
+python interactive_classify.py --input "myfile.xlsx" --output result.xlsx
+
+# Или БЕЗ активации:
+.\.venv\Scripts\python.exe interactive_classify.py --input "myfile.xlsx" --output result.xlsx
 ```
 
 **Процесс:**
@@ -43,7 +90,10 @@
 ### Сценарий 3: Обработка нескольких файлов
 
 ```bash
-.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" "file3.txt" --xlsx combined.xlsx --txt-dir combined_txt --assign-json rules.json --combine
+python split_bom.py --inputs "file1.xlsx" "file2.doc" "file3.txt" --xlsx combined.xlsx --txt-dir combined_txt --assign-json rules.json --combine
+
+# Или БЕЗ активации:
+.\.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" "file3.txt" --xlsx combined.xlsx --txt-dir combined_txt --assign-json rules.json --combine
 ```
 
 **Результат:**
@@ -56,7 +106,10 @@
 ### Сценарий 4: Использование GUI
 
 ```bash
-.venv\Scripts\python.exe app.py
+python app.py
+
+# Или БЕЗ активации:
+.\.venv\Scripts\python.exe app.py
 ```
 
 **В интерфейсе:**
@@ -72,23 +125,25 @@
 
 ### Обработка DOC файла
 ```bash
-.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx result.xlsx --txt-dir result_txt --combine
+python split_bom.py --inputs "example/БЗ.doc" --xlsx result.xlsx --txt-dir result_txt --combine
 ```
 
 ### Обработка с правилами
 ```bash
-.venv\Scripts\python.exe split_bom.py --inputs "file.xlsx" --xlsx result.xlsx --assign-json rules.json --combine
+python split_bom.py --inputs "file.xlsx" --xlsx result.xlsx --assign-json rules.json --combine
 ```
 
 ### Интерактивный режим
 ```bash
-.venv\Scripts\python.exe interactive_classify.py --input "file.xlsx" --rules rules.json
+python interactive_classify.py --input "file.xlsx" --rules rules.json
 ```
 
 ### Обработка конкретных листов XLSX
 ```bash
-.venv\Scripts\python.exe split_bom.py --inputs "file.xlsx" --sheets "3,4" --xlsx result.xlsx --combine
+python split_bom.py --inputs "file.xlsx" --sheets "3,4" --xlsx result.xlsx --combine
 ```
+
+> 💡 **Примечание:** Все команды выше предполагают активированное виртуальное окружение. Если не активировали, добавьте `.\.venv\Scripts\` перед `python.exe`
 
 ---
 
@@ -162,7 +217,7 @@ TXT файлы намного удобнее для быстрого просм�
 
 **Решение 1:** Используйте интерактивный режим
 ```bash
-.venv\Scripts\python.exe interactive_classify.py --input "file.xlsx"
+python interactive_classify.py --input "file.xlsx"
 ```
 
 **Решение 2:** Отредактируйте `rules.json` вручную

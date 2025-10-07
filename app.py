@@ -4,6 +4,17 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk, scrolledtext
 import subprocess
+import sys
+
+# Исправление кодировки для корректного вывода русских символов
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 from split_bom import main as cli_main
 

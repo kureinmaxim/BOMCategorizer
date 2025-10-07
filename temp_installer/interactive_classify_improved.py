@@ -12,11 +12,15 @@ import argparse
 import pandas as pd
 from typing import List, Dict, Any
 
-# Исправление кодировки для Windows консоли
-if sys.platform == "win32":
-    import codecs
-    sys.stdout = codecs.getwriter("utf-8")(sys.stdout.detach())
-    sys.stderr = codecs.getwriter("utf-8")(sys.stderr.detach())
+# Исправление кодировки для корректного вывода русских символов
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 from split_bom import (
     parse_docx, parse_txt_like, normalize_column_names, 

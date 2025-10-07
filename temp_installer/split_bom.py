@@ -12,6 +12,17 @@ try:
 except Exception:
     Document = None  # optional; raise if used without installed
 
+# Исправление кодировки для корректного вывода русских символов в терминале
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Для старых версий Python
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+
 
 def normalize_column_names(columns: List[str]) -> List[str]:
     normalized = []
@@ -84,6 +95,7 @@ def parse_txt_like(path: str) -> pd.DataFrame:
 
 
 def parse_docx(path: str) -> pd.DataFrame:
+    import re  # Импортируем re в начале функции
     if Document is None:
         raise SystemExit("python-docx is required to parse DOCX. Install with pip install python-docx")
     doc = Document(path)
@@ -121,6 +133,10 @@ def parse_docx(path: str) -> pd.DataFrame:
         idx_qty = find_col_idx(["кол.", "кол ", "кол", "количество"])  # количество
         idx_note = find_col_idx(["примеч"])  # опционально
 
+        # Переменные для хранения текущего ТУ и типа компонента из заголовка группы
+        current_group_tu = ""
+        current_group_type = ""
+        
         for tr in table.rows[header_idx + 1:]:
             vals = [normalize_cell(c.text) for c in tr.cells]
             if not any(v.strip() for v in vals):
@@ -130,6 +146,61 @@ def parse_docx(path: str) -> pd.DataFrame:
             name = vals[idx_name] if idx_name is not None and idx_name < len(vals) else ""
             qty_raw = vals[idx_qty] if idx_qty is not None and idx_qty < len(vals) else ""
             note = vals[idx_note] if idx_note is not None and idx_note < len(vals) else ""
+            
+            # Проверить, является ли это строкой-заголовком группы
+            # Примеры: "Резисторы Р1-12 ШКАБ.434110.002 ТУ", "Набор резисторов НР1-4Р ШКАБ.434110.018 ТУ"
+            section_headers = ['конденсаторы', 'резисторы', 'микросхемы', 'дроссели', 'индуктивности',
+                             'разъемы', 'диоды', 'транзисторы', 'кабели', 'модули', 
+                             'набор резисторов', 'набор конденсаторов', 'набор микросхем']
+            name_lower = name.strip().lower()
+            
+            # Если строка начинается с названия раздела И нет позиционного обозначения И нет количества
+            # ИЛИ если в строке есть ТУ и нет позиционного обозначения и количества
+            is_group_header = False
+            has_tu_code = re.search(r'([А-ЯЁ]{2,}[\.\d]+ТУ)', name) or re.search(r'ТУ\s+[\d\-]+', name)
+            
+            if not ref.strip() and not qty_raw.strip():
+                # Проверяем: начинается ли с раздела ИЛИ содержит ТУ
+                if any(name_lower.startswith(section) for section in section_headers) or has_tu_code:
+                    is_group_header = True
+            
+            if is_group_header:
+                # Это заголовок группы - извлечь ТУ и тип компонента
+                
+                # Извлекаем ТУ (различные форматы)
+                # Важно: ТУ может быть с пробелом или без ("ШКАБ.434110.018 ТУ" или "ШКАБ.434110.018ТУ")
+                tu_pattern1 = r'([А-ЯЁ]{2,}\.\d+[\d\.\-]*\s*ТУ)'
+                tu_match1 = re.search(tu_pattern1, name)
+                if tu_match1:
+                    current_group_tu = tu_match1.group(1)
+                else:
+                    # Вариант 2: без точек (например, "СМ3.362.805ТУ")
+                    tu_pattern2 = r'([А-ЯЁ]{2,}[\d\.]+\s*ТУ)'
+                    tu_match2 = re.search(tu_pattern2, name)
+                    if tu_match2:
+                        current_group_tu = tu_match2.group(1)
+                    else:
+                        # Вариант 3: ТУ в начале (например, "ТУ 6329-019-07614320-99")
+                        tu_pattern3 = r'ТУ\s+([\d\-]+)'
+                        tu_match3 = re.search(tu_pattern3, name)
+                        if tu_match3:
+                            current_group_tu = 'ТУ ' + tu_match3.group(1)
+                        else:
+                            current_group_tu = ""
+                
+                # Извлекаем тип компонента (например, "Набор резисторов", "Резисторы")
+                # Для строк типа "Набор резисторов НР1-4Р ШКАБ.434110.018 ТУ"
+                # Нужно оставить только "Набор резисторов"
+                type_text = name
+                # Удаляем ТУ
+                if current_group_tu:
+                    type_text = type_text.replace(current_group_tu, '')
+                # Удаляем партномеры (буквы+цифры+дефис+буквы/цифры) и коды ТУ
+                type_text = re.sub(r'\s+[А-ЯЁ]+\d+[\dА-ЯЁ\-]*', '', type_text)  # НР1-4Р, Р1-12
+                type_text = re.sub(r'\s+[А-ЯЁ]+\.\d+[\d\.]*', '', type_text)  # ШКАБ.434110.018
+                current_group_type = type_text.strip()
+                
+                continue  # Пропускаем строку-заголовок, не добавляем в результат
 
             # If header wasn't detected, try fallback mapping by last column digits
             if not any([ref, name, qty_raw]) and len(vals) >= 2:
@@ -145,6 +216,25 @@ def parse_docx(path: str) -> pd.DataFrame:
                 except Exception:
                     qty = 1
 
+            # Добавить ТУ и тип из заголовка группы в note
+            # ТУ идет в note (колонка "Примечания" в исходном файле или для хранения ТУ)
+            # Тип компонента тоже идет в note (будет обработан позже в clean_component_name)
+            if current_group_tu or current_group_type:
+                parts = []
+                if current_group_type:
+                    parts.append(current_group_type)
+                if current_group_tu:
+                    parts.append(current_group_tu)
+                # НЕ добавляем исходный note, если есть ТУ из заголовка (чтобы не дублировать)
+                # if note.strip():
+                #     parts.append(note.strip())
+                note = ' | '.join(parts) if parts else note
+
+            # Не добавлять строку, если нет ни reference, ни description (name)
+            # (note может содержать ТУ из заголовка группы, но это не основные данные)
+            if not ref.strip() and not name.strip():
+                continue
+            
             row = {
                 "zone": zone,
                 "reference": ref,
@@ -176,7 +266,7 @@ def normalize_cell(s: Any) -> str:
     return (str(s or "").strip())
 
 
-def classify_row(ref: Optional[str], description: Optional[str], value: Optional[str], partname: Optional[str], strict: bool, source_file: Optional[str] = None) -> str:
+def classify_row(ref: Optional[str], description: Optional[str], value: Optional[str], partname: Optional[str], strict: bool, source_file: Optional[str] = None, note: Optional[str] = None) -> str:
     def to_text(x: Any) -> str:
         if x is None:
             return ""
@@ -194,9 +284,10 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     val = to_text(value)
     part = to_text(partname)
     src_file = to_text(source_file)
+    note_text = to_text(note)
 
-    # Create text blob early for use in reference-based checks
-    text_blob = " ".join([desc, val, part])
+    # Create text blob early for use in reference-based checks (теперь включая note!)
+    text_blob = " ".join([desc, val, part, note_text])
 
     # Refdes first where reliable
     ref_prefix = ref.split(" ")[0].upper() if ref else ""
@@ -243,9 +334,13 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
             return "ics"
         if ref_prefix.startswith(("J", "X", "P", "K", "XS", "XP", "JTAG")):
             return "connectors"
-        # Russian prefix "А" for attenuators (optics)
-        if ref_prefix.startswith(("А", "A")) and len(ref_prefix) <= 2:
-            # Check if it's really an attenuator, not just "A" prefix IC
+        # Prefix "A" or "А" (latin or cyrillic) -> отладочные платы (dev boards)
+        if ref_prefix in ("A", "А"):
+            # Simple prefix A1, A2, etc.
+            return "dev_boards"
+        # Russian prefix "А" for attenuators (optics) - only if longer than 2 chars or has optical keywords
+        if ref_prefix.startswith(("А", "A")) and len(ref_prefix) > 2:
+            # Check if it's really an attenuator
             if has_any(text_blob, ["аттенюат", "ослабител", "attenuator", "fc/apc", "fc/upc", "оптич"]):
                 return "optics"
         # Prefix "W" often used for RF modules, waveguides, delay lines
@@ -260,7 +355,19 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
             return "rf_modules"
         # Prefix "H" for indicators/LEDs
         if ref_prefix.startswith("H"):
-            return "diods"
+            return "semiconductors"
+        # Prefix "V", "VT", "Q" for transistors (BUT check text first - "Микросхема" has priority)
+        if ref_prefix.startswith(("V", "VT", "Q")):
+            # Если в тексте явно указано "Микросхема", то это микросхема
+            if has_any(text_blob, ["микросхем", "микросхема"]):
+                return "ics"
+            return "semiconductors"
+        # Prefix "D" for diodes (BUT check text first)
+        if ref_prefix.startswith("D"):
+            # Если в тексте явно указано "Микросхема" или другой IC тип
+            if has_any(text_blob, ["микросхем", "микросхема"]):
+                return "ics"
+            return "semiconductors"
         # Prefix "S" for switches/buttons (when not connectors)
         if ref_prefix.startswith("S"):
             if has_any(text_blob, ["переключ", "тумблер", "кнопка", "switch", "button", "toggle"]):
@@ -270,17 +377,23 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     if RESISTOR_VALUE_RE.search(text_blob) or has_any(text_blob, ["резист", "resistor"]):
         return "resistors"
 
-    if CAP_VALUE_RE.search(text_blob) or has_any(text_blob, ["конденс", "capacitor", "tantalum", "ceramic"]):
+    if CAP_VALUE_RE.search(text_blob) or has_any(text_blob, ["конденс", "capacitor", "tantalum", "ceramic", "к10-", "к53-"]):
         return "capacitors"
 
     if IND_VALUE_RE.search(text_blob) or has_any(text_blob, ["дросс", "индукт", "inductor", "ferrite", "феррит", "катушка", "choke"]):
         return "inductors"
     
-    # Diodes - check BEFORE ICs (because "стабил" in ICs catches "стабилитрон")
+    # Предохранители - check BEFORE semiconductors and ICs (чтобы имели приоритет)
+    if has_any(text_blob, ["предохранитель", "fuse", "fuzetec"]):
+        return "others"
+    
+    # Semiconductors (диоды, транзисторы, стабилитроны, оптроны) - check BEFORE ICs
     if has_any(text_blob, [
-        "диод", "стабилитрон", "индикатор", "led ", "svetodiod", "indicator"
+        "диод", "стабилитрон", "транзистор", "оптрон", "оптопар", "2с630", "2т630", "индикатор", 
+        "led ", "svetodiod", "indicator", "transistor", "optocoupler", "thyristor", "тиристор",
+        "mosfet", "igbt", "triac", "симистор", "полевой транзистор", "биполярный транзистор"
     ]):
-        return "diods"
+        return "semiconductors"
 
     if has_any(text_blob, [
         "микросхем", " ic", "mcu", "контроллер", "процессор", "оп-амп", "op-amp", "opamp", "adc", "dac", "fpga",
@@ -335,7 +448,8 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     # OTHER general hardware to bucket into 'others' (cabinets, bolts, shelves, keyboards etc.)
     if has_any(text_blob, [
         "rittal", "шкаф", "станция", "полка", "кронштейн", "ролик", "болт", "гайка", "шайба", "клавиатура", "моноблок",
-        "кабель", "клеммная", "корпус", "шасси", "стеллаж", "стойка", "провод", "розетка", "вентилятор", "генератор"
+        "кабель", "клеммная", "корпус", "шасси", "стеллаж", "стойка", "провод", "розетка", "вентилятор", "генератор",
+        "предохранитель", "держател", "зажим", "fuzetec"
     ]):
         return "others"
 
@@ -492,7 +606,8 @@ def main():
             val = row.get(value_col) if value_col else None
             part = row.get(part_col) if part_col else None
             src_file = row.get('source_file') if 'source_file' in input_df.columns else None
-            categories_local.append(classify_row(ref, desc, val, part, strict=not args.loose, source_file=src_file))
+            note_val = row.get('note') if 'note' in input_df.columns else None
+            categories_local.append(classify_row(ref, desc, val, part, strict=not args.loose, source_file=src_file, note=note_val))
         input_df = input_df.copy()
         input_df["category"] = categories_local
         return input_df
@@ -561,7 +676,7 @@ def main():
         "rf_modules": df[df["category"] == "rf_modules"],
         "cables": df[df["category"] == "cables"],
         "power_modules": df[df["category"] == "power_modules"],
-        "diods": df[df["category"] == "diods"],
+        "semiconductors": df[df["category"] == "semiconductors"],
         "our_developments": df[df["category"] == "our_developments"],
         "others": df[df["category"] == "others"],
         "unclassified": df[df["category"] == "unclassified"],
@@ -659,7 +774,7 @@ def main():
         "rf_modules": "СВЧ модули",
         "cables": "Кабели",
         "power_modules": "Модули питания",
-        "diods": "Диоды",
+        "semiconductors": "Полупроводники",
         "our_developments": "Наши разработки",
         "others": "Другие",
         "unclassified": "Не распределено",
@@ -730,47 +845,89 @@ def main():
         text = str(row[desc_col_name])
         original_text = text
         
-        # Извлечь ТУ (различные форматы)
-        tu_code = ''
+        # Проверить note на наличие ТУ и типа из заголовка группы
+        note_tu = ''
+        note_type = ''
         
-        # Вариант 1: ТУ с точками и дефисами (например, "АЕНВ.431320.515-01ТУ", "АЛЯР.434110.005ТУ")
-        tu_pattern1 = r'([А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ)'
+        if 'note' in row and pd.notna(row['note']) and ' | ' in str(row['note']):
+            note_parts = str(row['note']).split(' | ')
+            for part in note_parts:
+                part = part.strip()
+                # Если содержит ТУ - это код ТУ (запомним для fallback)
+                if 'ТУ' in part:
+                    note_tu = part
+                # Если начинается с "Набор" или других типов - это тип компонента (запомним для fallback)
+                elif any(part.startswith(t) for t in ['Набор', 'Резистор', 'Конденсатор', 'Микросхем']):
+                    note_type = part
+        
+        # ПРИОРИТЕТ 1: Искать ТУ в тексте компонента (собственное ТУ)
+        tu_code = ''
+        tu_found_in_text = False
+        
+        # Вариант 1: ТУ с опциональным суффиксом типа "/Д6", "/02" (например, "И93.456.000 ТУ/Д6")
+        tu_pattern1 = r'([А-ЯЁ]+[\d\.]+\s*ТУ[/А-ЯЁ\d]*)'
         tu_match1 = re.search(tu_pattern1, text)
         if tu_match1:
             tu_code = tu_match1.group(1)
+            tu_found_in_text = True
             text = text.replace(tu_code, '').strip()
         else:
-            # Вариант 2: ТУ в начале (например, "ТУ 6329-019-07614320-99")
-            tu_pattern2 = r'ТУ\s+([\d\-]+)'
+            # Вариант 2: ТУ с точками и дефисами (например, "АЕНВ.431320.515-01ТУ", "АЛЯР.434110.005ТУ")
+            tu_pattern2 = r'([А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ)'
             tu_match2 = re.search(tu_pattern2, text)
             if tu_match2:
-                tu_code = 'ТУ ' + tu_match2.group(1)
+                tu_code = tu_match2.group(1)
+                tu_found_in_text = True
                 text = text.replace(tu_code, '').strip()
             else:
-                # Вариант 3: Без дефиса но с точками (например, "СМ3.362.805ТУ")
-                tu_pattern3 = r'([А-ЯЁ]{2,}[\d\.]+ТУ)'
+                # Вариант 3: ТУ в начале (например, "ТУ 6329-019-07614320-99")
+                tu_pattern3 = r'ТУ\s+([\d\-]+)'
                 tu_match3 = re.search(tu_pattern3, text)
                 if tu_match3:
-                    tu_code = tu_match3.group(1)
+                    tu_code = 'ТУ ' + tu_match3.group(1)
+                    tu_found_in_text = True
                     text = text.replace(tu_code, '').strip()
                 else:
-                    # Вариант 4: Общий паттерн (на случай других форматов)
-                    tu_pattern4 = r'([А-ЯЁ]{2,}[\d\.]+[А-ЯЁ]{0,3})'
+                    # Вариант 4: Без дефиса но с точками (например, "СМ3.362.805ТУ")
+                    tu_pattern4 = r'([А-ЯЁ]{2,}[\d\.]+ТУ)'
                     tu_match4 = re.search(tu_pattern4, text)
                     if tu_match4:
                         tu_code = tu_match4.group(1)
+                        tu_found_in_text = True
                         text = text.replace(tu_code, '').strip()
+                    else:
+                        # Вариант 5: Общий паттерн (на случай других форматов)
+                        tu_pattern5 = r'([А-ЯЁ]{2,}[\d\.]+[А-ЯЁ]{0,3})'
+                        tu_match5 = re.search(tu_pattern5, text)
+                        if tu_match5:
+                            tu_code = tu_match5.group(1)
+                            tu_found_in_text = True
+                            text = text.replace(tu_code, '').strip()
+        
+        # ПРИОРИТЕТ 2: Если ТУ не найдено в тексте, использовать ТУ из note (заголовка группы)
+        if not tu_found_in_text and note_tu:
+            tu_code = note_tu
         
         # Извлечь и удалить типы компонентов в начале
+        # ПРИОРИТЕТ 1: Тип из самого компонента (в начале описания)
+        component_type = ''
         component_types = ['Резистор', 'Конденсатор', 'Микросхема', 'Разъем', 'Диод', 
                           'Транзистор', 'Индуктивность', 'Дроссель', 'Кабель', 'Модуль',
-                          'Стабилитрон', 'Вилка', 'Розетка', 'Генератор']
-        component_type = ''
-        for comp_type in component_types:
+                          'Стабилитрон', 'Вилка', 'Розетка', 'Генератор', 'Транзисторная матрица']
+        # Сортируем по длине (от самых длинных к самым коротким), чтобы сначала проверять более специфичные типы
+        component_types_sorted = sorted(component_types, key=len, reverse=True)
+        type_found_in_text = False
+        for comp_type in component_types_sorted:
             if original_text.startswith(comp_type):
                 component_type = comp_type
+                type_found_in_text = True
                 text = text[len(comp_type):].strip() if text.startswith(comp_type) else text
                 break
+        
+        # ПРИОРИТЕТ 2: Если тип не найден в тексте, использовать тип из note (заголовка группы)
+        # НО ТОЛЬКО если это тип "Набор ..." (не применяем тип заголовка к компонентам с явным типом)
+        if not type_found_in_text and note_type and note_type.startswith('Набор'):
+            component_type = note_type
         
         # Очистить от лишних пробелов
         text = ' '.join(text.split())
@@ -898,11 +1055,15 @@ def main():
             if cols_to_remove:
                 result_df = result_df.drop(columns=cols_to_remove)
             
-            # Удалить ненужные столбцы (количество, цена, стоимость, source_sheet, _row_text_, category)
+            # НЕ удаляем 'note' здесь - он нужен для clean_component_name!
+            # Удалить ненужные столбцы (технические, служебные, цена, стоимость)
             cols_to_remove = [col for col in result_df.columns 
                             if col in ['количество', 'первоначальная цена, тыс.руб.', 
                                       'первоначальная стоимость, тыс.руб.', 
-                                      'source_sheet', '_row_text_', 'category']]
+                                      'source_sheet', '_row_text_', 'category',
+                                      'zone', 'reference', 'qty', 'value', 
+                                      'партномер', 'partname', 'part', 'примечания',
+                                      'номинал', 'тип', 'позиционное обозначение']]
             if cols_to_remove:
                 result_df = result_df.drop(columns=cols_to_remove)
             
@@ -911,6 +1072,11 @@ def main():
                 result_df = result_df.rename(columns={'Общее количество': 'Кол-во'})
             if 'наименование ивп' in result_df.columns:
                 result_df = result_df.rename(columns={'наименование ивп': 'Наименование ИВП'})
+            # Переименовать нормализованные английские колонки в русские
+            if 'description' in result_df.columns and 'Наименование ИВП' not in result_df.columns:
+                result_df = result_df.rename(columns={'description': 'Наименование ИВП'})
+            if 'qty' in result_df.columns and 'Кол-во' not in result_df.columns:
+                result_df = result_df.rename(columns={'qty': 'Кол-во'})
             
             # Обработать наименование - очистить и извлечь ТУ
             # Найти столбец с наименованием (ВАЖНО: сначала ищем переименованный столбец!)
@@ -950,7 +1116,7 @@ def main():
                     'Дроссели': 'Дроссель',
                     'Микросхемы': 'Микросхема',
                     'Разъемы': 'Разъем',
-                    'Диоды': 'Диод',
+                    'Полупроводники': '',  # Нет стандартного типа - тут разные (диоды, транзисторы, стабилитроны)
                 }
                 
                 standard_type = category_standard_types.get(sheet_name, '')
@@ -1013,6 +1179,25 @@ def main():
             
             # Добавить новую колонку № п/п в начало (ПОСЛЕ сортировки!)
             result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
+            
+            # Упорядочить колонки в правильном порядке
+            # Стандартный порядок: № п/п, Наименование ИВП, ТУ, Примечание, source_file, Код МР, Кол-во
+            desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Примечание', 'source_file', 'Код МР', 'Кол-во']
+            
+            # Сначала добавляем колонки в нужном порядке (если они есть)
+            ordered_cols = [col for col in desired_order if col in result_df.columns]
+            
+            # Затем добавляем оставшиеся колонки (если вдруг есть)
+            remaining_cols = [col for col in result_df.columns if col not in ordered_cols]
+            
+            # Финальный порядок
+            final_cols = ordered_cols + remaining_cols
+            result_df = result_df[final_cols]
+            
+            # Удалить 'note' перед записью (если он остался)
+            if 'note' in result_df.columns:
+                result_df = result_df.drop(columns=['note'])
+            
             result_df.to_excel(writer, sheet_name=sheet_name, index=False)
 
         if args.combine:
