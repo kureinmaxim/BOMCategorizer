@@ -526,6 +526,15 @@ def main():
     # Normalize and merge columns
     df, ref_col, desc_col, value_col, part_col, qty_col, mr_col = normalize_and_merge_columns(df)
     
+    # Фильтровать строки с пустым описанием ДО классификации
+    # Это предотвращает попадание пустых строк в "unclassified"
+    if desc_col in df.columns:
+        initial_count = len(df)
+        df = df[df[desc_col].notna() & (df[desc_col].astype(str).str.strip() != '')]
+        filtered_count = initial_count - len(df)
+        if filtered_count > 0:
+            print(f"Отфильтровано {filtered_count} строк с пустым описанием")
+    
     # Run classification
     df = run_classification(df, ref_col, desc_col, value_col, part_col, args.loose)
     
