@@ -66,6 +66,51 @@ def classify_row(
     ref_prefix = ref.split(" ")[0].upper() if ref else ""
     ref_prefix = re.sub(r"\d.*$", "", ref_prefix)  # take letters before digits
 
+    # ===================================================================
+    # ВЫСШИЙ ПРИОРИТЕТ: Явное указание типа компонента в описании
+    # Если в описании есть явные слова-маркеры категории - это главное!
+    # ===================================================================
+    
+    # Резисторы
+    if has_any(text_blob, ["резистор", "resistor", "сопротивлен"]):
+        return "resistors"
+    
+    # Конденсаторы (но НЕ делители мощности!)
+    if has_any(text_blob, ["конденсатор", "capacitor"]):
+        # Исключаем делители мощности - они идут в dev_boards
+        if not has_any(text_blob, ["делитель мощности", "power divider"]):
+            return "capacitors"
+    
+    # Микросхемы (но НЕ оптические модули и модули связи с "ic" в названии производителя!)
+    # Исключаем компоненты с явными маркерами оптики или модулей связи
+    if has_any(text_blob, ["микросхем", "интегральная схема"]):
+        return "ics"
+    # Проверяем "ic" только если НЕТ оптических маркеров или модулей связи/аттенюаторов
+    if has_any(text_blob, ["ic ", " ic", "chip ", " chip"]):
+        if not has_any(text_blob, ["оптич", "optical", "photonic", "передающий", "приемный", "electronic", 
+                                    "quantic", "ebyte", "nt1", "аттенюатор", "attenuator"]):
+            return "ics"
+    
+    # Дроссели/Индуктивности
+    if has_any(text_blob, ["дроссель", "inductor", "катушка индуктивности", "индуктивность"]):
+        return "inductors"
+    
+    # Полупроводники (диоды, транзисторы, стабилитроны, оптроны)
+    if has_any(text_blob, ["диод ", " диод", "diode", "транзистор", "transistor", "стабилитрон", "оптрон", "optocoupler"]):
+        return "semiconductors"
+    
+    # Разъемы
+    if has_any(text_blob, ["разъем", "connector", "вилка ", "розетка ", "socket", "plug", "переход "]):
+        return "connectors"
+    
+    # Кабели
+    if has_any(text_blob, ["кабель", "cable", "провод ", "wire ", "патч-корд", "патч корд"]):
+        return "cables"
+    
+    # Модули питания
+    if has_any(text_blob, ["модуль питания", "power module", "преобразователь питания", "dc/dc", "dc-dc"]):
+        return "power_modules"
+
     # PRIORITY 1: Check context-specific categories FIRST (before generic prefixes)
     # Check if this is a board/PCB file (self-reference: description is just the filename)
     if src_file and desc:
@@ -83,7 +128,7 @@ def classify_row(
                 return "our_developments"
     
     # Our developments - check before "A" prefix
-    if has_any(text_blob, ["мвок", "наша разработ", "собственной разработ", "шск-м", "плата контроллера шск"]):
+    if has_any(text_blob, ["мвок", "наша разработ", "собственной разработ", "шск-м", "плата контроллера шск", "амфи."]):
         return "our_developments"
     
     # ВАЖНО: Проверяем специфичные компоненты ПЕРЕД широкими категориями
@@ -92,30 +137,44 @@ def classify_row(
         if not has_any(text_blob, ["fc/", "sc/", "lc/", "оптическ", "optical", "fiber"]):
             return "connectors"
     
-    # Нагрузка согласованная в разъемы
+    # ВАЖНО: Оптические компоненты проверяем ДО СВЧ компонентов!
+    # Оптические модули и аттенюаторы оптические
+    if has_any(text_blob, [
+        "оптический модуль", "optical module", "передающий оптический", "приемный оптический",
+        "аттенюатор оптический", "optical attenuator",
+        "mp2320", "mp2220", "fc/apc", "fc/upc", "соединительный оптический",
+        "оптоволокон", "fiber optic", "мвол", "линия многоканальная задержки"
+    ]):
+        return "optics"
+    
+    # СВЧ компоненты (аттенюаторы, делители, ответвители) от специфичных производителей в dev_boards
+    if has_any(text_blob, ["аттенюатор", "attenuator", "делитель мощности", "power divider", 
+                           "ответвитель направленный", "ограничитель", "линия задержек"]):
+        if has_any(text_blob, ["qualwave", "mini-circuits", "api technologies", "weinschel", "a-info", "gigabaudics", 
+                               "quantic pmi", "quantic", "pmi", "jfw", "umcc"]):
+            return "dev_boards"
+    
+    # Оборудование RITTAL всегда в "Другие"
+    if has_any(text_blob, ["rittal"]):
+        return "others"
+    
+    # Нагрузка согласованная в "Другие"
     if has_any(text_blob, ["нагрузка согласованная", "согласованная нагрузка", "matched load"]):
-        return "connectors"
+        return "others"
     
     # Вентили в индуктивности
     if has_any(text_blob, ["вентиль свч", "вентиль вч", "circulator", "isolator", "ферритов", "прибор фвк", "прибор фквн", "фвк3-", "фквн3-"]):
         return "inductors"
     
-    # Аттенюаторы QFA от Qualwave в "Другие"
-    if has_any(text_blob, ["аттенюатор qfa", "attenuator qfa"]):
-        return "others"
+    # Dev boards / evaluation boards / коммутаторы / модули связи
+    if has_any(text_blob, ["плата инструментальная", "evaluation board", "dev board", "отладочная плата", "плата 117212",
+                           "коммутатор", "nt1", "модуль связи"]):
+        if has_any(text_blob, ["qualwave", "api technologies", "weinschel", "hittite", "planet", "коммутатор", 
+                               "ebyte", "chengdu ebyte", "nt1"]):
+            return "dev_boards"
     
-    # Dev boards / evaluation boards
-    if has_any(text_blob, ["плата инструментальная", "evaluation board", "dev board", "отладочная плата", "плата 117212", "hittite"]):
-        if not has_any(text_blob, ["делитель мощности", "power divider", "qpd", "аттенюатор qfa"]):
-            if has_any(text_blob, ["qualwave", "api technologies", "weinschel", "hittite"]):
-                return "dev_boards"
-    
-    # Optical components (широкая проверка) - check EARLY
-    if has_any(text_blob, [
-        "оптический модуль", "optical module", "передающий оптический", "приемный оптический",
-        "mp2320", "mp2220", "fc/apc", "fc/upc",
-        "оптич", "optical", "оптоволокон", "fiber", "мвол", "линия многоканальная задержки"
-    ]):
+    # Широкая проверка оптических компонентов (если не попали выше)
+    if has_any(text_blob, ["оптич", "optical"]):
         return "optics"
     
     # Optical modules with U prefix - check before "U" prefix for ICs

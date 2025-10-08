@@ -155,8 +155,6 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
             break
     
     if not desc_col_name:
-        # Если не нашли колонку с описанием, возвращаем как есть
-        result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
         return result_df
     
     # Применить функцию очистки к каждой строке
@@ -174,8 +172,9 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
                 note_type = parts[0].strip()
                 note_tu = parts[1].strip()
         
-        # Очистить название
-        cleaned_text = clean_component_name(text, note)
+        # НЕ ПРИМЕНЯЕМ clean_component_name здесь, так как данные уже очищены в main.py!
+        # Просто используем text как есть
+        cleaned_text = text
         
         # Извлечь ТУ из текста
         cleaned_text, tu_code = extract_tu_code(cleaned_text)
@@ -261,7 +260,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
         result_df = result_df.drop(columns=['_nominal_value'])
     
     elif sheet_name in ['Отладочные платы и модули', 'Модули питания', 'Оптические компоненты', 
-                         'Полупроводники', 'Разъемы', 'Кабели', 'Другие']:
+                        'Полупроводники', 'Разъемы', 'Кабели', 'Другие']:
         # Алфавитная сортировка для этих категорий
         result_df = result_df.sort_values(by=desc_col_name, ascending=True)
     
@@ -269,29 +268,45 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
     
     result_df = result_df.reset_index(drop=True)
     
+    # Переименовать source_file в Источник
+    if 'source_file' in result_df.columns:
+        result_df = result_df.rename(columns={'source_file': 'Источник'})
+        
+        # Найти колонку № п/п или № п\п (если есть несколько с похожими названиями)
+        pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
+        if pp_columns:
+            # Взять последнюю колонку № п/п (если есть дубликаты)
+            pp_col = pp_columns[-1]  # Берем последнюю
+            result_df['Источник'] = result_df.apply(
+                lambda row: f"{row['Источник']}, п/п {int(row[pp_col])}" if pd.notna(row[pp_col]) else row['Источник'],
+                axis=1
+            )
+    
+    # Удалить ненужные колонки
+    cols_to_remove = ['ед. изм. ктд', 'код мр', '_merged_qty_', 
+                      'ед. изм. КТД', 'Код МР', 'Код мр', 'ед. изм. КТД', 'Код МР',
+                      'первоначальная цена, тыс.руб.', 'первоначальная стоимость, тыс.руб.']
+    
+    # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
+    pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
+    cols_to_remove.extend(pp_columns)
+    
+    for col in cols_to_remove:
+        if col in result_df.columns:
+            result_df = result_df.drop(columns=[col])
+    
     # Добавить № п/п в начало (ПОСЛЕ сортировки!)
     # Сначала удалим если уже есть
     if '№ п/п' in result_df.columns:
         result_df = result_df.drop(columns=['№ п/п'])
     result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
     
-    # Переименовать source_file в Источник
-    if 'source_file' in result_df.columns:
-        result_df = result_df.rename(columns={'source_file': 'Источник'})
-    
-    # Удалить ненужные колонки
-    cols_to_remove = ['ед. изм. ктд', 'код мр', '_merged_qty_', 
-                    'ед. изм. КТД', 'Код МР', 'Код мр', 'ед. изм. КТД', 'Код МР']
-    for col in cols_to_remove:
-        if col in result_df.columns:
-            result_df = result_df.drop(columns=[col])
-    
     # Упорядочить колонки в правильном порядке
-    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Примечание', 'Источник', 'Кол-во']
+    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Примечание', 'category', 'Источник', 'Кол-во']
     
     ordered_cols = [col for col in desired_order if col in result_df.columns]
     remaining_cols = [col for col in result_df.columns 
-                    if col not in ordered_cols and col not in cols_to_remove]
+                      if col not in ordered_cols and col not in cols_to_remove]
     
     final_cols = ordered_cols + remaining_cols
     result_df = result_df[final_cols]

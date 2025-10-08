@@ -32,9 +32,6 @@ def clean_component_name(original_text: str, note: str = "") -> str:
     
     text = str(original_text).strip()
     
-    # Убираем $ и $$ в конце
-    text = text.rstrip('$').strip()
-    
     # Component type prefixes (sorted by length, longest first)
     component_types = [
         'ЧИП КОНДЕНСАТОР КЕРАМИЧЕСКИЙ',
@@ -76,6 +73,9 @@ def clean_component_name(original_text: str, note: str = "") -> str:
     
     for comp_type in component_types:
         if text_upper.startswith(comp_type):
+            # Исключение: не удаляем "ВИЛКА" для компонентов Harting
+            if comp_type == 'ВИЛКА' and ('harting' in text.lower() or 'sek' in text.lower()):
+                continue
             text = text[len(comp_type):].strip()
             removed_prefix = comp_type
             break
@@ -99,7 +99,10 @@ def clean_component_name(original_text: str, note: str = "") -> str:
     # Normalize manufacturer prefixes (e.g., ", ф.Qualwave" to " ф.Qualwave")
     text = re.sub(r',\s*ф\.', ' ф.', text)
     
-    return text.strip()
+    # Убираем ВСЕ символы $ из текста (в начале, середине, конце)
+    text = text.replace('$', '').strip()
+    
+    return text
 
 
 def extract_nominal_value(text: str, category: str) -> Optional[float]:
@@ -135,37 +138,37 @@ def extract_nominal_value(text: str, category: str) -> Optional[float]:
     # Resistors: Ом, кОм, МОм
     if category == "resistors":
         patterns = [
-            (r'(\d+(?:[.,]\d+)?)\s*мом', 1e6),
-            (r'(\d+(?:[.,]\d+)?)\s*mω', 1e6),
-            (r'(\d+(?:[.,]\d+)?)\s*ком', 1e3),
-            (r'(\d+(?:[.,]\d+)?)\s*kω', 1e3),
-            (r'(\d+(?:[.,]\d+)?)\s*ом', 1.0),
-            (r'(\d+(?:[.,]\d+)?)\s*ω', 1.0),
-            (r'(\d+(?:[.,]\d+)?)\s*ohm', 1.0),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*мом', 1e6),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*mω', 1e6),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*ком', 1e3),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*kω', 1e3),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*ом', 1.0),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*ω', 1.0),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*ohm', 1.0),
         ]
     # Capacitors: пФ, нФ, мкФ, мФ
     elif category == "capacitors":
         patterns = [
-            (r'(\d+(?:[.,]\d+)?)\s*мф', 1e-3),
-            (r'(\d+(?:[.,]\d+)?)\s*mf', 1e-3),
-            (r'(\d+(?:[.,]\d+)?)\s*мкф', 1e-6),
-            (r'(\d+(?:[.,]\d+)?)\s*[uμ]f', 1e-6),
-            (r'(\d+(?:[.,]\d+)?)\s*нф', 1e-9),
-            (r'(\d+(?:[.,]\d+)?)\s*nf', 1e-9),
-            (r'(\d+(?:[.,]\d+)?)\s*пф', 1e-12),
-            (r'(\d+(?:[.,]\d+)?)\s*pf', 1e-12),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*мф', 1e-3),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*mf', 1e-3),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*мкф', 1e-6),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*[uμ]f', 1e-6),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*нф', 1e-9),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*nf', 1e-9),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*пф', 1e-12),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*pf', 1e-12),
         ]
     # Inductors: Гн, мГн, мкГн, нГн
     elif category == "inductors":
         patterns = [
-            (r'(\d+(?:[.,]\d+)?)\s*гн', 1.0),
-            (r'(\d+(?:[.,]\d+)?)\s*h\b', 1.0),
-            (r'(\d+(?:[.,]\d+)?)\s*мгн', 1e-3),
-            (r'(\d+(?:[.,]\d+)?)\s*mh', 1e-3),
-            (r'(\d+(?:[.,]\d+)?)\s*мкгн', 1e-6),
-            (r'(\d+(?:[.,]\d+)?)\s*[uμ]h', 1e-6),
-            (r'(\d+(?:[.,]\d+)?)\s*нгн', 1e-9),
-            (r'(\d+(?:[.,]\d+)?)\s*nh', 1e-9),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*гн', 1.0),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*h\b', 1.0),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*мгн', 1e-3),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*mh', 1e-3),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*мкгн', 1e-6),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*[uμ]h', 1e-6),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*нгн', 1e-9),
+            (r'[-\s](\d+(?:[.,]\d+)?)\s*nh', 1e-9),
         ]
     else:
         return None
@@ -201,7 +204,7 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
     # Паттерны для ТУ (Technical Specifications codes)
     tu_patterns = [
         r'([А-ЯЁ]{2,}\.\d+[\d\.\-]*\s*ТУ)',  # АЛЯР.434110.005ТУ
-        r'([А-ЯЁ]{2,}[\d\.]+\s*ТУ)',          # ШКАБ434110002ТУ
+        r'([А-ЯЁ]{2,}[\d\.\-]+\s*ТУ)',       # ШКАБ434110002ТУ, АЕЯР431200424-07ТУ (с дефисами)
         r'ТУ\s+([\d\-]+)',                    # ТУ 6329-019-07614320-99
     ]
     
@@ -225,9 +228,15 @@ def _parse_smd_resistor(text: str) -> Optional[float]:
     """
     Парсит SMD код резистора (3-х или 4-х значный)
     Например: 103 = 10 * 10^3 = 10k = 10000 Ом
+    
+    ВАЖНО: Не срабатывает для отечественных резисторов типа "P1-12-0,125-681"
     """
-    # 3-digit code: XYZ = XY * 10^Z
-    match = re.search(r'\b(\d)(\d)(\d)\b', text)
+    # Пропускаем, если есть явные единицы измерения (значит это не SMD код)
+    if re.search(r'(ком|мом|ом|kohm|mohm|ohm)', text, re.IGNORECASE):
+        return None
+    
+    # 3-digit code: XYZ = XY * 10^Z (после пробела или в начале, но не после дефиса/запятой)
+    match = re.search(r'(?:^|\s)(\d)(\d)(\d)(?:\s|$)', text)
     if match:
         x, y, z = match.groups()
         try:
@@ -238,7 +247,7 @@ def _parse_smd_resistor(text: str) -> Optional[float]:
             pass
     
     # 4-digit code: WXYZ = WXY * 10^Z
-    match = re.search(r'\b(\d)(\d)(\d)(\d)\b', text)
+    match = re.search(r'(?:^|\s)(\d)(\d)(\d)(\d)(?:\s|$)', text)
     if match:
         w, x, y, z = match.groups()
         try:
@@ -256,8 +265,12 @@ def _parse_smd_capacitor(text: str) -> Optional[float]:
     Парсит SMD код конденсатора (обычно буквенно-цифровой)
     Например: 106 = 10 * 10^6 пФ = 10 мкФ = 1e-5 Ф
     """
+    # Пропускаем, если есть явные единицы измерения
+    if re.search(r'(пф|нф|мкф|мф|pf|nf|uf|mf)', text, re.IGNORECASE):
+        return None
+    
     # Similar to resistor, but in picofarads
-    match = re.search(r'\b(\d)(\d)(\d)\b', text)
+    match = re.search(r'(?:^|\s)(\d)(\d)(\d)(?:\s|$)', text)
     if match:
         x, y, z = match.groups()
         try:
@@ -276,7 +289,11 @@ def _parse_smd_inductor(text: str) -> Optional[float]:
     Парсит SMD код индуктивности
     Обычно в нГн, формат аналогичен резисторам
     """
-    match = re.search(r'\b(\d)(\d)(\d)\b', text)
+    # Пропускаем, если есть явные единицы измерения
+    if re.search(r'(гн|мгн|мкгн|нгн|h\b|mh|uh|nh)', text, re.IGNORECASE):
+        return None
+    
+    match = re.search(r'(?:^|\s)(\d)(\d)(\d)(?:\s|$)', text)
     if match:
         x, y, z = match.groups()
         try:

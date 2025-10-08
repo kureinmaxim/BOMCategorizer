@@ -23,6 +23,39 @@ from .txt_writer import write_txt_reports
 from .utils import normalize_column_names, find_column
 
 
+def add_excel_row_numbers(df: pd.DataFrame, header_offset: int = 2) -> pd.DataFrame:
+    """
+    Добавляет колонку с номерами строк Excel, если она отсутствует,
+    или заполняет пустые значения номерами строк
+    
+    Args:
+        df: DataFrame после чтения Excel
+        header_offset: Смещение строки заголовка (обычно 2: строка 1 = заголовок, данные с 2)
+    
+    Returns:
+        DataFrame с добавленной/заполненной колонкой "№ п\\п"
+    """
+    # Проверяем, есть ли уже колонка с номерами позиций
+    pp_columns = [col for col in df.columns if str(col).startswith('№ п')]
+    
+    if not pp_columns:
+        # Колонки нет - создаём с номерами строк Excel
+        df['№ п\\п'] = range(header_offset, header_offset + len(df))
+        print(f"  [+] Добавлена колонка '№ п\\п' с номерами строк Excel ({header_offset}-{header_offset + len(df) - 1})")
+    else:
+        # Колонка есть - проверяем пустые значения и заполняем их
+        pp_col = pp_columns[0]
+        empty_count = df[pp_col].isna().sum()
+        
+        if empty_count > 0:
+            # Заполняем пустые значения номерами строк Excel
+            for idx in df[df[pp_col].isna()].index:
+                df.loc[idx, pp_col] = header_offset + idx
+            print(f"  [+] Заполнено {empty_count} пустых значений в колонке '{pp_col}' номерами строк Excel")
+    
+    return df
+
+
 def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = None, sheet: Optional[str] = None) -> pd.DataFrame:
     """
     Загружает и объединяет данные из всех входных файлов
@@ -91,6 +124,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                             unnamed_count = sum(1 for col in dfi.columns if str(col).lower().startswith('unnamed'))
                             has_mostly_unnamed = unnamed_count >= len(dfi.columns) * 0.5
                             
+                            header_was_removed = False
                             if has_mostly_unnamed and not dfi.empty and dfi.iloc[0].notna().any():
                                 first_row_text = ' '.join(str(val).lower() for val in dfi.iloc[0] if pd.notna(val))
                                 looks_like_header = any(keyword in first_row_text for keyword in 
@@ -100,6 +134,11 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                                     new_headers = dfi.iloc[0].fillna('').astype(str)
                                     dfi = dfi[1:].reset_index(drop=True)
                                     dfi.columns = new_headers
+                                    header_was_removed = True
+                            
+                            # Добавить номера строк Excel, если колонка "№ п\п" отсутствует
+                            header_offset = 3 if header_was_removed else 2
+                            dfi = add_excel_row_numbers(dfi, header_offset)
                             
                             dfi["source_file"] = os.path.basename(input_path)
                             dfi["source_sheet"] = str(sh)
@@ -124,11 +163,17 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                         src_sheet = sheet
                     
                     # Проверка на пустую первую строку
+                    header_was_removed = False
                     if all(str(col).lower().startswith('unnamed') for col in df.columns):
                         if not df.empty and df.iloc[0].notna().any():
                             new_headers = df.iloc[0].fillna('').astype(str)
                             df = df[1:].reset_index(drop=True)
                             df.columns = new_headers
+                            header_was_removed = True
+                    
+                    # Добавить номера строк Excel, если колонка "№ п\п" отсутствует
+                    header_offset = 3 if header_was_removed else 2
+                    df = add_excel_row_numbers(df, header_offset)
                     
                     df["source_file"] = os.path.basename(input_path)
                     df["source_sheet"] = str(src_sheet)
@@ -142,6 +187,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                         unnamed_count = sum(1 for col in df_local.columns if str(col).lower().startswith('unnamed'))
                         has_mostly_unnamed = unnamed_count >= len(df_local.columns) * 0.5
                         
+                        header_was_removed = False
                         if has_mostly_unnamed and not df_local.empty and df_local.iloc[0].notna().any():
                             first_row_text = ' '.join(str(val).lower() for val in df_local.iloc[0] if pd.notna(val))
                             looks_like_header = any(keyword in first_row_text for keyword in 
@@ -151,6 +197,11 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                                 new_headers = df_local.iloc[0].fillna('').astype(str)
                                 df_local = df_local[1:].reset_index(drop=True)
                                 df_local.columns = new_headers
+                                header_was_removed = True
+                        
+                        # Добавить номера строк Excel, если колонка "№ п\п" отсутствует
+                        header_offset = 3 if header_was_removed else 2
+                        df_local = add_excel_row_numbers(df_local, header_offset)
                         
                         df_local["source_file"] = os.path.basename(input_path)
                         df_local["source_sheet"] = str(sheet_name)
@@ -311,25 +362,38 @@ def apply_rules_from_json(df: pd.DataFrame, rules_json: str, desc_col: str, valu
             if not cat or (not contains and not regex):
                 continue
             
+            # ИСПРАВЛЕНО: Применяем правила ко ВСЕМ элементам с категорией unclassified
             mask = df["category"] == "unclassified"
             
             if contains:
+                # ИСПРАВЛЕНО: Используем правильные колонки из normalize_and_merge_columns
+                def get_col_values(col_name):
+                    if col_name and col_name in df.columns:
+                        return df[col_name].astype(str).str.lower().fillna("")
+                    return pd.Series([""] * len(df))
+                
                 blob = (
-                    df.get("description", pd.Series([""] * len(df))).astype(str).str.lower().fillna("") + " " +
-                    df.get("value", pd.Series([""] * len(df))).astype(str).str.lower().fillna("") + " " +
-                    df.get("part", pd.Series([""] * len(df))).astype(str).str.lower().fillna("") + " " +
-                    df.get("reference", pd.Series([""] * len(df))).astype(str).str.lower().fillna("")
+                    get_col_values(desc_col) + " " +
+                    get_col_values(value_col) + " " +
+                    get_col_values(part_col) + " " +
+                    get_col_values(ref_col)
                 )
                 mask = mask & blob.str.contains(re.escape(contains), na=False)
             
             if regex:
                 try:
                     r = re.compile(regex, re.IGNORECASE)
+                    
+                    def get_col_values_str(col_name):
+                        if col_name and col_name in df.columns:
+                            return df[col_name].astype(str).fillna("")
+                        return pd.Series([""] * len(df))
+                    
                     text_series = (
-                        df.get("description", "").astype(str).fillna("") + " " +
-                        df.get("value", "").astype(str).fillna("") + " " +
-                        df.get("part", "").astype(str).fillna("") + " " +
-                        df.get("reference", "").astype(str).fillna("")
+                        get_col_values_str(desc_col) + " " +
+                        get_col_values_str(value_col) + " " +
+                        get_col_values_str(part_col) + " " +
+                        get_col_values_str(ref_col)
                     )
                     mask = mask & text_series.apply(lambda t: bool(r.search(t)))
                 except Exception:
@@ -341,10 +405,10 @@ def apply_rules_from_json(df: pd.DataFrame, rules_json: str, desc_col: str, valu
                 rules_applied_count += matched_count
         
         if rules_applied_count > 0:
-            print(f"✅ {rules_applied_count} элементов автоматически классифицированы по сохраненным правилам")
+            print(f"[OK] {rules_applied_count} элементов автоматически классифицированы по сохраненным правилам")
     
     except Exception as exc:
-        print(f"⚠️ Не удалось применить правила из {rules_json}: {exc}")
+        print(f"[!] Не удалось применить правила из {rules_json}: {exc}")
     
     return df
 
@@ -547,6 +611,18 @@ def main():
     
     if args.interactive or auto_interactive:
         df = interactive_classification(df, desc_col, value_col, part_col, args.assign_json, auto_prompted=auto_interactive)
+    
+    # Очистить названия компонентов от $ и других артефактов ПЕРЕД созданием outputs
+    from .formatters import clean_component_name
+    if desc_col in df.columns:
+        # Применяем clean_component_name ко всем значениям
+        cleaned_values = []
+        for val in df[desc_col]:
+            if pd.notna(val):
+                cleaned_values.append(clean_component_name(str(val)))
+            else:
+                cleaned_values.append(val)
+        df[desc_col] = cleaned_values
     
     # Create outputs dictionary
     outputs = create_outputs_dict(df)

@@ -85,7 +85,7 @@ class BOMCategorizerApp(tk.Tk):
         ver = self.cfg.get("app_info", {}).get("version", "dev")
         name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("720x600")
+        self.geometry("720x750")
 
         self.input_files: list[str] = []
         self.sheet_spec = tk.StringVar()
@@ -178,6 +178,27 @@ class BOMCategorizerApp(tk.Tk):
         btn6 = ttk.Button(frm, text="Интерактивная классификация", command=self.on_interactive_classify)
         btn6.grid(row=row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn6)
+        
+        # Секция для переноса компонентов в "Не распределено"
+        row += 1
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        row += 1
+        ttk.Label(frm, text="Перенос компонентов в 'Не распределено':").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="Введите названия компонентов (по одному на строку):").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        self.reclassify_text = tk.Text(frm, height=4, wrap=tk.WORD)
+        self.reclassify_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+        self.lockable_widgets.append(self.reclassify_text)
+        frm.grid_rowconfigure(row, weight=1)
+        
+        row += 1
+        btn7 = ttk.Button(frm, text="Перенести в 'Не распределено'", command=self.on_move_to_unclassified)
+        btn7.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
+        self.lockable_widgets.append(btn7)
 
         row += 1
         ttk.Label(frm, text="Лог:").grid(row=row, column=0, sticky="w", **pad)
@@ -598,6 +619,113 @@ class BOMCategorizerApp(tk.Tk):
         
         run_cli_async(args, after_rerun)
     
+    def on_move_to_unclassified(self):
+        """Обработчик переноса компонентов в 'Не распределено'"""
+        # Проверяем наличие выходного файла
+        output_file = self.output_xlsx.get()
+        if not output_file or not os.path.exists(output_file):
+            messagebox.showerror("Ошибка", 
+                               f"Выходной файл не найден: {output_file}\n\n" +
+                               "Сначала запустите обработку для создания файла.")
+            return
+        
+        # Получаем список компонентов для переноса
+        components_text = self.reclassify_text.get("1.0", tk.END).strip()
+        if not components_text:
+            messagebox.showwarning("Внимание", "Введите хотя бы один компонент для переноса.")
+            return
+        
+        component_names = [line.strip() for line in components_text.split('\n') if line.strip()]
+        
+        try:
+            import pandas as pd
+            from openpyxl import load_workbook
+            from openpyxl.utils.dataframe import dataframe_to_rows
+            
+            self.txt.insert(tk.END, f"\n\n🔄 Перенос компонентов в 'Не распределено'...\n")
+            self.txt.insert(tk.END, f"Файл: {output_file}\n")
+            self.txt.insert(tk.END, f"Компонентов для переноса: {len(component_names)}\n\n")
+            self.update_idletasks()
+            
+            # Читаем все листы из Excel
+            xls = pd.ExcelFile(output_file)
+            all_sheets = {}
+            for sheet_name in xls.sheet_names:
+                all_sheets[sheet_name] = pd.read_excel(output_file, sheet_name=sheet_name)
+            
+            # Список для хранения найденных компонентов
+            found_components = []
+            moved_count = 0
+            
+            # Ищем компоненты во всех листах (кроме "Не распределено")
+            for sheet_name in all_sheets.keys():
+                if sheet_name == "Не распределено":
+                    continue
+                
+                df = all_sheets[sheet_name]
+                
+                # Ищем компоненты по частичному совпадению в колонке "Наименование ИВП"
+                if 'Наименование ИВП' not in df.columns:
+                    continue
+                
+                for comp_name in component_names:
+                    # Ищем строки, содержащие искомый текст (регистронезависимый поиск)
+                    mask = df['Наименование ИВП'].astype(str).str.contains(comp_name, case=False, na=False)
+                    matching_rows = df[mask]
+                    
+                    if not matching_rows.empty:
+                        self.txt.insert(tk.END, f"  ✓ Найдено {len(matching_rows)} совпадений для '{comp_name}' в листе '{sheet_name}'\n")
+                        self.update_idletasks()
+                        
+                        # Добавляем найденные строки к списку для переноса
+                        for idx, row in matching_rows.iterrows():
+                            found_components.append(row.to_dict())
+                            moved_count += 1
+                        
+                        # Удаляем найденные строки из исходного листа
+                        all_sheets[sheet_name] = df[~mask]
+            
+            if moved_count == 0:
+                self.txt.insert(tk.END, "\n⚠️ Ни один компонент не найден в выходном файле.\n")
+                self.txt.insert(tk.END, "Проверьте правильность написания названий компонентов.\n")
+                messagebox.showwarning("Внимание", "Ни один компонент не найден в выходном файле.")
+                return
+            
+            # Добавляем найденные компоненты в лист "Не распределено"
+            if "Не распределено" not in all_sheets:
+                # Создаем новый DataFrame для "Не распределено" с теми же колонками
+                first_sheet_df = list(all_sheets.values())[0]
+                all_sheets["Не распределено"] = pd.DataFrame(columns=first_sheet_df.columns)
+            
+            df_unclassified = all_sheets["Не распределено"]
+            new_rows = pd.DataFrame(found_components)
+            all_sheets["Не распределено"] = pd.concat([df_unclassified, new_rows], ignore_index=True)
+            
+            # Сохраняем изменения в файл
+            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                for sheet_name, df in all_sheets.items():
+                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            self.txt.insert(tk.END, f"\n✅ Успешно перенесено {moved_count} компонентов в 'Не распределено'!\n")
+            self.txt.insert(tk.END, "\nТеперь вы можете запустить 'Интерактивную классификацию' для правильной категоризации.\n")
+            self.txt.see(tk.END)
+            self.update_idletasks()
+            
+            # Очищаем текстовое поле
+            self.reclassify_text.delete("1.0", tk.END)
+            
+            messagebox.showinfo("Готово", 
+                              f"Успешно перенесено {moved_count} компонентов в 'Не распределено'!\n\n" +
+                              "Теперь вы можете запустить 'Интерактивную классификацию'.")
+            
+        except Exception as e:
+            error_msg = f"Ошибка при переносе компонентов: {e}"
+            self.txt.insert(tk.END, f"\n❌ {error_msg}\n")
+            self.txt.see(tk.END)
+            import traceback
+            self.txt.insert(tk.END, f"Детали: {traceback.format_exc()}\n")
+            messagebox.showerror("Ошибка", error_msg)
+    
     def lock_interface(self):
         """Блокирует все элементы управления"""
         for widget in self.lockable_widgets:
@@ -639,11 +767,10 @@ class BOMCategorizerApp(tk.Tk):
     def show_pin_dialog(self):
         """Показывает диалог ввода PIN-кода"""
         dialog = tk.Toplevel(self)
-        dialog.title("Ввод PIN-кода")
-        dialog.geometry("400x200")
+        dialog.title("Авторизация")
+        dialog.geometry("320x140")
         dialog.resizable(False, False)
         dialog.grab_set()
-        dialog.configure(bg='white')
         
         # Центрируем окно
         dialog.transient(self)
@@ -652,22 +779,25 @@ class BOMCategorizerApp(tk.Tk):
         y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
         dialog.geometry(f"+{x}+{y}")
         
+        # Основной фрейм с отступами
+        main_frame = ttk.Frame(dialog, padding="15")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
         # Заголовок
-        tk.Label(dialog, text="🔐 Введите PIN-код для разблокировки:", 
-                font=("Arial", 11, "bold"), bg='white').pack(pady=(20, 15))
+        ttk.Label(main_frame, text="Введите PIN-код:", 
+                 font=("Arial", 10)).pack(pady=(0, 10))
         
         # Поле ввода PIN
         pin_var = tk.StringVar()
-        pin_entry = tk.Entry(dialog, textvariable=pin_var, show="●", 
-                            font=("Arial", 16), justify="center", width=12,
-                            relief=tk.SOLID, bd=2)
-        pin_entry.pack(pady=(0, 10))
+        pin_entry = ttk.Entry(main_frame, textvariable=pin_var, show="●", 
+                             font=("Arial", 12), justify="center", width=15)
+        pin_entry.pack(pady=(0, 5))
         pin_entry.focus_set()
         
         # Метка ошибки
-        error_label = tk.Label(dialog, text="", foreground="red", 
-                              font=("Arial", 9), bg='white')
-        error_label.pack(pady=(0, 15))
+        error_label = ttk.Label(main_frame, text="", foreground="red", 
+                               font=("Arial", 9))
+        error_label.pack(pady=(0, 10))
         
         def check_pin():
             entered_pin = pin_var.get().strip()
@@ -675,33 +805,18 @@ class BOMCategorizerApp(tk.Tk):
                 dialog.destroy()
                 self.unlock_interface()
             else:
-                error_label.config(text="❌ Неверный PIN-код!")
+                error_label.config(text="Неверный PIN-код")
                 pin_entry.delete(0, tk.END)
                 pin_entry.focus_set()
-                # Тряска окна для визуального эффекта ошибки
-                original_x = dialog.winfo_x()
-                for i in range(3):
-                    dialog.geometry(f"+{original_x-10}+{y}")
-                    dialog.update()
-                    dialog.after(50)
-                    dialog.geometry(f"+{original_x+10}+{y}")
-                    dialog.update()
-                    dialog.after(50)
-                dialog.geometry(f"+{original_x}+{y}")
         
         # Кнопки
-        btn_frame = tk.Frame(dialog, bg='white')
-        btn_frame.pack(fill=tk.X, padx=30, pady=(0, 20))
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X)
         
-        tk.Button(btn_frame, text="Разблокировать", command=check_pin,
-                 font=("Arial", 10, "bold"), bg='#4CAF50', fg='white',
-                 relief=tk.RAISED, bd=2, padx=10, pady=8, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btn_frame, text="OK", command=check_pin, width=12).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Отмена", command=dialog.destroy, width=12).pack(side=tk.LEFT)
         
-        tk.Button(btn_frame, text="Отмена", command=dialog.destroy,
-                 font=("Arial", 10), bg='#f0f0f0',
-                 relief=tk.RAISED, bd=2, padx=10, pady=8, width=10).pack(side=tk.LEFT, padx=5)
-        
-        # Обработка Enter
+        # Обработка Enter и Escape
         pin_entry.bind("<Return>", lambda e: check_pin())
         dialog.bind("<Escape>", lambda e: dialog.destroy())
 
