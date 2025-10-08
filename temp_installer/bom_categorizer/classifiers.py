@@ -78,7 +78,8 @@ def classify_row(
     # Конденсаторы (но НЕ делители мощности!)
     if has_any(text_blob, ["конденсатор", "capacitor"]):
         # Исключаем делители мощности - они идут в dev_boards
-        if not has_any(text_blob, ["делитель мощности", "power divider"]):
+        # Проверяем с одним и двумя пробелами (в реальных данных могут быть лишние пробелы)
+        if not has_any(text_blob, ["делитель мощности", "делитель  мощности", "power divider"]):
             return "capacitors"
     
     # Микросхемы (но НЕ оптические модули и модули связи с "ic" в названии производителя!)
@@ -148,7 +149,7 @@ def classify_row(
         return "optics"
     
     # СВЧ компоненты (аттенюаторы, делители, ответвители) от специфичных производителей в dev_boards
-    if has_any(text_blob, ["аттенюатор", "attenuator", "делитель мощности", "power divider", 
+    if has_any(text_blob, ["аттенюатор", "attenuator", "делитель мощности", "делитель  мощности", "power divider", 
                            "ответвитель направленный", "ограничитель", "линия задержек"]):
         if has_any(text_blob, ["qualwave", "mini-circuits", "api technologies", "weinschel", "a-info", "gigabaudics", 
                                "quantic pmi", "quantic", "pmi", "jfw", "umcc"]):
@@ -232,7 +233,9 @@ def classify_row(
         return "resistors"
 
     if CAP_VALUE_RE.search(text_blob) or has_any(text_blob, ["конденс", "capacitor", "tantalum", "ceramic", "к10-", "к53-"]):
-        return "capacitors"
+        # Исключаем делители мощности (могут содержать номиналы, похожие на емкость)
+        if not has_any(text_blob, ["делитель мощности", "делитель  мощности", "power divider"]):
+            return "capacitors"
 
     if IND_VALUE_RE.search(text_blob) or has_any(text_blob, ["дросс", "индукт", "inductor", "ferrite", "феррит", "катушка", "choke", "вентиль"]):
         return "inductors"
