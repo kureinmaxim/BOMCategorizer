@@ -1,0 +1,61 @@
+=== ОТЛАДОЧНЫЕ ПЛАТЫ И МОДУЛИ ===
+Всего элементов: 54
+================================================================================
+
+1. 1021-06SF ф.Southwest Microwave | Кол-во: 30.0 шт
+2. AES-ZU-IOCC-G ф.Avnet (с модулем питания) | Кол-во: 21.0 шт
+3. AES-ZU3EG-1-SOM-I-G ф.Avnet | Кол-во: 21.0 шт
+4. AES-ZU7EV-1-SOM-I-G ф.Avnet | Кол-во: 21.0 шт
+5. AES-ZUEV-CC-G ф.Avnet (с модулем питания) | Кол-во: 21.0 шт
+6. Analog Device, артикул EVAL-ADF4351EB1Z | Кол-во: 1.0 шт
+7. HMC 435 AMS8GE HITTITE | Кол-во: 3.0 шт
+8. KVM-коммутатор Tiny Pilot Voyager 2a   ф.Tiny Pilot | Кол-во: 21.0 шт
+9. Mini-Circuits ZX76-WS+ | Кол-во: 1.0 шт
+10. NUCLEO-H743ZI2 ф.STMicroelectronics | Кол-во: 2.0 шт
+11. PAT-0+ MINI-CIRCUITS | Кол-во: 4.0 шт
+12. PAT-0+ MINI-CIRCUITS | Кол-во: 4.0 шт
+13. PAT-1+ MINI-CIRCUITS | Кол-во: 4.0 шт
+14. PAT-1+ MINI-CIRCUITS | Кол-во: 4.0 шт
+15. PAT-15+ MINI-CIRCUITS | Кол-во: 1.0 шт
+16. PAT-2+ MINI-CIRCUITS | Кол-во: 6.0 шт
+17. PAT-2+ MINI-CIRCUITS | Кол-во: 6.0 шт
+18. PAT-20+ MINI-CIRCUITS | Кол-во: 1.0 шт
+19. PAT-3+ MINI-CIRCUITS | Кол-во: 4.0 шт
+20. PAT-3+ MINI-CIRCUITS | Кол-во: 4.0 шт
+21. PAT-30+ MINI-CIRCUITS | Кол-во: 1.0 шт
+22. PAT-4+ MINI-CIRCUITS | Кол-во: 2.0 шт
+23. PAT-5+ MINI-CIRCUITS | Кол-во: 1.0 шт
+24. Robust Ethernet FMC 1,8V (for UltraZed-EV, PicoZed FMC Carrier Card V2 - PicoZed SoM7030 ) ф.Opsero Inc | Кол-во: 21.0 шт
+25. Robust Ethernet FMC 1.8V ф. Opsero Inc. | Кол-во: 21.0 шт
+26. Robust Ethernet FMC 2,5V (MicroZed FMC Carrier - !only MicroZed FMC 7020!, PicoZed FMC Carrier Card V2 - PicoZed FMC  SoM 7015 or 7020) ф.Opsero Inc | Кол-во: 21.0 шт
+27. БФ  ШСК-М  АМФИ.436717.ХХХ | Кол-во: 21.0 шт
+28. ВЧ – ПЕРЕКЛЮЧАТЕЛЬ MSP2TA-18-12BM+, MINI-CIRCUITS | Кол-во: 4.0 шт
+29. ВЧ-переключатель ZASWA-2-50DR-FA+ ф.Mini-Circuits | Кол-во: 6.0 шт
+30. Делитель  мощности QPD2-800-2700-30-S ф.Qualwave | Кол-во: 2.0 шт
+31. Детектор  SDLVA-100M18G-DC-70-MAH-OPT0D16 ф. Planar Monolithics Industries | Кол-во: 21.0 шт
+32. Детектор SDLVA-100M18G-DC-70-MAH-OPT0D16 ф.Planar Monolithics Industries | Кол-во: 1.0 шт
+33. Детектор SDLVA-100M3G-70-MAH ф.Mini-Circuits | Кол-во: 1.0 шт
+34. Корректор АЧХ PNE-L6-001-PKF ф.Polaris | Кол-во: 3.0 шт
+35. Корректор АЧХ PNE-L6-002-PKF ф.Polaris | Кол-во: 3.0 шт
+36. Корректор АЧХ PNE-L6-003-PKF ф.Polaris | Кол-во: 3.0 шт
+37. Корректор АЧХ PNE-L6-004-PKF ф.Polaris | Кол-во: 3.0 шт
+38. Корректор АЧХ PNE-L6-005-PKF ф.Polaris | Кол-во: 3.0 шт
+39. Корректор АЧХ PNE-L6-006-PKF ф.Polaris | Кол-во: 3.0 шт
+40. Корректор АЧХ PNE-L6-007-PKF ф.Polaris | Кол-во: 3.0 шт
+41. Корректор АЧХ PNE-L6-008-PKF ф.Polaris | Кол-во: 3.0 шт
+42. Корректор АЧХ PNE-L6-009-PKF ф.Polaris | Кол-во: 3.0 шт
+43. Корректор АЧХ PNE-L6-010-PKF ф.Polaris | Кол-во: 3.0 шт
+44. Корректор АЧХ VEQUS6P-457013-S5S5 ф.Etl Systems | Кол-во: 1.0 шт
+45. Ответвитель направленный  QSDC-1000-4000-30-10-S ф. Qualwave | Кол-во: 21.0 шт
+46. Ответвитель направленный QSDC-1000-4000-30-10-S ф.Qualwave | Кол-во: 1.0 шт
+47. ПЛАТА  117212-HMC624ALP4 HITTITE | Кол-во: 1.0 шт
+48. Плата преобразователя уровней АМФИ.468362.ХХХ | Кол-во: 21.0 шт
+49. УСИЛИТЕЛЬ  ZX60-P105LN+ MINI CIRCUITS | Кол-во: 2.0 шт
+50. УСИЛИТЕЛЬ ZX60-V62+ MINI-CIRCUITS | Кол-во: 1.0 шт
+51. Усилитель ВЧ  TB-TSS2-53LNBC+ ф. Mini-Circuits | Кол-во: 21.0 шт
+52. Усилитель ВЧ TB-TSS2-53LNBC+ ф.Mini-Circuits | Кол-во: 2.0 шт
+53. Фазовращатель PS-500M2G-8B-SFF ф. Planar Monolithics Industries | Кол-во: 21.0 шт
+54. управления  ZX76-WS+ ф. Mini-Circuits | Кол-во: 21.0 шт
+
+================================================================================
+Всего записей: 54

@@ -1,9 +1,9 @@
 {
   "app_info": {
-    "version": "1.7.6",
+    "version": "1.7.9",
     "release_date": "08.10.2025",
     "developer": "Куреин М.Н.",
-    "description": "Категоризатор BOM файлов (Исправлена ошибка Excel)",
+    "description": "Категоризатор BOM файлов (Автоматический интерактивный режим)",
     "last_updated": "2025-10-08"
   },
   "security": {

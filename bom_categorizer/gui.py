@@ -296,32 +296,57 @@ class BOMCategorizerApp(tk.Tk):
             self.txt.see(tk.END)
             self.update_idletasks()
             
-            # Проверяем наличие нераспределенных элементов и предлагаем интерактивную классификацию
-            self.check_and_offer_interactive_classification()
+            # Извлекаем реальный путь выходного файла из вывода CLI
+            import re
+            match = re.search(r'XLSX written: (.+?)(?:\s+\(|$)', output_text)
+            if match:
+                actual_output_file = match.group(1).strip()
+                self.check_and_offer_interactive_classification(actual_output_file)
+            else:
+                # Fallback на значение из поля
+                self.check_and_offer_interactive_classification()
         
         run_cli_async(args, after_run)
     
-    def check_and_offer_interactive_classification(self):
+    def check_and_offer_interactive_classification(self, output_file=None):
         """Проверяет наличие нераспределенных элементов и предлагает интерактивную классификацию"""
-        output_file = self.output_xlsx.get()
-        if not output_file or not os.path.exists(output_file):
+        if output_file is None:
+            output_file = self.output_xlsx.get()
+        if not output_file:
+            return
+        
+        # Небольшая задержка для гарантии что файл записан
+        import time
+        time.sleep(0.5)
+        
+        if not os.path.exists(output_file):
+            self.txt.insert(tk.END, f"\n⚠️ Выходной файл не найден: {output_file}\n")
             return
         
         try:
             import pandas as pd
             # Проверяем наличие листа "Не распределено"
             xls = pd.ExcelFile(output_file)
+            
+            self.txt.insert(tk.END, f"\n📊 Листы в файле: {', '.join(xls.sheet_names)}\n")
+            
             if 'Не распределено' not in xls.sheet_names:
+                self.txt.insert(tk.END, "✅ Все элементы успешно классифицированы!\n")
                 return
             
             df_un = pd.read_excel(output_file, sheet_name='Не распределено')
             df_un_valid = df_un[df_un['Наименование ИВП'].notna()]
             
             if df_un_valid.empty:
+                self.txt.insert(tk.END, "✅ Все элементы в листе 'Не распределено' пустые или уже классифицированы!\n")
                 return
             
             # Есть нераспределенные элементы - предлагаем интерактивную классификацию
             count = len(df_un_valid)
+            self.txt.insert(tk.END, f"\n⚠️ Обнаружено {count} нераспределённых элементов!\n")
+            self.txt.see(tk.END)
+            self.update_idletasks()
+            
             response = messagebox.askyesno(
                 "Интерактивная классификация",
                 f"⚠️ Обнаружено {count} нераспределённых элементов!\n\n"
@@ -335,9 +360,14 @@ class BOMCategorizerApp(tk.Tk):
                 self.txt.see(tk.END)
                 self.update_idletasks()
                 self.open_classification_dialog(df_un_valid, output_file)
+            else:
+                self.txt.insert(tk.END, "ℹ️ Интерактивная классификация пропущена. Нераспределенные элементы остались в листе 'Не распределено'.\n")
         except Exception as e:
-            # Если не удалось прочитать - ничего страшного, просто пропускаем
-            pass
+            # Показываем ошибку в лог
+            self.txt.insert(tk.END, f"\n❌ Ошибка при проверке нераспределенных элементов: {e}\n")
+            self.txt.see(tk.END)
+            import traceback
+            self.txt.insert(tk.END, f"Детали: {traceback.format_exc()}\n")
 
     def on_interactive_classify(self):
         """Обработчик кнопки интерактивной классификации"""

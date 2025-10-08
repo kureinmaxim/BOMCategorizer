@@ -15,10 +15,22 @@ ProjectSnabjenie/
 ├── 🐍 interactive_classify_improved.py   # Улучшенная версия
 ├── 🐍 preview_unclassified.py            # Предпросмотр неклассифицированных
 │
+├── 📦 bom_categorizer/                   # Модульная структура (v1.7.5+)
+│   ├── __init__.py                       # Инициализация модуля
+│   ├── main.py                           # CLI точка входа
+│   ├── classifiers.py                    # Классификация компонентов
+│   ├── parsers.py                        # Парсеры TXT/DOCX/Excel
+│   ├── formatters.py                     # Форматирование данных
+│   ├── excel_writer.py                   # Запись Excel с форматированием
+│   ├── txt_writer.py                     # Генерация TXT отчетов
+│   ├── utils.py                          # Утилиты и regex
+│   └── gui.py                            # Tkinter GUI
+│
 ├── ⚙️ config.json                        # Конфигурация приложения (v1.7.5 + PIN защита)
 ├── 📋 requirements.txt                   # Python зависимости
 ├── 📋 rules.json                         # Правила категоризации
 │
+├── 🔧 build_installer.py                 # 🆕 Автоматическая сборка инсталлятора
 ├── 🔧 run_app.bat                        # Запуск GUI (Windows)
 ├── 🔧 start_gui.bat                      # Альтернативный запуск GUI
 ├── 🔧 split_bom.bat                      # Запуск CLI без активации venv
@@ -91,22 +103,38 @@ ProjectSnabjenie/
 
 ## 🔄 Процесс сборки инсталлятора
 
+### 🚀 Автоматический способ (рекомендуется)
+
+```powershell
+python build_installer.py
+```
+
+Скрипт `build_installer.py` автоматически:
+1. Создает `temp_installer/`
+2. Копирует все необходимые файлы
+3. Запускает Inno Setup Compiler
+4. Создает `BOMCategorizerSetup.exe`
+
 ```mermaid
 graph TD
-    A[Исходные файлы] --> B[temp_installer]
-    B --> C[Inno Setup Compiler]
-    C --> D[BOMCategorizerSetup.exe]
-    
-    E[offline_packages] --> B
-    F[docs/] --> B
+    A[build_installer.py] --> B[Очистка temp_installer]
+    B --> C[Копирование файлов]
+    C --> D[Копирование bom_categorizer/]
+    C --> E[Копирование offline_packages/]
+    C --> F[Копирование docs/]
+    D --> G[Запуск ISCC.exe]
+    E --> G
+    F --> G
+    G --> H[BOMCategorizerSetup.exe]
 ```
 
 ### Копируемые файлы:
 1. **Python скрипты** (app.py, split_bom.py, etc.)
-2. **Конфигурация** (config.json, rules.json, requirements.txt)
-3. **Документация** (README.md, BUILD.md, docs/)
-4. **Офлайн пакеты** (offline_packages/)
-5. **Скрипты** (run_app.bat, post_install.ps1)
+2. **Модульная структура** (bom_categorizer/)
+3. **Конфигурация** (config.json, rules.json, requirements.txt)
+4. **Документация** (README.md, BUILD.md, docs/)
+5. **Офлайн пакеты** (offline_packages/)
+6. **Скрипты** (run_app.bat, post_install.ps1, start_gui.bat, split_bom.bat)
 
 ---
 
@@ -142,6 +170,12 @@ graph TD
 
 ## 🚀 Быстрые команды
 
+### 🎯 Сборка инсталлятора (рекомендуется):
+```powershell
+# Автоматическая сборка - один скрипт делает всё!
+python build_installer.py
+```
+
 ### Обновление offline_packages:
 ```powershell
 python -m pip download -r requirements.txt `
@@ -151,18 +185,23 @@ python -m pip download -r requirements.txt `
     --python-version 313
 ```
 
-### Подготовка temp_installer:
+### Подготовка temp_installer (ручной способ):
 ```powershell
+# ⚠️ Лучше использовать build_installer.py!
+# Но если нужно вручную:
+
 # Копировать основные файлы
-Copy-Item -Path "app.py", "split_bom.py", "config.json", "README.md", "requirements.txt", "BUILD.md", "interactive_classify.py", "interactive_classify_improved.py", "post_install.ps1", "preview_unclassified.py", "rules.json", "run_app.bat", "split_bom.bat", "start_gui.bat" -Destination "temp_installer" -Force
+Copy-Item -Path "app.py", "split_bom.py", "config.json", "README.md", "requirements.txt", "BUILD.md", "interactive_classify.py", "interactive_classify_improved.py", "post_install.ps1", "preview_unclassified.py", "rules.json", "run_app.bat", "split_bom.bat", "start_gui.bat", "installer_clean.iss" -Destination "temp_installer" -Force
 
 # Копировать директории
+Copy-Item -Path "bom_categorizer" -Destination "temp_installer\bom_categorizer" -Recurse -Force
 Copy-Item -Path "docs" -Destination "temp_installer\docs" -Recurse -Force
 Copy-Item -Path "offline_packages" -Destination "temp_installer\offline_packages" -Recurse -Force
 ```
 
-### Компиляция:
+### Компиляция (ручной способ):
 ```powershell
+# ⚠️ build_installer.py делает это автоматически!
 & "C:\Program Files (x86)\Inno Setup 6\iscc.exe" "installer_clean.iss"
 ```
 
@@ -176,9 +215,10 @@ Copy-Item -Path "offline_packages" -Destination "temp_installer\offline_packages
 3. 🎯 `docs/INTERACTIVE_MODE_GUIDE.md` - для интерактивной работы
 
 **Разработчикам:**
-1. 🔧 `BUILD.md` - как собрать инсталлятор
+1. 🔧 `BUILD.md` - как собрать инсталлятор (автоматически через `build_installer.py`)
 2. 📦 `docs/OFFLINE_INSTALLER.md` - про офлайн режим
 3. 📁 `docs/PROJECT_STRUCTURE.md` - структура проекта (вы здесь)
+4. 🐍 `build_installer.py` - скрипт автоматической сборки
 
 **Проблемы установки?**
 1. 🔍 `docs/INSTALL_FIX_SUMMARY.md` - решённые проблемы

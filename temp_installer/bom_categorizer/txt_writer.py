@@ -88,6 +88,40 @@ def write_txt_reports(outputs: Dict[str, pd.DataFrame], txt_dir: str, desc_col: 
         if output_df.empty:
             continue
         
+        # Применить ту же сортировку что и в Excel
+        category_name = RUS_SHEET_NAMES.get(key, key)
+        
+        if category_name in ['Конденсаторы', 'Дроссели', 'Резисторы', 'Индуктивности']:
+            # Сортировка по номиналу
+            from .formatters import extract_nominal_value
+            category_map = {
+                'Резисторы': 'resistors',
+                'Конденсаторы': 'capacitors',
+                'Дроссели': 'inductors',
+                'Индуктивности': 'inductors',
+            }
+            category_key = category_map.get(category_name, 'resistors')
+            
+            def get_nominal_value(text):
+                result = extract_nominal_value(str(text), category_key)
+                # result может быть tuple (value, unit) или просто значение
+                if isinstance(result, tuple):
+                    return result[0] if result[0] is not None else float('inf')
+                else:
+                    return result if result is not None else float('inf')
+            
+            output_df['_nominal_value'] = output_df[desc_col_found].apply(get_nominal_value)
+            output_df = output_df.sort_values(by=['_nominal_value', desc_col_found], ascending=[True, True])
+            output_df = output_df.drop(columns=['_nominal_value'])
+        
+        elif category_name in ['Отладочные платы и модули', 'Модули питания', 'Оптические компоненты',
+                               'Полупроводники', 'Разъемы', 'Кабели', 'Другие']:
+            # Алфавитная сортировка
+            output_df = output_df.sort_values(by=desc_col_found, ascending=True)
+        
+        # Для остальных категорий - без сортировки
+        output_df = output_df.reset_index(drop=True)
+        
         # Записать TXT файл
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(f"=== {category_name.upper()} ===\n")

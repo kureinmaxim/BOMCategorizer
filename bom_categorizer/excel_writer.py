@@ -130,8 +130,14 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
     result_df = df.copy()
     
     # Переименовать столбцы
-    if 'Общее количество' in result_df.columns:
-        result_df = result_df.rename(columns={'Общее количество': 'Кол-во'})
+    # СНАЧАЛА ищем оригинальную колонку количества
+    qty_col_candidates = ['_merged_qty_', 'qty', 'Количество', 'количество', 'Общее количество']
+    for candidate in qty_col_candidates:
+        if candidate in result_df.columns:
+            if candidate != 'Кол-во':
+                result_df = result_df.rename(columns={candidate: 'Кол-во'})
+            break
+    
     if 'наименование ивп' in result_df.columns:
         result_df = result_df.rename(columns={'наименование ивп': 'Наименование ИВП'})
     # Переименовать нормализованные английские колонки в русские
@@ -139,8 +145,6 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
         result_df = result_df.rename(columns={'_merged_description_': 'Наименование ИВП'})
     elif 'description' in result_df.columns and 'Наименование ИВП' not in result_df.columns:
         result_df = result_df.rename(columns={'description': 'Наименование ИВП'})
-    if 'qty' in result_df.columns and 'Кол-во' not in result_df.columns:
-        result_df = result_df.rename(columns={'qty': 'Кол-во'})
     
     # Обработать наименование - очистить и извлечь ТУ
     # Найти столбец с наименованием (ВАЖНО: сначала ищем переименованный столбец!)
@@ -229,7 +233,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
     
     # Сортировка зависит от категории
     if sheet_name in ['Конденсаторы', 'Дроссели', 'Резисторы', 'Индуктивности']:
-        # Определяем категорию для extract_nominal_value
+        # Сортировка ТОЛЬКО по номиналу (игнорируя тип компонента)
         category_map = {
             'Резисторы': 'resistors',
             'Конденсаторы': 'capacitors',
@@ -238,57 +242,37 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
         }
         category_key = category_map.get(sheet_name, 'resistors')
         
-        # Сортировка по номиналу
-        result_df['_nominal'] = result_df[desc_col_name].apply(
-            lambda x: extract_nominal_value(str(x), category_key)
-        )
+        # Извлекаем номинал для каждого компонента
+        def get_nominal_value(text):
+            result = extract_nominal_value(str(text), category_key)
+            # result может быть tuple (value, unit) или просто значение
+            if isinstance(result, tuple):
+                return result[0] if result[0] is not None else float('inf')
+            else:
+                return result if result is not None else float('inf')
+        
+        result_df['_nominal_value'] = result_df[desc_col_name].apply(get_nominal_value)
+        
+        # Сортируем ТОЛЬКО по номиналу (игнорируя тип)
         result_df = result_df.sort_values(
-            by=['_nominal', desc_col_name],
+            by=['_nominal_value', desc_col_name],
             ascending=[True, True]
         )
-        result_df = result_df.drop(columns=['_nominal'])
-    else:
-        # Сортировка: сначала импортные, потом отечественные
-        result_df['_is_domestic'] = result_df['ТУ'].apply(
-            lambda x: 1 if (x and x != '-' and str(x).strip() != '') else 0
-        )
-        
-        # Для отечественных: извлечь первые цифры из названия
-        def get_domestic_number(row):
-            if row['_is_domestic'] == 1:
-                name = str(row[desc_col_name])
-                match = re.match(r'(\d+)', name)
-                if match:
-                    return int(match.group(1))
-                else:
-                    return 999999
-            else:
-                return 0
-        
-        result_df['_domestic_num'] = result_df.apply(get_domestic_number, axis=1)
-        
-        # Для импортных: сортировка по номиналу (если применимо)
-        category_map = {
-            'Микросхемы': 'ics',
-            'Полупроводники': 'semiconductors',
-        }
-        category_key = category_map.get(sheet_name, 'ics')
-        
-        result_df['_nominal'] = result_df[desc_col_name].apply(
-            lambda x: extract_nominal_value(str(x), category_key) or 0
-        )
-        
-        # Сортируем: сначала по типу (импортные/отечественные), потом по номиналу/номеру, потом по имени
-        result_df = result_df.sort_values(
-            by=['_is_domestic', '_domestic_num', '_nominal', desc_col_name],
-            ascending=[True, True, True, True]
-        )
-        
-        result_df = result_df.drop(columns=['_is_domestic', '_domestic_num', '_nominal'])
+        result_df = result_df.drop(columns=['_nominal_value'])
+    
+    elif sheet_name in ['Отладочные платы и модули', 'Модули питания', 'Оптические компоненты', 
+                         'Полупроводники', 'Разъемы', 'Кабели', 'Другие']:
+        # Алфавитная сортировка для этих категорий
+        result_df = result_df.sort_values(by=desc_col_name, ascending=True)
+    
+    # Для остальных категорий (Микросхемы, Наши разработки) - без сортировки
     
     result_df = result_df.reset_index(drop=True)
     
     # Добавить № п/п в начало (ПОСЛЕ сортировки!)
+    # Сначала удалим если уже есть
+    if '№ п/п' in result_df.columns:
+        result_df = result_df.drop(columns=['№ п/п'])
     result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
     
     # Переименовать source_file в Источник
@@ -391,8 +375,10 @@ def write_categorized_excel(
             
             sheet_name = RUS_SHEET_NAMES.get(key, key)
             
+            # НЕ ОБОГАЩАЕМ - используем оригинальные данные как в TXT
             # Обогатить данными МР и общим количеством
-            result_df = enrich_with_mr_and_total(part_df)
+            # result_df = enrich_with_mr_and_total(part_df)
+            result_df = part_df.copy()
             
             # Фильтровать строки с пустым Наименованием ИВП
             desc_check_cols = [desc_col, '_merged_description_', 'description', 'Наименование ИВП']
