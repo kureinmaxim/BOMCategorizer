@@ -2,7 +2,24 @@ Commands2Install
 
 taskkill /F /IM python.exe 2>$null; Start-Sleep -Milliseconds 500
 
+Get-Item temp_installer\split_bom.py | Select-Object LastWriteTime
 
+if (Test-Path temp_installer\split_bom.py) { (Get-Item temp_installer\split_bom.py).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") } else { Write-Host "temp_installer не существует" }
+
+---------------------------------------------------------------------------
+
+python build_installer.py
+
+Достаточно теперь только его запустить и Новый инсталлятор готов: C:\Project\ProjectSnabjenie\BOMCategorizerSetup.exe 
+Это обеспечивает:
+✅ Копирование всех необходимых файлов
+✅ Проверку наличия файлов
+✅ Правильную последовательность сборки
+✅ Отчет о размере и времени создани
+
+---------------------------------------------------------------------------
+
+Раньше так было
 
 Copy-Item -Path "app.py", "split_bom.py", "config.json", "requirements.txt", "rules.json", "run_app.bat", "interactive_classify.py", "interactive_classify_improved.py", "preview_unclassified.py", "post_install.ps1", "README.md", "BUILD.md" -Destination "temp_installer\" -Force
 
@@ -11,3 +28,5 @@ Get-Content "temp_installer\requirements.txt"
 & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer_clean.iss
 
 Get-Item BOMCategorizerSetup.exe | Select-Object Name, @{Name='Size (MB)';Expression={[math]::Round($_.Length/1MB,2)}}, LastWriteTime | Format-List
+
+-------------------------------------------------------------------------
