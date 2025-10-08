@@ -1,0 +1,45 @@
+=== ОТЛАДОЧНЫЕ МОДУЛИ ===
+Всего элементов: 38
+================================================================================
+
+1. KVM-коммутатор Tiny Pilot Voyager 2a ф.Tiny Pilot | Кол-во: 1 шт
+2. Mini-Circuits ZX76-WS+ | Кол-во: 1 шт
+3. Robust Ethernet FMC 1,8V (for UltraZed-EV, PicoZed FMC Carrier Card V2 - PicoZed SoM7030 ) ф.Opsero Inc | Кол-во: 1 шт
+4. Robust Ethernet FMC 2,5V (MicroZed FMC Carrier - !only MicroZed FMC 7020!, PicoZed FMC Carrier Card V2 - PicoZed FMC SoM 7015 or 7020) ф.Opsero Inc | Кол-во: 1 шт
+5. ВЧ – ПЕРЕКЛЮЧАТЕЛЬ MSP2TA-18-12BM+, MINI-CIRCUITS | Кол-во: 1 шт
+6. ВЧ-переключатель ZASWA-2-50DR-FA+ ф.Mini-Circuits | Кол-во: 1 шт
+7. Корректор АЧХ PNE-L6-001-PKF ф.Polaris | Кол-во: 1 шт
+8. Корректор АЧХ PNE-L6-002-PKF ф.Polaris | Кол-во: 1 шт
+9. Корректор АЧХ PNE-L6-003-PKF ф.Polaris | Кол-во: 1 шт
+10. Корректор АЧХ PNE-L6-004-PKF ф.Polaris | Кол-во: 1 шт
+11. Корректор АЧХ PNE-L6-005-PKF ф.Polaris | Кол-во: 1 шт
+12. Корректор АЧХ PNE-L6-006-PKF ф.Polaris | Кол-во: 1 шт
+13. Корректор АЧХ PNE-L6-007-PKF ф.Polaris | Кол-во: 1 шт
+14. Корректор АЧХ PNE-L6-008-PKF ф.Polaris | Кол-во: 1 шт
+15. Корректор АЧХ PNE-L6-009-PKF ф.Polaris | Кол-во: 1 шт
+16. Корректор АЧХ PNE-L6-010-PKF ф.Polaris | Кол-во: 1 шт
+17. Ответвитель направленный QSDC-1000-4000-30-10-S ф. Qualwave | Кол-во: 1 шт
+18. Ответвитель направленный QSDC-1000-4000-30-10-S ф.Qualwave | Кол-во: 1 шт
+19. Плата инструментальная AES-ZU-IOCC-G ф.Avnet (с модулем питания) | Кол-во: 1 шт
+20. Плата инструментальная AES-ZU3EG-1-SOM-I-G ф.Avnet | Кол-во: 1 шт
+21. Плата инструментальная AES-ZU7EV-1-SOM-I-G ф.Avnet | Кол-во: 1 шт
+22. Плата инструментальная AES-ZUEV-CC-G ф.Avnet (с модулем питания) | Кол-во: 1 шт
+23. Плата инструментальная Robust Ethernet FMC 1.8V ф. Opsero Inc. | Кол-во: 1 шт
+24. УСИЛИТЕЛЬ ZX60-V62+ MINI-CIRCUITS | Кол-во: 1 шт
+25. Усилитель ВЧ TB-TSS2-53LNBC+ ф. Mini-Circuits | Кол-во: 1 шт
+26. Усилитель ВЧ TB-TSS2-53LNBC+ ф.Mini-Circuits | Кол-во: 1 шт
+27. управления ZX76-WS+ ф. Mini-Circuits | Кол-во: 1 шт
+28. Плата инструментальная Analog Device, артикул EVAL-ADF4351EB1Z | Кол-во: 1 шт
+29. Плата инструментальная NUCLEO-H743ZI2 ф.STMicroelectronics | Кол-во: 1 шт
+30. УСИЛИТЕЛЬ ZX60-P105LN+ MINI CIRCUITS | Кол-во: 1 шт
+31. Плата инструментальная NT1 ф.Chengdu Ebyte Electronic Technology | Кол-во: 1 шт
+32. СВЧ ограничитель EK45361-01 ф. pSemi | Кол-во: 1 шт
+33. Корректор АЧХ VEQUS6P-457013-S5S5 ф.Etl Systems | Кол-во: 1 шт
+34. Детектор SDLVA-100M18G-DC-70-MAH-OPT0D16 ф. Planar Monolithics Industries | Кол-во: 1 шт
+35. Детектор SDLVA-100M18G-DC-70-MAH-OPT0D16 ф.Planar Monolithics Industries | Кол-во: 1 шт
+36. Детектор SDLVA-100M3G-70-MAH ф.Mini-Circuits | Кол-во: 1 шт
+37. Фазовращатель PS-500M2G-8B-SFF ф. Planar Monolithics Industries | Кол-во: 1 шт
+38. питания БФ ШСК-М | ТУ: АМФИ.436717.ХХХ | Кол-во: 1 шт
+
+================================================================================
+Всего записей: 38

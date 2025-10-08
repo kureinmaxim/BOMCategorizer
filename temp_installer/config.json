@@ -1,9 +1,13 @@
 {
   "app_info": {
-    "version": "1.7.0",
-    "release_date": "07.10.2025",
+    "version": "1.7.2",
+    "release_date": "08.10.2025",
     "developer": "Куреин М.Н.",
-    "description": "Категоризатор BOM файлов (Auto Interactive + Fixed Output)",
-    "last_updated": "2025-10-07"
+    "description": "Категоризатор BOM файлов (PIN Protection)",
+    "last_updated": "2025-10-08"
+  },
+  "security": {
+    "pin": "5421",
+    "require_pin": true
   }
 }

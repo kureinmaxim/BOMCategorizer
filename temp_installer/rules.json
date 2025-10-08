@@ -54,5 +54,20 @@
   {
     "contains": "PNE-L6-005-PKF",
     "category": "rf_modules"
+  },
+  {
+    "contains": "плата",
+    "category": "dev_boards",
+    "comment": "Добавлено пользователем для 'ПЛАТА 117212-HMC624ALP4 HITTITE'"
+  },
+  {
+    "contains": "линия",
+    "category": "optics",
+    "comment": "Добавлено пользователем для 'Линия многоканальная задержки МВОЛ3-6-FC/АРС КЕФС.203729.064'"
+  },
+  {
+    "contains": "прибор",
+    "category": "inductors",
+    "comment": "Добавлено пользователем для 'Прибор ФВК3-28'"
   }
 ]

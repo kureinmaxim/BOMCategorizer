@@ -61,11 +61,11 @@ def load_config() -> dict:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        cfg = load_config()
-        ver = cfg.get("app_info", {}).get("version", "dev")
-        name = cfg.get("app_info", {}).get("description", "BOM Categorizer")
+        self.cfg = load_config()
+        ver = self.cfg.get("app_info", {}).get("version", "dev")
+        name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("720x560")
+        self.geometry("720x600")
 
         self.input_files: list[str] = []
         self.sheet_spec = tk.StringVar()
@@ -77,8 +77,20 @@ class App(tk.Tk):
         self.assign_json = tk.StringVar()
         self.txt_dir = tk.StringVar()
         self.create_txt = tk.BooleanVar(value=False)
+        
+        # PIN protection
+        self.unlocked = False
+        self.require_pin = self.cfg.get("security", {}).get("require_pin", False)
+        self.correct_pin = self.cfg.get("security", {}).get("pin", "5421")
+        
+        # Список виджетов для блокировки/разблокировки
+        self.lockable_widgets = []
 
         self.create_widgets()
+        
+        # Блокируем интерфейс если требуется PIN
+        if self.require_pin:
+            self.lock_interface()
 
     def create_widgets(self):
         pad = {"padx": 8, "pady": 6}
@@ -88,40 +100,97 @@ class App(tk.Tk):
 
         row = 0
         ttk.Label(frm, text="Входные файлы (XLSX/DOCX/DOC/TXT):").grid(row=row, column=0, sticky="w", **pad)
-        ttk.Button(frm, text="Добавить файлы", command=self.on_add_files).grid(row=row, column=1, sticky="w", **pad)
-        ttk.Button(frm, text="Очистить", command=self.on_clear_files).grid(row=row, column=2, sticky="w", **pad)
+        btn1 = ttk.Button(frm, text="Добавить файлы", command=self.on_add_files)
+        btn1.grid(row=row, column=1, sticky="w", **pad)
+        self.lockable_widgets.append(btn1)
+        
+        btn2 = ttk.Button(frm, text="Очистить", command=self.on_clear_files)
+        btn2.grid(row=row, column=2, sticky="w", **pad)
+        self.lockable_widgets.append(btn2)
+        
         self.listbox = tk.Listbox(frm, height=5)
         self.listbox.grid(row=row+1, column=0, columnspan=3, sticky="nsew", **pad)
+        self.lockable_widgets.append(self.listbox)
         frm.grid_rowconfigure(row+1, weight=1)
         frm.grid_columnconfigure(2, weight=1)
 
         row += 2
         ttk.Label(frm, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        ttk.Entry(frm, textvariable=self.sheet_spec).grid(row=row+1, column=0, columnspan=3, sticky="ew", **pad)
+        entry1 = ttk.Entry(frm, textvariable=self.sheet_spec)
+        entry1.grid(row=row+1, column=0, columnspan=3, sticky="ew", **pad)
+        self.lockable_widgets.append(entry1)
 
         row += 2
         ttk.Label(frm, text="Выходной XLSX:").grid(row=row, column=0, sticky="w", **pad)
-        ttk.Entry(frm, textvariable=self.output_xlsx).grid(row=row, column=1, sticky="ew", **pad)
-        ttk.Button(frm, text="Сохранить как...", command=self.on_pick_output).grid(row=row, column=2, sticky="w", **pad)
+        entry2 = ttk.Entry(frm, textvariable=self.output_xlsx)
+        entry2.grid(row=row, column=1, sticky="ew", **pad)
+        self.lockable_widgets.append(entry2)
+        
+        btn3 = ttk.Button(frm, text="Сохранить как...", command=self.on_pick_output)
+        btn3.grid(row=row, column=2, sticky="w", **pad)
+        self.lockable_widgets.append(btn3)
 
         row += 1
         ttk.Label(frm, text="Папка для TXT файлов (опционально):").grid(row=row, column=0, sticky="w", **pad)
-        ttk.Entry(frm, textvariable=self.txt_dir).grid(row=row, column=1, sticky="ew", **pad)
-        ttk.Button(frm, text="Выбрать...", command=self.on_pick_txt_dir).grid(row=row, column=2, sticky="w", **pad)
+        entry3 = ttk.Entry(frm, textvariable=self.txt_dir)
+        entry3.grid(row=row, column=1, sticky="ew", **pad)
+        self.lockable_widgets.append(entry3)
+        
+        btn4 = ttk.Button(frm, text="Выбрать...", command=self.on_pick_txt_dir)
+        btn4.grid(row=row, column=2, sticky="w", **pad)
+        self.lockable_widgets.append(btn4)
 
         row += 1
-        ttk.Checkbutton(frm, text="Суммарная комплектация (SUMMARY)", variable=self.combine).grid(row=row, column=0, sticky="w", **pad)
-        ttk.Checkbutton(frm, text="Более свободные эвристики", variable=self.loose).grid(row=row, column=1, sticky="w", **pad)
+        chk1 = ttk.Checkbutton(frm, text="Суммарная комплектация (SUMMARY)", variable=self.combine)
+        chk1.grid(row=row, column=0, sticky="w", **pad)
+        self.lockable_widgets.append(chk1)
+        
+        chk2 = ttk.Checkbutton(frm, text="Более свободные эвристики", variable=self.loose)
+        chk2.grid(row=row, column=1, sticky="w", **pad)
+        self.lockable_widgets.append(chk2)
 
         row += 1
-        ttk.Button(frm, text="Запустить обработку", command=self.on_run).grid(row=row, column=0, columnspan=2, sticky="ew", **pad)
-        ttk.Button(frm, text="Интерактивная классификация", command=self.on_interactive_classify).grid(row=row, column=2, sticky="ew", **pad)
+        btn5 = ttk.Button(frm, text="Запустить обработку", command=self.on_run)
+        btn5.grid(row=row, column=0, columnspan=2, sticky="ew", **pad)
+        self.lockable_widgets.append(btn5)
+        
+        btn6 = ttk.Button(frm, text="Интерактивная классификация", command=self.on_interactive_classify)
+        btn6.grid(row=row, column=2, sticky="ew", **pad)
+        self.lockable_widgets.append(btn6)
 
         row += 1
         ttk.Label(frm, text="Лог:").grid(row=row, column=0, sticky="w", **pad)
         self.txt = tk.Text(frm, height=10, wrap=tk.WORD)
         self.txt.grid(row=row+1, column=0, columnspan=3, sticky="nsew", **pad)
+        self.lockable_widgets.append(self.txt)
         frm.grid_rowconfigure(row+1, weight=2)
+        
+        # Футер с информацией о разработчике
+        footer = ttk.Frame(self)
+        footer.pack(fill=tk.X, side=tk.BOTTOM, padx=10, pady=5)
+        
+        ttk.Separator(footer, orient='horizontal').pack(fill=tk.X, pady=(0, 5))
+        
+        footer_text = ttk.Frame(footer)
+        footer_text.pack()
+        
+        ttk.Label(footer_text, text="Разработчик: ", 
+                 font=("Arial", 9)).pack(side=tk.LEFT)
+        
+        self.dev_label = tk.Label(footer_text, 
+                                  text=self.cfg.get("app_info", {}).get("developer", "Н/Д"),
+                                  font=("Arial", 9, "bold"),
+                                  fg="#2E7D32",
+                                  cursor="hand2")
+        self.dev_label.pack(side=tk.LEFT)
+        self.dev_label.bind("<Double-Button-1>", self.on_developer_double_click)
+        
+        ttk.Label(footer_text, text=" | ", 
+                 font=("Arial", 9)).pack(side=tk.LEFT)
+        
+        ttk.Label(footer_text, 
+                 text=f"Дата выпуска: {self.cfg.get('app_info', {}).get('release_date', 'N/A')}", 
+                 font=("Arial", 9)).pack(side=tk.LEFT)
 
     def on_add_files(self):
         files = filedialog.askopenfilenames(
@@ -169,6 +238,8 @@ class App(tk.Tk):
         td = self.txt_dir.get().strip()
         if td:
             args.extend(["--txt-dir", td])
+        # Всегда отключаем автоматический интерактивный режим в GUI
+        args.append("--no-interactive")
         return args
 
     def on_run(self):
@@ -186,8 +257,49 @@ class App(tk.Tk):
             self.txt.insert(tk.END, "\n\nГотово.\n")
             self.txt.see(tk.END)
             self.update_idletasks()
+            
+            # Проверяем наличие нераспределенных элементов и предлагаем интерактивную классификацию
+            self.check_and_offer_interactive_classification()
         
         run_cli_async(args, after_run)
+    
+    def check_and_offer_interactive_classification(self):
+        """Проверяет наличие нераспределенных элементов и предлагает интерактивную классификацию"""
+        output_file = self.output_xlsx.get()
+        if not output_file or not os.path.exists(output_file):
+            return
+        
+        try:
+            import pandas as pd
+            # Проверяем наличие листа "Не распределено"
+            xls = pd.ExcelFile(output_file)
+            if 'Не распределено' not in xls.sheet_names:
+                return
+            
+            df_un = pd.read_excel(output_file, sheet_name='Не распределено')
+            df_un_valid = df_un[df_un['Наименование ИВП'].notna()]
+            
+            if df_un_valid.empty:
+                return
+            
+            # Есть нераспределенные элементы - предлагаем интерактивную классификацию
+            count = len(df_un_valid)
+            response = messagebox.askyesno(
+                "Интерактивная классификация",
+                f"⚠️ Обнаружено {count} нераспределённых элементов!\n\n"
+                f"Запустить интерактивный режим для их классификации?\n"
+                f"Вы сможете вручную указать категорию для каждого элемента.",
+                icon='warning'
+            )
+            
+            if response:
+                self.txt.insert(tk.END, f"\n🔄 Запуск интерактивной классификации для {count} элементов...\n")
+                self.txt.see(tk.END)
+                self.update_idletasks()
+                self.open_classification_dialog(df_un_valid, output_file)
+        except Exception as e:
+            # Если не удалось прочитать - ничего страшного, просто пропускаем
+            pass
 
     def on_interactive_classify(self):
         """Интерактивная классификация нераспределенных элементов"""
@@ -405,6 +517,113 @@ class App(tk.Tk):
             messagebox.showinfo("Готово", f"Обработка завершена!\n\nПрименено {added_count} новых правил классификации.\nОбщее количество правил: {len(rules)}")
         
         run_cli_async(args, after_rerun)
+    
+    def lock_interface(self):
+        """Блокирует все элементы управления"""
+        for widget in self.lockable_widgets:
+            try:
+                widget.config(state='disabled')
+            except:
+                pass
+        self.txt.delete("1.0", tk.END)
+        self.txt.insert(tk.END, "🔒 Приложение заблокировано\n\n")
+        self.txt.insert(tk.END, "Для разблокировки сделайте двойной клик по имени разработчика внизу окна.\n")
+        self.txt.config(state='disabled')
+        self.dev_label.config(fg="#2E7D32")
+    
+    def unlock_interface(self):
+        """Разблокирует все элементы управления"""
+        for widget in self.lockable_widgets:
+            try:
+                widget.config(state='normal')
+            except:
+                pass
+        self.txt.config(state='normal')
+        self.txt.delete("1.0", tk.END)
+        self.txt.insert(tk.END, "✅ Приложение разблокировано!\n\n")
+        self.txt.insert(tk.END, "Вы можете начать работу.\n")
+        self.dev_label.config(fg="black")
+        self.unlocked = True
+    
+    def on_developer_double_click(self, event):
+        """Обработчик двойного клика по имени разработчика"""
+        if self.unlocked:
+            messagebox.showinfo("Информация", 
+                              f"Приложение: {self.cfg.get('app_info', {}).get('description', 'N/A')}\n"
+                              f"Версия: {self.cfg.get('app_info', {}).get('version', 'N/A')}\n"
+                              f"Дата выпуска: {self.cfg.get('app_info', {}).get('release_date', 'N/A')}\n"
+                              f"Разработчик: {self.cfg.get('app_info', {}).get('developer', 'N/A')}")
+        else:
+            self.show_pin_dialog()
+    
+    def show_pin_dialog(self):
+        """Показывает диалог ввода PIN-кода"""
+        dialog = tk.Toplevel(self)
+        dialog.title("Ввод PIN-кода")
+        dialog.geometry("400x200")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        dialog.configure(bg='white')
+        
+        # Центрируем окно
+        dialog.transient(self)
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Заголовок
+        tk.Label(dialog, text="🔐 Введите PIN-код для разблокировки:", 
+                font=("Arial", 11, "bold"), bg='white').pack(pady=(20, 15))
+        
+        # Поле ввода PIN
+        pin_var = tk.StringVar()
+        pin_entry = tk.Entry(dialog, textvariable=pin_var, show="●", 
+                            font=("Arial", 16), justify="center", width=12,
+                            relief=tk.SOLID, bd=2)
+        pin_entry.pack(pady=(0, 10))
+        pin_entry.focus_set()
+        
+        # Метка ошибки
+        error_label = tk.Label(dialog, text="", foreground="red", 
+                              font=("Arial", 9), bg='white')
+        error_label.pack(pady=(0, 15))
+        
+        def check_pin():
+            entered_pin = pin_var.get().strip()
+            if entered_pin == self.correct_pin:
+                dialog.destroy()
+                self.unlock_interface()
+            else:
+                error_label.config(text="❌ Неверный PIN-код!")
+                pin_entry.delete(0, tk.END)
+                pin_entry.focus_set()
+                # Тряска окна для визуального эффекта ошибки
+                original_x = dialog.winfo_x()
+                for i in range(3):
+                    dialog.geometry(f"+{original_x-10}+{y}")
+                    dialog.update()
+                    dialog.after(50)
+                    dialog.geometry(f"+{original_x+10}+{y}")
+                    dialog.update()
+                    dialog.after(50)
+                dialog.geometry(f"+{original_x}+{y}")
+        
+        # Кнопки
+        btn_frame = tk.Frame(dialog, bg='white')
+        btn_frame.pack(fill=tk.X, padx=30, pady=(0, 20))
+        
+        tk.Button(btn_frame, text="Разблокировать", command=check_pin,
+                 font=("Arial", 10, "bold"), bg='#4CAF50', fg='white',
+                 relief=tk.RAISED, bd=2, padx=10, pady=8, width=15).pack(side=tk.LEFT, padx=5)
+        
+        tk.Button(btn_frame, text="Отмена", command=dialog.destroy,
+                 font=("Arial", 10), bg='#f0f0f0',
+                 relief=tk.RAISED, bd=2, padx=10, pady=8, width=10).pack(side=tk.LEFT, padx=5)
+        
+        # Обработка Enter
+        pin_entry.bind("<Return>", lambda e: check_pin())
+        dialog.bind("<Escape>", lambda e: dialog.destroy())
 
 
 if __name__ == "__main__":

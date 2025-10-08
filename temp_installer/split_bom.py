@@ -490,6 +490,7 @@ def main():
     parser.add_argument("--merge-into", dest="merge_into", default=None, help="Existing categorized XLSX to merge into (append)")
     parser.add_argument("--combine", action="store_true", help="Create a SUMMARY sheet with aggregated quantities")
     parser.add_argument("--interactive", action="store_true", help="Interactive classification for unclassified rows")
+    parser.add_argument("--no-interactive", action="store_true", help="Disable automatic interactive mode prompt (for GUI/batch processing)")
     parser.add_argument("--loose", action="store_true", help="Use looser heuristics (may misclassify non-electronics)")
     parser.add_argument("--assign-json", dest="assign_json", default="rules.json", help="Path to JSON rules for assigning categories to unclassified rows. Format: [{'contains': 'text', 'category': 'ics'}]")
     parser.add_argument("--txt-dir", dest="txt_dir", default=None, help="Output directory for TXT files per category (in addition to XLSX)")
@@ -774,7 +775,7 @@ def main():
     # Interactive reassignment for unclassified
     # Автоматически включаем интерактивный режим, если есть нераспределенные элементы
     unclassified_count = len(df[df["category"] == "unclassified"])
-    auto_interactive = unclassified_count > 0 and not args.interactive
+    auto_interactive = unclassified_count > 0 and not args.interactive and not args.no_interactive
     
     if args.interactive or auto_interactive:
         cat_names = [
@@ -1126,6 +1127,8 @@ def main():
             'ЧИП КОНДЕНСАТОР',
             'НАБОР РЕЗИСТОРОВ',
             'НАБОР КОНДЕНСАТОРОВ',
+            'Набор резисторов',
+            'Набор конденсаторов',
             'ТРАНЗИСТОРНАЯ МАТРИЦА',
             'Транзисторная матрица',
             'Резистор', 
@@ -1161,10 +1164,15 @@ def main():
         component_types_sorted = sorted(component_types, key=len, reverse=True)
         type_found_in_text = False
         for comp_type in component_types_sorted:
-            if original_text.startswith(comp_type):
+            # Проверяем, начинается ли текст с типа компонента (с учетом регистра)
+            if original_text.startswith(comp_type) or original_text.upper().startswith(comp_type.upper()):
                 component_type = comp_type
                 type_found_in_text = True
-                text = text[len(comp_type):].strip() if text.startswith(comp_type) else text
+                # Удаляем тип из начала текста
+                if text.startswith(comp_type):
+                    text = text[len(comp_type):].strip()
+                elif text.upper().startswith(comp_type.upper()):
+                    text = text[len(comp_type):].strip()
                 break
         
         # ПРИОРИТЕТ 2: Если тип не найден в тексте, использовать тип из note (заголовка группы)
@@ -1174,6 +1182,9 @@ def main():
         
         # Очистить от лишних пробелов
         text = ' '.join(text.split())
+        
+        # Убрать знаки $ и $$ из конца
+        text = text.rstrip('$').strip()
         
         # Исправить регистр для единиц измерения
         # Заменяем ОМ на Ом, КОМ на кОм, МОМ на МОм и т.д.

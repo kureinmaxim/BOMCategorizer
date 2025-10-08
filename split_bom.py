@@ -323,9 +323,30 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     if has_any(text_blob, ["мвок", "наша разработ", "собственной разработ", "шск-м", "плата контроллера шск"]):
         return "our_developments"
     
-    # Dev boards / evaluation boards - check BEFORE optics (для Qualwave, API Technologies, etc.)
-    if has_any(text_blob, ["qualwave", "api technologies", "weinschel"]):
-        return "dev_boards"
+    # ВАЖНО: Проверяем специфичные компоненты ПЕРЕД широкими категориями
+    # Адаптеры в разъемы
+    if has_any(text_blob, ["адаптер", "adapter"]):
+        # Но не оптические адаптеры
+        if not has_any(text_blob, ["fc/", "sc/", "lc/", "оптическ", "optical", "fiber"]):
+            return "connectors"
+    
+    # Нагрузка согласованная в разъемы
+    if has_any(text_blob, ["нагрузка согласованная", "согласованная нагрузка", "matched load"]):
+        return "connectors"
+    
+    # Вентили в индуктивности
+    if has_any(text_blob, ["вентиль свч", "вентиль вч", "circulator", "isolator", "ферритов"]):
+        return "inductors"
+    
+    # Аттенюаторы QFA от Qualwave в "Другие" (не отладочные модули!)
+    if has_any(text_blob, ["аттенюатор qfa", "attenuator qfa"]):
+        return "others"
+    
+    # Dev boards / evaluation boards - УТОЧНЯЕМ для Qualwave, API Technologies, Weinschel
+    # Только платы и управляющие модули, НЕ аттенюаторы!
+    if has_any(text_blob, ["плата инструментальная", "evaluation board", "dev board", "отладочная плата"]):
+        if has_any(text_blob, ["qualwave", "api technologies", "weinschel"]):
+            return "dev_boards"
     
     # Optical components (широкая проверка) - check EARLY
     if has_any(text_blob, [
@@ -398,7 +419,7 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
     if CAP_VALUE_RE.search(text_blob) or has_any(text_blob, ["конденс", "capacitor", "tantalum", "ceramic", "к10-", "к53-"]):
         return "capacitors"
 
-    if IND_VALUE_RE.search(text_blob) or has_any(text_blob, ["дросс", "индукт", "inductor", "ferrite", "феррит", "катушка", "choke"]):
+    if IND_VALUE_RE.search(text_blob) or has_any(text_blob, ["дросс", "индукт", "inductor", "ferrite", "феррит", "катушка", "choke", "вентиль"]):
         return "inductors"
     
     # Предохранители - check BEFORE semiconductors and ICs (чтобы имели приоритет)
@@ -441,10 +462,14 @@ def classify_row(ref: Optional[str], description: Optional[str], value: Optional
         return "optics"
 
     if has_any(text_blob, [
-        "свч", "вч ", "rf ", "microwave", "mini-circuits", "planar monolithics", "pmi", "qualwave", "ghz", "lna", "rf amp",
-        "линия задержек", "delay line", "делитель", "сумматор", "splitter", "combiner", "аттенюатор свч", "усилител",
-        "polaris", "gigabaudics", "etl systems", "vat-", "zx60", "pne-l"
+        "свч", "вч ", "rf ", "microwave", "mini-circuits", "planar monolithics", "pmi", "ghz", "lna", "rf amp",
+        "линия задержек", "delay line", "делитель мощности", "сумматор", "splitter", "combiner", "усилител",
+        "polaris", "gigabaudics", "etl systems", "vat-", "zx60", "pne-l", "ответвитель", "coupler", "фазовращатель",
+        "phase shifter", "детектор", "detector", "ограничитель", "limiter", "корректор ачх", "equalizer"
     ]):
+        # НО! Не Qualwave аттенюаторы QFA (они уже обработаны выше как "others")
+        if has_any(text_blob, ["аттенюатор qfa", "qfa"]):
+            return "others"
         return "rf_modules"
 
     if has_any(text_blob, [
@@ -490,6 +515,7 @@ def main():
     parser.add_argument("--merge-into", dest="merge_into", default=None, help="Existing categorized XLSX to merge into (append)")
     parser.add_argument("--combine", action="store_true", help="Create a SUMMARY sheet with aggregated quantities")
     parser.add_argument("--interactive", action="store_true", help="Interactive classification for unclassified rows")
+    parser.add_argument("--no-interactive", action="store_true", help="Disable automatic interactive mode prompt (for GUI/batch processing)")
     parser.add_argument("--loose", action="store_true", help="Use looser heuristics (may misclassify non-electronics)")
     parser.add_argument("--assign-json", dest="assign_json", default="rules.json", help="Path to JSON rules for assigning categories to unclassified rows. Format: [{'contains': 'text', 'category': 'ics'}]")
     parser.add_argument("--txt-dir", dest="txt_dir", default=None, help="Output directory for TXT files per category (in addition to XLSX)")
@@ -618,16 +644,16 @@ def main():
                         src_sheet = first_key
                     else:
                         src_sheet = sheet if sheet is not None else 0
-                        
-                        # Проверка: если все колонки unnamed и первая строка содержит текст - это заголовки
-                        # (первая строка файла была пустая)
-                        if all(str(col).lower().startswith('unnamed') for col in df.columns):
-                            if not df.empty and df.iloc[0].notna().any():
-                                # Первая строка данных содержит настоящие заголовки
-                                new_headers = df.iloc[0].fillna('').astype(str)
-                                df = df[1:].reset_index(drop=True)
-                                df.columns = new_headers
-                        
+                    
+                    # Проверка: если все колонки unnamed и первая строка содержит текст - это заголовки
+                    # (первая строка файла была пустая)
+                    if all(str(col).lower().startswith('unnamed') for col in df.columns):
+                        if not df.empty and df.iloc[0].notna().any():
+                            # Первая строка данных содержит настоящие заголовки
+                            new_headers = df.iloc[0].fillna('').astype(str)
+                            df = df[1:].reset_index(drop=True)
+                            df.columns = new_headers
+                            
                     df["source_file"] = os.path.basename(input_path)
                     df["source_sheet"] = str(src_sheet)
                     all_rows.append(df)
@@ -774,7 +800,7 @@ def main():
     # Interactive reassignment for unclassified
     # Автоматически включаем интерактивный режим, если есть нераспределенные элементы
     unclassified_count = len(df[df["category"] == "unclassified"])
-    auto_interactive = unclassified_count > 0 and not args.interactive
+    auto_interactive = unclassified_count > 0 and not args.interactive and not args.no_interactive
     
     if args.interactive or auto_interactive:
         cat_names = [
@@ -950,13 +976,26 @@ def main():
             qty_series = pd.Series([1] * len(enriched), index=enriched.index)
 
         # grouping keys to compute total quantity per item
+        # ВАЖНО: Используем desc_col в любом случае, чтобы избежать группировки компонентов
+        # с пустыми MR-кодами (из разных файлов)
         group_keys: List[str] = []
+        
+        # Если есть заполненный desc_col - ВСЕГДА используем его как основной ключ
+        if desc_col and desc_col in enriched.columns:
+            group_keys.append(desc_col)
+        
+        # Дополнительно добавляем mr_col, если он есть и заполнен
         if mr_col and mr_col in enriched.columns and (enriched[mr_col].notna().any()):
-            group_keys = [mr_col]
-        else:
-            for cand in [part_col, value_col, desc_col]:
+            if mr_col not in group_keys:
+                group_keys.append(mr_col)
+        
+        # Если нет desc_col, пробуем другие кандидаты
+        if not group_keys:
+            for cand in [part_col, value_col]:
                 if cand and cand in enriched.columns:
                     group_keys.append(cand)
+        
+        # В крайнем случае - по категории
         if not group_keys:
             group_keys = ["category"]
 
@@ -1126,6 +1165,8 @@ def main():
             'ЧИП КОНДЕНСАТОР',
             'НАБОР РЕЗИСТОРОВ',
             'НАБОР КОНДЕНСАТОРОВ',
+            'Набор резисторов',
+            'Набор конденсаторов',
             'ТРАНЗИСТОРНАЯ МАТРИЦА',
             'Транзисторная матрица',
             'Резистор', 
@@ -1161,10 +1202,15 @@ def main():
         component_types_sorted = sorted(component_types, key=len, reverse=True)
         type_found_in_text = False
         for comp_type in component_types_sorted:
-            if original_text.startswith(comp_type):
+            # Проверяем, начинается ли текст с типа компонента (с учетом регистра)
+            if original_text.startswith(comp_type) or original_text.upper().startswith(comp_type.upper()):
                 component_type = comp_type
                 type_found_in_text = True
-                text = text[len(comp_type):].strip() if text.startswith(comp_type) else text
+                # Удаляем тип из начала текста
+                if text.startswith(comp_type):
+                    text = text[len(comp_type):].strip()
+                elif text.upper().startswith(comp_type.upper()):
+                    text = text[len(comp_type):].strip()
                 break
         
         # ПРИОРИТЕТ 2: Если тип не найден в тексте, использовать тип из note (заголовка группы)
@@ -1174,6 +1220,15 @@ def main():
         
         # Очистить от лишних пробелов
         text = ' '.join(text.split())
+        
+        # Убрать знаки $ и $$ из конца
+        text = text.rstrip('$').strip()
+        
+        # Нормализация для объединения компонентов из разных источников:
+        # 1. Убираем запятую перед "ф." (производитель)
+        text = re.sub(r',\s*ф\.', ' ф.', text)
+        # 2. Заменяем множественные пробелы на один (повторно, после всех замен)
+        text = re.sub(r'\s+', ' ', text)
         
         # Исправить регистр для единиц измерения
         # Заменяем ОМ на Ом, КОМ на кОм, МОМ на МОм и т.д.
@@ -1311,6 +1366,10 @@ def main():
         for key, part_df in outputs.items():
             sheet_name = rus_sheet_names.get(key, key)[:31]
             result_df = part_df.copy()
+            
+            # ФИЛЬТРАЦИЯ: Удалить строки с пустым "Наименование ИВП" (description)
+            if desc_col in result_df.columns:
+                result_df = result_df[result_df[desc_col].notna() & (result_df[desc_col].astype(str).str.strip() != '')]
             
             # Удалить ВСЕ старые колонки с номерами (могут быть варианты написания)
             cols_to_remove = [col for col in result_df.columns 
