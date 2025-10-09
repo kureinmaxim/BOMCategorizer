@@ -242,6 +242,9 @@ class BOMCategorizerApp(tk.Tk):
         ttk.Label(frm, text="Формат: Название ИВП, количество (по одному на строку). Пример: AD9221AR, 2").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
         
         row += 1
+        ttk.Label(frm, text="После ввода элементов нажмите кнопку 'Запустить обработку' выше").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
         self.exclude_items_text = tk.Text(frm, height=4, wrap=tk.WORD)
         self.exclude_items_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
         self.lockable_widgets.append(self.exclude_items_text)
@@ -456,6 +459,7 @@ class BOMCategorizerApp(tk.Tk):
         # Обработка исключений элементов
         if self.exclude_items_text:
             exclude_text = self.exclude_items_text.get("1.0", tk.END).strip()
+            
             if exclude_text:
                 # Создать временный файл с исключениями
                 import tempfile

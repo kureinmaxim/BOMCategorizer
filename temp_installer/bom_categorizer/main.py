@@ -681,20 +681,20 @@ def apply_exclusions(df: pd.DataFrame, exclude_items: list, desc_col: str) -> pd
                 df = df.drop(idx)
                 remaining_exclude_qty -= current_qty
                 excluded_count += 1
-                print(f"✓ Исключен элемент '{item_name}' (qty: {current_qty})")
+                print(f"[OK] Исключен элемент '{item_name}' (qty: {current_qty})")
             else:
                 # Уменьшить количество
                 new_qty = current_qty - remaining_exclude_qty
                 df.loc[idx, qty_col] = new_qty
-                print(f"✓ Уменьшено количество '{df.loc[idx, desc_col]}': {current_qty} → {new_qty}")
+                print(f"[OK] Уменьшено количество '{df.loc[idx, desc_col]}': {current_qty} -> {new_qty}")
                 remaining_exclude_qty = 0
                 reduced_count += 1
         
         if remaining_exclude_qty > 0:
-            print(f"⚠️ Не удалось исключить полное количество '{exclude_name}': осталось {remaining_exclude_qty}")
+            print(f"[ПРЕДУПРЕЖДЕНИЕ] Не удалось исключить полное количество '{exclude_name}': осталось {remaining_exclude_qty}")
     
     if excluded_count > 0 or reduced_count > 0:
-        print(f"\n📊 Итого исключено: {excluded_count} строк, уменьшено: {reduced_count} строк")
+        print(f"\n[ИТОГО] Исключено: {excluded_count} строк, уменьшено: {reduced_count} строк")
     
     return df
 
@@ -710,7 +710,7 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
     Returns:
         Словарь категорий с DataFrame
     """
-    print(f"\n📂 Обработка файла: {file_path}")
+    print(f"\n[ОБРАБОТКА] Файл: {file_path}")
     
     # Загрузить файл
     df = load_and_combine_inputs([file_path], None, None)
@@ -736,7 +736,7 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
         unclassified_mask = df["category"] == "unclassified"
         unclassified_count = unclassified_mask.sum()
         if unclassified_count > 0:
-            print(f"ℹ️  Перенос {unclassified_count} нераспределенных элементов в категорию 'Другие'")
+            print(f"[INFO] Перенос {unclassified_count} нераспределенных элементов в категорию 'Другие'")
             df.loc[unclassified_mask, "category"] = "others"
     
     # Очистить названия
@@ -750,6 +750,15 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
                 else:
                     cleaned_values.append(val)
             df[desc_col] = cleaned_values
+    
+    # Удалить все элементы с "АМФИ" из выходного файла
+    if desc_col in df.columns:
+        initial_count = len(df)
+        df = df[~df[desc_col].astype(str).str.upper().str.contains('АМФИ', na=False)]
+        df = df.reset_index(drop=True)
+        removed_count = initial_count - len(df)
+        if removed_count > 0:
+            print(f"[ФИЛЬТР] Удалено {removed_count} элементов с 'АМФИ'")
     
     # Создать outputs словарь
     outputs = create_outputs_dict(df)
@@ -776,7 +785,7 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
         else:
             processed_outputs[category] = cat_df
     
-    print(f"✓ Файл обработан: {len(df)} элементов в {len(outputs)} категориях")
+    print(f"[OK] Файл обработан: {len(df)} элементов в {len(outputs)} категориях")
     
     return processed_outputs
 
@@ -792,7 +801,7 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
         no_interactive: Отключить интерактивный режим
     """
     print("=" * 80)
-    print("🔄 СРАВНЕНИЕ BOM ФАЙЛОВ")
+    print("[СРАВНЕНИЕ] BOM ФАЙЛОВ")
     print("=" * 80)
     
     # Обработать оба файла
@@ -802,7 +811,7 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
     # Получить все категории
     all_categories = sorted(set(list(outputs1.keys()) + list(outputs2.keys())))
     
-    print(f"\n📊 Сравнение по категориям...")
+    print(f"\n[АНАЛИЗ] Сравнение по категориям...")
     
     # Создать список для результатов
     comparison_results = []
@@ -907,8 +916,8 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
             from .excel_writer import apply_excel_styles
             apply_excel_styles(writer)
         
-        print(f"\n✅ Результаты сравнения записаны: {output_path}")
-        print(f"   Найдено различий: {len(comparison_results)}")
+        print(f"\n[УСПЕХ] Результаты сравнения записаны: {output_path}")
+        print(f"        Найдено различий: {len(comparison_results)}")
         
         # Статистика
         added = len([r for r in comparison_results if r['Изменение'] == 'Добавлено'])
@@ -919,7 +928,7 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
         print(f"   Удалено: {removed}")
         print(f"   Изменено: {changed}")
     else:
-        print("\n✅ Файлы идентичны, различий не найдено")
+        print("\n[РЕЗУЛЬТАТ] Файлы идентичны, различий не найдено")
         
         # Все равно создать файл с сообщением
         result_df = pd.DataFrame([{'Результат': 'Файлы идентичны, различий не найдено'}])
@@ -950,14 +959,14 @@ def main():
     # Режим сравнения файлов
     if args.compare:
         if not args.compare_output:
-            print("❌ Ошибка: укажите --compare-output для сохранения результатов сравнения")
+            print("[ОШИБКА] укажите --compare-output для сохранения результатов сравнения")
             return
         compare_bom_files(args.compare[0], args.compare[1], args.compare_output, args.no_interactive)
         return
     
     # Обычный режим обработки
     if not args.inputs or not args.xlsx:
-        print("❌ Ошибка: укажите --inputs и --xlsx для обработки файлов")
+        print("[ОШИБКА] укажите --inputs и --xlsx для обработки файлов")
         return
     
     # Load and combine inputs
@@ -1022,6 +1031,15 @@ def main():
                 else:
                     cleaned_values.append(val)
             df[desc_col] = cleaned_values
+    
+    # Удалить все элементы с "АМФИ" из выходного файла
+    if desc_col in df.columns:
+        initial_count = len(df)
+        df = df[~df[desc_col].astype(str).str.upper().str.contains('АМФИ', na=False)]
+        df = df.reset_index(drop=True)
+        removed_count = initial_count - len(df)
+        if removed_count > 0:
+            print(f"[ФИЛЬТР] Удалено {removed_count} элементов с 'АМФИ' из выходного файла")
     
     # Create outputs dictionary
     outputs = create_outputs_dict(df)

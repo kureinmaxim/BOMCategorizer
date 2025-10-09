@@ -309,7 +309,37 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         # Алфавитная сортировка для этих категорий
         result_df = result_df.sort_values(by=desc_col_name, ascending=True)
     
-    # Для остальных категорий (Микросхемы, Наши разработки) - без сортировки
+    elif sheet_name == 'Микросхемы':
+        # Специальная сортировка: латинские названия перед кириллическими
+        def get_sort_key(text):
+            text = str(text).strip()
+            if not text:
+                return (2, text)  # Пустые в конец
+            
+            # Найти первую букву (не цифру) для определения группы
+            first_letter = None
+            for char in text:
+                char_upper = char.upper()
+                if 'A' <= char_upper <= 'Z' or 'А' <= char_upper <= 'Я' or char_upper == 'Ё':
+                    first_letter = char_upper
+                    break
+            
+            if first_letter:
+                # Латинские символы (A-Z) - группа 0
+                if 'A' <= first_letter <= 'Z':
+                    return (0, text.upper())
+                # Кириллические символы - группа 1
+                elif 'А' <= first_letter <= 'Я' or first_letter == 'Ё':
+                    return (1, text.upper())
+            
+            # Если нет букв - группа 2
+            return (2, text.upper())
+        
+        result_df['_sort_key'] = result_df[desc_col_name].apply(get_sort_key)
+        result_df = result_df.sort_values(by='_sort_key', ascending=True)
+        result_df = result_df.drop(columns=['_sort_key'])
+    
+    # Для остальных категорий (Наши разработки) - без сортировки
     
     result_df = result_df.reset_index(drop=True)
     
@@ -353,6 +383,10 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
     pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
     cols_to_remove.extend(pp_columns)
+    
+    # Добавить все колонки "unnamed" для удаления
+    unnamed_columns = [col for col in result_df.columns if 'unnamed' in str(col).lower()]
+    cols_to_remove.extend(unnamed_columns)
     
     for col in cols_to_remove:
         if col in result_df.columns:

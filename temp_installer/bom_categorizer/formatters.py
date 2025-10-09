@@ -92,6 +92,14 @@ def clean_component_name(original_text: str, note: str = "") -> str:
     # In that case, we've already removed it.
     # If it was extracted from note (group header), it should already be removed from text.
     
+    # Обработка паттерна "артикул [код]" - удаляем слово "артикул", оставляя производителя и код
+    # Пример: "Analog Device, артикул EVAL-ADF4351EB1Z" → "Analog Device EVAL-ADF4351EB1Z"
+    # Производитель нужен для извлечения в колонку ТУ функцией extract_tu_code
+    if re.search(r'артикул', text, re.IGNORECASE):
+        # Удаляем слова "артикул", ":", оставляя производителя и код
+        text = re.sub(r'[,\s]*артикул[:\s]*', ' ', text, flags=re.IGNORECASE)
+        text = re.sub(r'\s+', ' ', text).strip()  # Нормализуем пробелы
+    
     # Normalize units
     text = re.sub(r'(\d)\s*ОМ\b', r'\1 Ом', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d)\s*КОМ\b', r'\1 кОм', text, flags=re.IGNORECASE)
@@ -247,6 +255,7 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
             'MAXIM INTEGRATED',
             'Maxim Integrated',
             'Analog Devices',
+            'Analog Device',  # Вариант без 's'
             'MINI-CIRCUITS',
             'Mini-Circuits',
             'ROSENBERGER',
@@ -266,9 +275,11 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
         ]
         
         # Словарь нормализации: сокращение -> полное название
+        # Ключи в ВЕРХНЕМ РЕГИСТРЕ для корректного сравнения
         manufacturer_aliases = {
             'TI': 'Texas Instruments',
             'ADI': 'Analog Devices',
+            'ANALOG DEVICE': 'Analog Devices',  # Нормализация варианта без 's'
             'MAXIM': 'Maxim Integrated',
             'MAXIM INTEGRATED': 'Maxim Integrated',
         }
