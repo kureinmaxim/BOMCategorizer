@@ -96,7 +96,17 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
         # Excel parsing
         elif ext in [".xlsx", ".xls"]:
             try:
-                read_kwargs = {}
+                # Читать "Код МР" как строку, чтобы сохранить точность больших чисел
+                read_kwargs = {
+                    'dtype': {
+                        'Код МР': str,
+                        'код мр': str,
+                        'КОД МР': str,
+                        'Код мр': str,
+                        'код_мр': str,
+                        'kodmr': str
+                    }
+                }
                 
                 # Parse sheets parameter if provided
                 if sheets_str:
@@ -252,7 +262,7 @@ def normalize_and_merge_columns(df: pd.DataFrame) -> tuple:
     
     # Common column guesses
     ref_col = find_column(["ref", "reference", "designator", "refdes", "reference designator", "обозначение", "позиционное обозначение"], list(df.columns))
-    desc_col = find_column(["description", "desc", "наименование", "имя", "item", "part", "part name", "наим."], list(df.columns))
+    desc_col = find_column(["description", "desc", "наименование ивп", "наименование", "имя", "item", "part", "part name", "наим."], list(df.columns))
     value_col = find_column(["value", "значение", "номинал"], list(df.columns))
     part_col = find_column(["partnumber", "mfr part", "mpn", "pn", "art", "артикул", "part", "part name"], list(df.columns))
     qty_col = find_column([
@@ -564,23 +574,391 @@ def print_summary(outputs: Dict[str, pd.DataFrame]):
         print(f"  {key}: {len(part_df)}")
 
 
+def parse_exclude_items(exclude_file_path: str) -> list:
+    """
+    Парсит файл с элементами для исключения
+    
+    Формат файла: каждая строка содержит "Название ИВП, количество"
+    Например:
+        AD9221AR, 2
+        GRM1885C1H681J, 1
+        
+    Args:
+        exclude_file_path: Путь к файлу с исключениями
+        
+    Returns:
+        Список кортежей (название, количество)
+    """
+    exclude_items = []
+    
+    if not os.path.exists(exclude_file_path):
+        print(f"⚠️ Файл исключений не найден: {exclude_file_path}")
+        return exclude_items
+    
+    try:
+        with open(exclude_file_path, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Парсинг формата "Название, количество"
+                if ',' in line:
+                    parts = line.rsplit(',', 1)
+                    if len(parts) == 2:
+                        name = parts[0].strip()
+                        try:
+                            qty = int(parts[1].strip())
+                            exclude_items.append((name, qty))
+                        except ValueError:
+                            print(f"⚠️ Ошибка в строке {line_num}: неверное количество '{parts[1].strip()}'")
+                    else:
+                        print(f"⚠️ Ошибка в строке {line_num}: неверный формат")
+                else:
+                    print(f"⚠️ Ошибка в строке {line_num}: отсутствует запятая")
+    except Exception as e:
+        print(f"⚠️ Ошибка при чтении файла исключений: {e}")
+    
+    return exclude_items
+
+
+def apply_exclusions(df: pd.DataFrame, exclude_items: list, desc_col: str) -> pd.DataFrame:
+    """
+    Применяет исключения элементов к DataFrame
+    
+    Args:
+        df: DataFrame с данными BOM
+        exclude_items: Список кортежей (название, количество) для исключения
+        desc_col: Имя колонки с описанием
+        
+    Returns:
+        DataFrame с примененными исключениями
+    """
+    if not exclude_items:
+        return df
+    
+    if desc_col not in df.columns:
+        print(f"⚠️ Колонка '{desc_col}' не найдена, исключения не применены")
+        return df
+    
+    # Найти колонку количества
+    qty_col = find_column(df, ['qty', '_merged_qty_', 'Количество', 'количество', 'Кол-во', 'кол-во'])
+    if not qty_col or qty_col not in df.columns:
+        print("⚠️ Колонка количества не найдена, исключения не могут быть применены")
+        return df
+    
+    excluded_count = 0
+    reduced_count = 0
+    
+    for exclude_name, exclude_qty in exclude_items:
+        # Найти строки с совпадающим названием (частичное совпадение)
+        mask = df[desc_col].astype(str).str.contains(exclude_name, case=False, na=False, regex=False)
+        matching_indices = df[mask].index.tolist()
+        
+        if not matching_indices:
+            print(f"⚠️ Элемент '{exclude_name}' не найден в BOM")
+            continue
+        
+        remaining_exclude_qty = exclude_qty
+        
+        for idx in matching_indices:
+            if remaining_exclude_qty <= 0:
+                break
+            
+            current_qty = df.loc[idx, qty_col]
+            if pd.isna(current_qty):
+                continue
+            
+            try:
+                current_qty = int(current_qty)
+            except (ValueError, TypeError):
+                continue
+            
+            if current_qty <= remaining_exclude_qty:
+                # Сохранить название перед удалением
+                item_name = df.loc[idx, desc_col]
+                # Удалить всю строку
+                df = df.drop(idx)
+                remaining_exclude_qty -= current_qty
+                excluded_count += 1
+                print(f"✓ Исключен элемент '{item_name}' (qty: {current_qty})")
+            else:
+                # Уменьшить количество
+                new_qty = current_qty - remaining_exclude_qty
+                df.loc[idx, qty_col] = new_qty
+                print(f"✓ Уменьшено количество '{df.loc[idx, desc_col]}': {current_qty} → {new_qty}")
+                remaining_exclude_qty = 0
+                reduced_count += 1
+        
+        if remaining_exclude_qty > 0:
+            print(f"⚠️ Не удалось исключить полное количество '{exclude_name}': осталось {remaining_exclude_qty}")
+    
+    if excluded_count > 0 or reduced_count > 0:
+        print(f"\n📊 Итого исключено: {excluded_count} строк, уменьшено: {reduced_count} строк")
+    
+    return df
+
+
+def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> Dict[str, pd.DataFrame]:
+    """
+    Обрабатывает BOM файл для сравнения (классификация с автоматическим переносом unclassified в 'others')
+    
+    Args:
+        file_path: Путь к файлу
+        no_interactive: Отключить интерактивный режим
+        
+    Returns:
+        Словарь категорий с DataFrame
+    """
+    print(f"\n📂 Обработка файла: {file_path}")
+    
+    # Загрузить файл
+    df = load_and_combine_inputs([file_path], None, None)
+    
+    # Нормализовать колонки
+    df, ref_col, desc_col, value_col, part_col, qty_col, mr_col = normalize_and_merge_columns(df)
+    
+    # Фильтровать пустые строки
+    if desc_col in df.columns:
+        df = df[df[desc_col].notna() & (df[desc_col].astype(str).str.strip() != '')]
+    
+    # Проверить существующую категорию
+    has_existing_category = 'category' in df.columns
+    
+    if not has_existing_category:
+        # Классифицировать
+        df = run_classification(df, ref_col, desc_col, value_col, part_col, loose=False)
+        
+        # Применить правила из JSON
+        df = apply_rules_from_json(df, "rules.json", desc_col, value_col, part_col, ref_col)
+        
+        # Автоматически перенести unclassified в 'others'
+        unclassified_mask = df["category"] == "unclassified"
+        unclassified_count = unclassified_mask.sum()
+        if unclassified_count > 0:
+            print(f"ℹ️  Перенос {unclassified_count} нераспределенных элементов в категорию 'Другие'")
+            df.loc[unclassified_mask, "category"] = "others"
+    
+    # Очистить названия
+    if not has_existing_category:
+        from .formatters import clean_component_name
+        if desc_col in df.columns:
+            cleaned_values = []
+            for val in df[desc_col]:
+                if pd.notna(val):
+                    cleaned_values.append(clean_component_name(str(val)))
+                else:
+                    cleaned_values.append(val)
+            df[desc_col] = cleaned_values
+    
+    # Создать outputs словарь
+    outputs = create_outputs_dict(df)
+    
+    # ВАЖНО: Применить format_excel_output для каждой категории
+    # Это приводит данные к стандартному виду (извлекает ТУ, добавляет колонки, нормализует)
+    from .excel_writer import format_excel_output, RUS_SHEET_NAMES
+    processed_outputs = {}
+    
+    for category, cat_df in outputs.items():
+        if not cat_df.empty:
+            # Получить русское название категории для правильной обработки
+            sheet_name = RUS_SHEET_NAMES.get(category, category)
+            
+            # Применить полную обработку (извлечение ТУ, очистка, сортировка)
+            # force_reprocess=True: всегда обрабатывать заново, даже если файл уже обработан
+            processed_df = format_excel_output(
+                cat_df, 
+                sheet_name, 
+                desc_col,
+                force_reprocess=True
+            )
+            processed_outputs[category] = processed_df
+        else:
+            processed_outputs[category] = cat_df
+    
+    print(f"✓ Файл обработан: {len(df)} элементов в {len(outputs)} категориях")
+    
+    return processed_outputs
+
+
+def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_interactive: bool = True):
+    """
+    Сравнивает два BOM файла и создает отчет о различиях
+    
+    Args:
+        file1_path: Путь к первому файлу (базовый)
+        file2_path: Путь ко второму файлу (новый)
+        output_path: Путь к выходному файлу с результатами
+        no_interactive: Отключить интерактивный режим
+    """
+    print("=" * 80)
+    print("🔄 СРАВНЕНИЕ BOM ФАЙЛОВ")
+    print("=" * 80)
+    
+    # Обработать оба файла
+    outputs1 = process_file_for_comparison(file1_path, no_interactive)
+    outputs2 = process_file_for_comparison(file2_path, no_interactive)
+    
+    # Получить все категории
+    all_categories = sorted(set(list(outputs1.keys()) + list(outputs2.keys())))
+    
+    print(f"\n📊 Сравнение по категориям...")
+    
+    # Создать список для результатов
+    comparison_results = []
+    
+    for category in all_categories:
+        df1 = outputs1.get(category, pd.DataFrame())
+        df2 = outputs2.get(category, pd.DataFrame())
+        
+        if df1.empty and df2.empty:
+            continue
+        
+        # Найти колонку описания
+        desc_col1 = find_column(df1, ['Наименование ИВП', 'наименование ивп', 'description', '_merged_description_']) if not df1.empty else None
+        desc_col2 = find_column(df2, ['Наименование ИВП', 'наименование ивп', 'description', '_merged_description_']) if not df2.empty else None
+        
+        # Найти колонку количества
+        qty_col1 = find_column(df1, ['Кол-во', 'qty', '_merged_qty_', 'Количество']) if not df1.empty else None
+        qty_col2 = find_column(df2, ['Кол-во', 'qty', '_merged_qty_', 'Количество']) if not df2.empty else None
+        
+        # Создать словари для сравнения: название -> количество
+        items1 = {}
+        if not df1.empty and desc_col1 and qty_col1:
+            for _, row in df1.iterrows():
+                name = str(row[desc_col1]) if pd.notna(row[desc_col1]) else ""
+                qty_val = row[qty_col1]
+                # Обработка пустых значений, NaN и строк
+                if pd.notna(qty_val) and str(qty_val).strip():
+                    try:
+                        qty = int(float(qty_val))
+                    except (ValueError, TypeError):
+                        qty = 0
+                else:
+                    qty = 0
+                items1[name] = items1.get(name, 0) + qty
+        
+        items2 = {}
+        if not df2.empty and desc_col2 and qty_col2:
+            for _, row in df2.iterrows():
+                name = str(row[desc_col2]) if pd.notna(row[desc_col2]) else ""
+                qty_val = row[qty_col2]
+                # Обработка пустых значений, NaN и строк
+                if pd.notna(qty_val) and str(qty_val).strip():
+                    try:
+                        qty = int(float(qty_val))
+                    except (ValueError, TypeError):
+                        qty = 0
+                else:
+                    qty = 0
+                items2[name] = items2.get(name, 0) + qty
+        
+        # Найти различия
+        all_items = set(list(items1.keys()) + list(items2.keys()))
+        
+        for item_name in sorted(all_items):
+            if not item_name:
+                continue
+            
+            qty1 = items1.get(item_name, 0)
+            qty2 = items2.get(item_name, 0)
+            
+            if qty1 != qty2:
+                if qty1 == 0:
+                    # Добавлен
+                    comparison_results.append({
+                        'Категория': category,
+                        'Изменение': 'Добавлено',
+                        'Наименование ИВП': item_name,
+                        'Кол-во в файле 1': qty1,
+                        'Кол-во в файле 2': qty2,
+                        'Разница': qty2 - qty1
+                    })
+                elif qty2 == 0:
+                    # Удален
+                    comparison_results.append({
+                        'Категория': category,
+                        'Изменение': 'Удалено',
+                        'Наименование ИВП': item_name,
+                        'Кол-во в файле 1': qty1,
+                        'Кол-во в файле 2': qty2,
+                        'Разница': qty2 - qty1
+                    })
+                else:
+                    # Изменено количество
+                    comparison_results.append({
+                        'Категория': category,
+                        'Изменение': 'Изменено',
+                        'Наименование ИВП': item_name,
+                        'Кол-во в файле 1': qty1,
+                        'Кол-во в файле 2': qty2,
+                        'Разница': qty2 - qty1
+                    })
+    
+    # Создать DataFrame с результатами
+    if comparison_results:
+        result_df = pd.DataFrame(comparison_results)
+        
+        # Записать в Excel
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            result_df.to_excel(writer, sheet_name='Сравнение', index=False)
+            
+            # Применить стили
+            from .excel_writer import apply_excel_styles
+            apply_excel_styles(writer)
+        
+        print(f"\n✅ Результаты сравнения записаны: {output_path}")
+        print(f"   Найдено различий: {len(comparison_results)}")
+        
+        # Статистика
+        added = len([r for r in comparison_results if r['Изменение'] == 'Добавлено'])
+        removed = len([r for r in comparison_results if r['Изменение'] == 'Удалено'])
+        changed = len([r for r in comparison_results if r['Изменение'] == 'Изменено'])
+        
+        print(f"   Добавлено: {added}")
+        print(f"   Удалено: {removed}")
+        print(f"   Изменено: {changed}")
+    else:
+        print("\n✅ Файлы идентичны, различий не найдено")
+        
+        # Все равно создать файл с сообщением
+        result_df = pd.DataFrame([{'Результат': 'Файлы идентичны, различий не найдено'}])
+        result_df.to_excel(output_path, sheet_name='Сравнение', index=False)
+
+
 def main():
     """
     Главная функция CLI
     """
     parser = argparse.ArgumentParser(description="BOM Categorizer CLI")
-    parser.add_argument("--inputs", nargs="+", required=True, help="Входные файлы (TXT, DOCX, XLSX)")
+    parser.add_argument("--inputs", nargs="+", help="Входные файлы (TXT, DOCX, XLSX)")
     parser.add_argument("--sheets", help="Листы Excel (через запятую)")
     parser.add_argument("--sheet", help="Конкретный лист Excel")
-    parser.add_argument("--xlsx", required=True, help="Выходной Excel файл")
+    parser.add_argument("--xlsx", help="Выходной Excel файл")
+    parser.add_argument("--compare", nargs=2, metavar=('FILE1', 'FILE2'), help="Сравнить два BOM файла")
+    parser.add_argument("--compare-output", help="Выходной файл для результатов сравнения")
     parser.add_argument("--txt-dir", help="Директория для TXT отчетов")
     parser.add_argument("--combine", action="store_true", help="Создать SUMMARY лист")
     parser.add_argument("--loose", action="store_true", help="Нестрогая классификация")
     parser.add_argument("--interactive", action="store_true", help="Интерактивная классификация")
     parser.add_argument("--no-interactive", action="store_true", help="Отключить автоматический интерактивный режим")
     parser.add_argument("--assign-json", default="rules.json", help="JSON файл с правилами")
+    parser.add_argument("--exclude-items", help="Файл с элементами для исключения (формат: Название ИВП, количество)")
     
     args = parser.parse_args()
+    
+    # Режим сравнения файлов
+    if args.compare:
+        if not args.compare_output:
+            print("❌ Ошибка: укажите --compare-output для сохранения результатов сравнения")
+            return
+        compare_bom_files(args.compare[0], args.compare[1], args.compare_output, args.no_interactive)
+        return
+    
+    # Обычный режим обработки
+    if not args.inputs or not args.xlsx:
+        print("❌ Ошибка: укажите --inputs и --xlsx для обработки файлов")
+        return
     
     # Load and combine inputs
     print(f"Запуск: split_bom --inputs {' '.join(args.inputs)} --xlsx {args.xlsx} {' --combine' if args.combine else ''} {' --txt-dir ' + args.txt_dir if args.txt_dir else ''}")
@@ -589,6 +967,15 @@ def main():
     
     # Normalize and merge columns
     df, ref_col, desc_col, value_col, part_col, qty_col, mr_col = normalize_and_merge_columns(df)
+    
+    # Применить исключения элементов (если указано)
+    if args.exclude_items:
+        print(f"\n🔧 Применение исключений из файла: {args.exclude_items}")
+        exclude_items = parse_exclude_items(args.exclude_items)
+        if exclude_items:
+            print(f"Найдено {len(exclude_items)} элементов для исключения")
+            df = apply_exclusions(df, exclude_items, desc_col)
+            df = df.reset_index(drop=True)
     
     # Фильтровать строки с пустым описанием ДО классификации
     # Это предотвращает попадание пустых строк в "unclassified"
@@ -599,11 +986,21 @@ def main():
         if filtered_count > 0:
             print(f"Отфильтровано {filtered_count} строк с пустым описанием")
     
-    # Run classification
-    df = run_classification(df, ref_col, desc_col, value_col, part_col, args.loose)
+    # Проверяем, есть ли уже колонка category (файл был обработан ранее)
+    has_existing_category = 'category' in df.columns
     
-    # Apply existing rules from JSON
-    df = apply_rules_from_json(df, args.assign_json, desc_col, value_col, part_col, ref_col)
+    if has_existing_category:
+        print("✓ Обнаружена существующая колонка 'category' (файл уже был обработан ранее).")
+        print("  Используем существующую классификацию без изменений.")
+        # НЕ удаляем и НЕ перезапускаем классификацию!
+        # Данные уже очищены и классифицированы, повторная классификация только ухудшит результат
+    else:
+        # Run classification только для новых файлов
+        df = run_classification(df, ref_col, desc_col, value_col, part_col, args.loose)
+    
+    # Apply existing rules from JSON (только для новых файлов)
+    if not has_existing_category:
+        df = apply_rules_from_json(df, args.assign_json, desc_col, value_col, part_col, ref_col)
     
     # Interactive classification if needed
     unclassified_count = len(df[df["category"] == "unclassified"])
@@ -612,17 +1009,19 @@ def main():
     if args.interactive or auto_interactive:
         df = interactive_classification(df, desc_col, value_col, part_col, args.assign_json, auto_prompted=auto_interactive)
     
-    # Очистить названия компонентов от $ и других артефактов ПЕРЕД созданием outputs
-    from .formatters import clean_component_name
-    if desc_col in df.columns:
-        # Применяем clean_component_name ко всем значениям
-        cleaned_values = []
-        for val in df[desc_col]:
-            if pd.notna(val):
-                cleaned_values.append(clean_component_name(str(val)))
-            else:
-                cleaned_values.append(val)
-        df[desc_col] = cleaned_values
+    # Очистить названия компонентов ТОЛЬКО для новых файлов
+    # Для уже обработанных файлов данные уже очищены
+    if not has_existing_category:
+        from .formatters import clean_component_name
+        if desc_col in df.columns:
+            # Применяем clean_component_name ко всем значениям
+            cleaned_values = []
+            for val in df[desc_col]:
+                if pd.notna(val):
+                    cleaned_values.append(clean_component_name(str(val)))
+                else:
+                    cleaned_values.append(val)
+            df[desc_col] = cleaned_values
     
     # Create outputs dictionary
     outputs = create_outputs_dict(df)

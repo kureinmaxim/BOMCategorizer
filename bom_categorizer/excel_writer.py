@@ -13,7 +13,7 @@ import os
 import re
 from typing import Dict
 import pandas as pd
-from openpyxl.styles import Alignment
+from openpyxl.styles import Alignment, Border, Side
 
 from .formatters import clean_component_name, extract_nominal_value, extract_tu_code
 from .utils import find_column
@@ -107,7 +107,7 @@ def enrich_with_mr_and_total(df: pd.DataFrame) -> pd.DataFrame:
     return enriched
 
 
-def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.DataFrame:
+def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_reprocess: bool = False) -> pd.DataFrame:
     """
     Форматирует DataFrame для записи в Excel:
     - Очистка названий компонентов
@@ -120,6 +120,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
         df: DataFrame с данными
         sheet_name: Название листа (категория)
         desc_col: Название колонки с описанием
+        force_reprocess: Принудительно обработать даже если файл уже обработан (для сравнения)
         
     Returns:
         Отформатированный DataFrame
@@ -136,6 +137,14 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
         if candidate in result_df.columns:
             if candidate != 'Кол-во':
                 result_df = result_df.rename(columns={candidate: 'Кол-во'})
+            break
+    
+    # Переименовать "Код МР" в стандартное написание
+    kod_mr_candidates = ['код мр', 'код_мр', 'kodmr', 'Код мр', 'КОД МР']
+    for candidate in kod_mr_candidates:
+        if candidate in result_df.columns:
+            if candidate != 'Код МР':
+                result_df = result_df.rename(columns={candidate: 'Код МР'})
             break
     
     if 'наименование ивп' in result_df.columns:
@@ -157,38 +166,67 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
     if not desc_col_name:
         return result_df
     
-    # Применить функцию очистки к каждой строке
-    cleaned_data = []
-    for idx, row in result_df.iterrows():
-        text = str(row[desc_col_name]) if pd.notna(row[desc_col_name]) else ""
-        note = str(row['note']) if 'note' in result_df.columns and pd.notna(row['note']) else ""
-        
-        # Извлечь ТУ из note (если есть)
-        note_tu = ""
-        note_type = ""
-        if note and '|' in note:
-            parts = note.split('|')
-            if len(parts) >= 2:
-                note_type = parts[0].strip()
-                note_tu = parts[1].strip()
-        
-        # НЕ ПРИМЕНЯЕМ clean_component_name здесь, так как данные уже очищены в main.py!
-        # Просто используем text как есть
-        cleaned_text = text
-        
-        # Извлечь ТУ из текста
-        cleaned_text, tu_code = extract_tu_code(cleaned_text)
-        
-        # Если ТУ был в note, используем его
-        if note_tu:
-            tu_code = note_tu
-        
-        # Определить тип компонента
-        comp_type = note_type if note_type else ""
-        
-        cleaned_data.append((cleaned_text, tu_code, comp_type))
+    # Проверяем, есть ли уже колонки ТУ и Примечание (файл уже обработан)
+    has_tu_column = 'ТУ' in result_df.columns or 'ту' in result_df.columns
+    has_primechanie_column = 'Примечание' in result_df.columns or 'примечание' in result_df.columns
     
-    result_df[desc_col_name] = [item[0] for item in cleaned_data]
+    # Если force_reprocess=True, удаляем старые колонки для повторной обработки
+    if force_reprocess and (has_tu_column or has_primechanie_column):
+        cols_to_drop = []
+        if 'ТУ' in result_df.columns:
+            cols_to_drop.append('ТУ')
+        if 'ту' in result_df.columns:
+            cols_to_drop.append('ту')
+        if 'Примечание' in result_df.columns:
+            cols_to_drop.append('Примечание')
+        if 'примечание' in result_df.columns:
+            cols_to_drop.append('примечание')
+        if cols_to_drop:
+            result_df = result_df.drop(columns=cols_to_drop)
+        has_tu_column = False
+        has_primechanie_column = False
+    
+    # Если колонки ТУ и Примечание уже есть, НЕ обрабатываем повторно
+    if has_tu_column and has_primechanie_column:
+        # Файл уже обработан, просто нормализуем имена колонок
+        if 'ту' in result_df.columns:
+            result_df = result_df.rename(columns={'ту': 'ТУ'})
+        if 'примечание' in result_df.columns:
+            result_df = result_df.rename(columns={'примечание': 'Примечание'})
+        cleaned_data = []  # Пустой список, чтобы не нарушить дальнейшую логику
+    else:
+        # Применить функцию очистки к каждой строке (только для новых файлов)
+        cleaned_data = []
+        for idx, row in result_df.iterrows():
+            text = str(row[desc_col_name]) if pd.notna(row[desc_col_name]) else ""
+            note = str(row['note']) if 'note' in result_df.columns and pd.notna(row['note']) else ""
+            
+            # Извлечь ТУ из note (если есть)
+            note_tu = ""
+            note_type = ""
+            if note and '|' in note:
+                parts = note.split('|')
+                if len(parts) >= 2:
+                    note_type = parts[0].strip()
+                    note_tu = parts[1].strip()
+            
+            # НЕ ПРИМЕНЯЕМ clean_component_name здесь, так как данные уже очищены в main.py!
+            # Просто используем text как есть
+            cleaned_text = text
+            
+            # Извлечь ТУ из текста
+            cleaned_text, tu_code = extract_tu_code(cleaned_text)
+            
+            # Если ТУ был в note, используем его
+            if note_tu:
+                tu_code = note_tu
+            
+            # Определить тип компонента
+            comp_type = note_type if note_type else ""
+            
+            cleaned_data.append((cleaned_text, tu_code, comp_type))
+        
+        result_df[desc_col_name] = [item[0] for item in cleaned_data]
     
     # Для "Наших разработок" - если название пустое, взять из source_file
     if sheet_name == 'Наши разработки' and 'source_file' in result_df.columns:
@@ -200,35 +238,42 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
                     file_name = os.path.splitext(os.path.basename(str(source_file)))[0]
                     result_df.loc[idx, desc_col_name] = file_name
     
-    # Вставить ТУ сразу после наименования
-    tu_data = [item[1] for item in cleaned_data]
-    desc_idx = list(result_df.columns).index(desc_col_name)
-    result_df.insert(desc_idx + 1, 'ТУ', tu_data)
+    # Вставить ТУ и Примечание ТОЛЬКО если их еще нет (новый файл)
+    if not has_tu_column and cleaned_data:
+        tu_data = [item[1] for item in cleaned_data]
+        desc_idx = list(result_df.columns).index(desc_col_name)
+        result_df.insert(desc_idx + 1, 'ТУ', tu_data)
     
-    # Вставить Примечание после ТУ
-    component_types = [item[2] for item in cleaned_data]
-    
-    # Определить стандартный тип для категории
-    category_standard_types = {
-        'Резисторы': 'Резистор',
-        'Конденсаторы': 'Конденсатор',
-        'Индуктивности': 'Дроссель',
-        'Микросхемы': 'Микросхема',
-        'Разъемы': 'Разъем',
-        'Полупроводники': '',  # Нет стандартного типа
-    }
-    
-    standard_type = category_standard_types.get(sheet_name, '')
-    
-    # Если тип компонента совпадает со стандартным - ставим "-"
-    primechanie = []
-    for comp_type in component_types:
-        if not comp_type or comp_type == standard_type:
-            primechanie.append('-')
+    if not has_primechanie_column and cleaned_data:
+        component_types = [item[2] for item in cleaned_data]
+        
+        # Определить стандартный тип для категории
+        category_standard_types = {
+            'Резисторы': 'Резистор',
+            'Конденсаторы': 'Конденсатор',
+            'Индуктивности': 'Дроссель',
+            'Микросхемы': 'Микросхема',
+            'Разъемы': 'Разъем',
+            'Полупроводники': '',  # Нет стандартного типа
+        }
+        
+        standard_type = category_standard_types.get(sheet_name, '')
+        
+        # Если тип компонента совпадает со стандартным - ставим "-"
+        primechanie = []
+        for comp_type in component_types:
+            if not comp_type or comp_type == standard_type:
+                primechanie.append('-')
+            else:
+                primechanie.append(comp_type)
+        
+        # Найти позицию после ТУ
+        if 'ТУ' in result_df.columns:
+            tu_idx = list(result_df.columns).index('ТУ')
+            result_df.insert(tu_idx + 1, 'Примечание', primechanie)
         else:
-            primechanie.append(comp_type)
-    
-    result_df.insert(desc_idx + 2, 'Примечание', primechanie)
+            desc_idx = list(result_df.columns).index(desc_col_name)
+            result_df.insert(desc_idx + 1, 'Примечание', primechanie)
     
     # Сортировка зависит от категории
     if sheet_name in ['Конденсаторы', 'Дроссели', 'Резисторы', 'Индуктивности']:
@@ -268,24 +313,42 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
     
     result_df = result_df.reset_index(drop=True)
     
-    # Переименовать source_file в Источник
-    if 'source_file' in result_df.columns:
+    # Переименовать source_file в Источник (только если "Источник" еще нет)
+    if 'source_file' in result_df.columns and 'Источник' not in result_df.columns:
         result_df = result_df.rename(columns={'source_file': 'Источник'})
-        
+    
+    # Добавить номера п/п к Источнику (только если еще не добавлены)
+    if 'Источник' in result_df.columns:
         # Найти колонку № п/п или № п\п (если есть несколько с похожими названиями)
         pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
         if pp_columns:
-            # Взять последнюю колонку № п/п (если есть дубликаты)
-            pp_col = pp_columns[-1]  # Берем последнюю
-            result_df['Источник'] = result_df.apply(
-                lambda row: f"{row['Источник']}, п/п {int(row[pp_col])}" if pd.notna(row[pp_col]) else row['Источник'],
-                axis=1
-            )
+            # Проверить, не добавлены ли уже номера п/п (при повторной обработке)
+            first_source = str(result_df['Источник'].iloc[0]) if not result_df.empty else ""
+            if ', п/п ' not in first_source:
+                # Взять последнюю колонку № п/п (если есть дубликаты)
+                pp_col = pp_columns[-1]  # Берем последнюю
+                
+                def add_pp_number(row):
+                    pp_val = row[pp_col]
+                    # Проверяем что значение есть, не NaN и не пустая строка
+                    if pd.notna(pp_val) and str(pp_val).strip():
+                        try:
+                            return f"{row['Источник']}, п/п {int(float(pp_val))}"
+                        except (ValueError, TypeError):
+                            return row['Источник']
+                    return row['Источник']
+                
+                result_df['Источник'] = result_df.apply(add_pp_number, axis=1)
     
-    # Удалить ненужные колонки
-    cols_to_remove = ['ед. изм. ктд', 'код мр', '_merged_qty_', 
-                      'ед. изм. КТД', 'Код МР', 'Код мр', 'ед. изм. КТД', 'Код МР',
-                      'первоначальная цена, тыс.руб.', 'первоначальная стоимость, тыс.руб.']
+    # Удалить ненужные колонки (НЕ удаляем Код МР!)
+    cols_to_remove = ['ед. изм. ктд', '_merged_qty_', 
+                      'ед. изм. КТД',
+                      'первоначальная цена, тыс.руб.', 'первоначальная стоимость, тыс.руб.',
+                      'источник',  # дубликат "Источник" (с маленькой буквы)
+                      'категория',  # дубликат категории
+                      'общее количество',  # дубликат
+                      'source_file', 'source_sheet',  # служебные колонки (уже в "Источник")
+                      'note']  # служебная колонка
     
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
     pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
@@ -302,18 +365,18 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str) -> pd.
     result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
     
     # Упорядочить колонки в правильном порядке
-    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Примечание', 'category', 'Источник', 'Кол-во']
+    # Код МР после ТУ, Примечание в конце
+    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Код МР', 'category', 'Источник', 'Кол-во']
     
     ordered_cols = [col for col in desired_order if col in result_df.columns]
     remaining_cols = [col for col in result_df.columns 
-                      if col not in ordered_cols and col not in cols_to_remove]
+                      if col not in ordered_cols and col not in cols_to_remove and col != 'Примечание']
     
+    # Примечание добавляем в конец
     final_cols = ordered_cols + remaining_cols
+    if 'Примечание' in result_df.columns:
+        final_cols.append('Примечание')
     result_df = result_df[final_cols]
-    
-    # Удалить 'note' перед записью (если остался)
-    if 'note' in result_df.columns:
-        result_df = result_df.drop(columns=['note'])
     
     return result_df
 
@@ -330,25 +393,47 @@ def apply_excel_styles(writer: pd.ExcelWriter):
     for sheet_name in writer.book.sheetnames:
         ws = writer.book[sheet_name]
         
-        # Найти индексы столбцов "Наименование ИВП" и "ТУ"
+        # Найти индексы столбцов "Наименование ИВП", "ТУ" и "Код МР"
         desc_col_idx = None
         tu_col_idx = None
+        kod_mr_col_idx = None
         for idx, cell in enumerate(ws[1], start=1):
             cell_val = str(cell.value).lower() if cell.value else ''
             if 'наименование ивп' in cell_val or 'наименование' in cell_val:
                 desc_col_idx = idx
             elif cell_val == 'ту':
                 tu_col_idx = idx
+            elif 'код мр' in cell_val:
+                kod_mr_col_idx = idx
         
-        # Центрировать все ячейки, кроме "наименование ивп" и "ТУ"
+        # Установить текстовый формат для колонки "Код МР" (чтобы избежать научной нотации)
+        if kod_mr_col_idx:
+            column_letter = ws.cell(row=1, column=kod_mr_col_idx).column_letter
+            for row_idx in range(1, ws.max_row + 1):
+                cell = ws.cell(row=row_idx, column=kod_mr_col_idx)
+                cell.number_format = '@'  # Текстовый формат
+        
+        # Создать стиль границ (тонкие черные линии со всех сторон)
+        thin_border = Border(
+            left=Side(style='thin', color='000000'),
+            right=Side(style='thin', color='000000'),
+            top=Side(style='thin', color='000000'),
+            bottom=Side(style='thin', color='000000')
+        )
+        
+        # Центрировать все ячейки, кроме "наименование ивп" и "ТУ", и добавить границы
         for row_idx, row in enumerate(ws.iter_rows(), start=1):
             for col_idx, cell in enumerate(row, start=1):
+                # Выравнивание
                 if col_idx == desc_col_idx or col_idx == tu_col_idx:
                     # Наименование ИВП и ТУ - выравнивание по левому краю
                     cell.alignment = Alignment(horizontal='left', vertical='center')
                 else:
                     # Все остальные - по центру
                     cell.alignment = Alignment(horizontal='center', vertical='center')
+                
+                # Границы для всех ячеек
+                cell.border = thin_border
         
         # Автоматически установить ширину столбцов по содержимому
         for column in ws.columns:
@@ -424,11 +509,18 @@ def write_categorized_excel(
                     continue
                 category_name = RUS_SHEET_NAMES.get(key, key)
                 total_qty = part_df['Общее количество'].sum() if 'Общее количество' in part_df.columns else len(part_df)
+                
+                # Безопасное преобразование total_qty в int
+                try:
+                    qty_int = int(float(total_qty)) if pd.notna(total_qty) else 0
+                except (ValueError, TypeError):
+                    qty_int = 0
+                
                 summary_rows.append({
                     '№ п/п': len(summary_rows) + 1,
                     'Категория': category_name,
                     'Кол-во позиций': len(part_df),
-                    'Общее количество': int(total_qty)
+                    'Общее количество': qty_int
                 })
             
             if summary_rows:

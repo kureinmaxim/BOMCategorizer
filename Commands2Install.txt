@@ -1,14 +1,45 @@
-Commands2Install
+🚀 Как использовать
 
-taskkill /F /IM python.exe 2>$null; Start-Sleep -Milliseconds 500
+Сохрани этот текст в файл
+C:\Project\ProjectSnabjenie\rebuild_venv.ps1
 
-Get-Item temp_installer\split_bom.py | Select-Object LastWriteTime
+В Tabby Terminal выполни:
 
-if (Test-Path temp_installer\split_bom.py) { (Get-Item temp_installer\split_bom.py).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss") } else { Write-Host "temp_installer не существует" }
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\rebuild_venv.ps1
 
+Скрипт сам всё сделает — пересоздаст .venv, установит зависимости и запустит сборку.
 ---------------------------------------------------------------------------
 
+Вариант 1: PowerShell (рекомендуется для Windows)
+# 1. Переходим в директорию проекта
+cd C:\Project\ProjectSnabjenie
+# 2. Активируем виртуальное окружение
+.\.venv\Scripts\Activate.ps1
+# 3. Запускаем сборку (с правильной кодировкой)
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 python build_installer.py
+
+
+Вариант 2: CMD (классический)
+cd C:\Project\ProjectSnabjenie
+.venv\Scripts\activate.bat
+chcp 65001
+python build_installer.py
+
+Вариант 3: Tabby Terminal
+cd C:\Project\ProjectSnabjenie
+.\.venv\Scripts\Activate.ps1
+$OutputEncoding = [System.Text.Encoding]::UTF8
+python build_installer.py
+
+---------------------------------------------------------------------------
+chcp 65001 >$null ; python build_installer.py
+
+ИЛИ (без правильной кодировки)
+
+python build_installer.py
+
 
 Достаточно теперь только его запустить и Новый инсталлятор готов: C:\Project\ProjectSnabjenie\BOMCategorizerSetup.exe 
 Это обеспечивает:

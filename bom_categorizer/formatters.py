@@ -32,13 +32,20 @@ def clean_component_name(original_text: str, note: str = "") -> str:
     
     text = str(original_text).strip()
     
+    # Нормализуем множественные пробелы (заменяем несколько пробелов на один)
+    text = re.sub(r'\s+', ' ', text)
+    
     # Component type prefixes (sorted by length, longest first)
     component_types = [
+        'ЧИП КАТУШКИ ИНДУКТИВНОСТЬ',
         'ЧИП КОНДЕНСАТОР КЕРАМИЧЕСКИЙ',
+        'ЧИП КАТУШКА ИНДУКТИВНОСТЬ',
+        'МАТРИЦА ТРАНЗИСТОРНАЯ',
+        'ТРАНЗИСТОРНАЯ МАТРИЦА',
+        'ИНДИКАТОР ЕДИНИЧНЫЙ',
         'НАБОР РЕЗИСТОРОВ',
         'НАБОР КОНДЕНСАТОРОВ',
         'НАБОР МИКРОСХЕМ',
-        'ТРАНЗИСТОРНАЯ МАТРИЦА',
         'ПЛАТА ИНСТРУМЕНТАЛЬНАЯ',
         'ОПТИЧЕСКИЙ МОДУЛЬ',
         'МОДУЛЬ ПИТАНИЯ',
@@ -46,6 +53,7 @@ def clean_component_name(original_text: str, note: str = "") -> str:
         'РЕЗИСТОР',
         'КОНДЕНСАТОР',
         'ИНДУКТИВНОСТЬ',
+        'ИНДИКАТОР',
         'ДРОССЕЛЬ',
         'ДИОД',
         'СТАБИЛИТРОН',
@@ -188,13 +196,13 @@ def extract_nominal_value(text: str, category: str) -> Optional[float]:
 
 def extract_tu_code(text: str) -> Tuple[str, str]:
     """
-    Извлекает код ТУ из текста
+    Извлекает код ТУ или производителя из текста
     
     Args:
         text: Исходный текст
         
     Returns:
-        Кортеж (очищенный текст без ТУ, извлеченный ТУ код)
+        Кортеж (очищенный текст без ТУ/производителя, извлеченный ТУ код или производитель)
     """
     if not text:
         return "", ""
@@ -203,23 +211,132 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
     
     # Паттерны для ТУ (Technical Specifications codes)
     tu_patterns = [
-        r'([А-ЯЁ]{2,}\.\d+[\d\.\-]*\s*ТУ)',  # АЛЯР.434110.005ТУ
-        r'([А-ЯЁ]{2,}[\d\.\-]+\s*ТУ)',       # ШКАБ434110002ТУ, АЕЯР431200424-07ТУ (с дефисами)
-        r'ТУ\s+([\d\-]+)',                    # ТУ 6329-019-07614320-99
+        # Буквенно-цифровые коды с точками (начинающиеся с букв или цифр)
+        (r'([А-ЯЁа-яё]{2,}\.\d+[\d\.\-]*\s*ТУ)', re.IGNORECASE),        # АЛЯР.434110.005ТУ, аА0.339.189ТУ
+        (r'([А-ЯЁа-яё]{1,2}\d+\.\d+[\d\.\-]*\s*ТУ)', re.IGNORECASE),    # И93.456.000ТУ, И93.456.001 ТУ
+        (r'(\d+[А-ЯЁа-яё]+\d+\.\d+[\d\.\-]*\s*ТУ)', re.IGNORECASE),     # 1Х3.438.000ТУ, 2А5.123.456ТУ
+        (r'([А-ЯЁа-яё]{2,}[\d\.\-]+\s*ТУ)', re.IGNORECASE),             # ШКАБ434110002ТУ, АЕЯР431200424-07ТУ
+        (r'(\d+[А-ЯЁа-яё]+[\d\.\-]+\s*ТУ)', re.IGNORECASE),             # Цифра+буквы+цифры без первой точки
+        # ТУ в начале строки
+        (r'ТУ\s+([\d\-]+)', 0),                                          # ТУ 6329-019-07614320-99
     ]
     
     tu_code = ""
     clean_text = text_str
     
-    for pattern in tu_patterns:
-        match = re.search(pattern, text_str)
+    # Сначала ищем ТУ коды (приоритет для отечественных компонентов)
+    for pattern, flags in tu_patterns:
+        match = re.search(pattern, text_str, flags) if flags else re.search(pattern, text_str)
         if match:
             if pattern.startswith('ТУ'):
                 tu_code = 'ТУ ' + match.group(1)
             else:
                 tu_code = match.group(1)
-            clean_text = re.sub(pattern, '', clean_text).strip()
+            clean_text = re.sub(pattern, '', clean_text, flags=flags) if flags else re.sub(pattern, '', clean_text)
+            clean_text = clean_text.strip()
             break
+    
+    # Если ТУ не найден, ищем производителя
+    if not tu_code:
+        manufacturer = ""
+        
+        # Список известных производителей (в порядке от более специфичных к менее)
+        # Сначала идут полные названия, потом сокращения (чтобы избежать ложных срабатываний)
+        known_manufacturers = [
+            'Texas Instruments',
+            'MAXIM INTEGRATED',
+            'Maxim Integrated',
+            'Analog Devices',
+            'MINI-CIRCUITS',
+            'Mini-Circuits',
+            'ROSENBERGER',
+            'Rosenberger',
+            'COILCRAFT',
+            'Coilcraft',
+            'MURATA',
+            'Murata',
+            'HARTING',
+            'Harting',
+            'HITTITE',
+            'Hittite',
+            # Сокращения (добавляем в конец списка, чтобы полные названия имели приоритет)
+            'TI',  # Texas Instruments
+            'ADI',  # Analog Devices
+            'Maxim',
+        ]
+        
+        # Словарь нормализации: сокращение -> полное название
+        manufacturer_aliases = {
+            'TI': 'Texas Instruments',
+            'ADI': 'Analog Devices',
+            'MAXIM': 'Maxim Integrated',
+            'MAXIM INTEGRATED': 'Maxim Integrated',
+        }
+        
+        # 1. Сначала ищем "ф." + производитель (высокий приоритет)
+        # Паттерн для извлечения производителя после "ф." или "ф ."
+        # Ищем "ф." или "ф ." и берем все до конца строки или до запятой/точки с запятой
+        mfr_pattern = r'\s*ф\s*\.\s*([A-Za-zА-ЯЁа-яё][A-Za-zА-ЯЁа-яё\s\-\.]+?)(?:\s*$|,|;|\s+\d)'
+        match = re.search(mfr_pattern, clean_text, re.IGNORECASE)
+        
+        if match:
+            manufacturer = match.group(1).strip()
+            # Удаляем "ф." и производителя из текста
+            clean_text = re.sub(mfr_pattern, '', clean_text, flags=re.IGNORECASE)
+            clean_text = clean_text.strip()
+            
+            # Нормализуем производителя сразу (преобразуем сокращения в полные названия)
+            manufacturer_upper = manufacturer.upper()
+            if manufacturer_upper in manufacturer_aliases:
+                manufacturer = manufacturer_aliases[manufacturer_upper]
+        else:
+            # 2. Ищем известного производителя в начале строки (второй приоритет)
+            for mfr in known_manufacturers:
+                # Проверяем, начинается ли текст с производителя (с учетом регистра)
+                if clean_text.upper().startswith(mfr.upper()):
+                    manufacturer = mfr
+                    # Удаляем производителя из начала текста
+                    clean_text = clean_text[len(mfr):].strip()
+                    
+                    # Нормализуем производителя
+                    manufacturer_upper = manufacturer.upper()
+                    if manufacturer_upper in manufacturer_aliases:
+                        manufacturer = manufacturer_aliases[manufacturer_upper]
+                    break
+            
+            # 3. Если не нашли в начале, ищем производителя в любом месте текста (третий приоритет)
+            if not manufacturer:
+                text_upper = clean_text.upper()
+                for mfr in known_manufacturers:
+                    mfr_upper = mfr.upper()
+                    
+                    # Для коротких сокращений (2-3 символа) проверяем, что это отдельное слово
+                    if len(mfr) <= 3:
+                        # Используем word boundary (\b) для поиска целого слова
+                        pattern = r'\b' + re.escape(mfr) + r'\b'
+                        match = re.search(pattern, clean_text, re.IGNORECASE)
+                        if match:
+                            manufacturer = mfr
+                            # Удаляем найденное слово
+                            clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
+                            clean_text = clean_text.strip()
+                            break
+                    else:
+                        # Для длинных названий ищем как подстроку
+                        if mfr_upper in text_upper:
+                            manufacturer = mfr
+                            # Удаляем производителя из текста (case-insensitive)
+                            clean_text = re.sub(re.escape(mfr), '', clean_text, flags=re.IGNORECASE)
+                            clean_text = clean_text.strip()
+                            break
+        
+        if manufacturer:
+            # Нормализуем производителя (преобразуем сокращения в полные названия)
+            manufacturer_upper = manufacturer.upper()
+            if manufacturer_upper in manufacturer_aliases:
+                tu_code = manufacturer_aliases[manufacturer_upper]
+            else:
+                tu_code = manufacturer
     
     return clean_text, tu_code
 

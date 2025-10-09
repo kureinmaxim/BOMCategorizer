@@ -85,7 +85,7 @@ class BOMCategorizerApp(tk.Tk):
         ver = self.cfg.get("app_info", {}).get("version", "dev")
         name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("720x750")
+        self.geometry("750x700")  # Ширина увеличена для scrollbar, высота уменьшена для помещения на экран
 
         self.input_files: list[str] = []
         self.sheet_spec = tk.StringVar()
@@ -97,6 +97,12 @@ class BOMCategorizerApp(tk.Tk):
         self.assign_json = tk.StringVar()
         self.txt_dir = tk.StringVar()
         self.create_txt = tk.BooleanVar(value=False)
+        self.exclude_items_text = None  # Текстовое поле для исключения элементов
+        
+        # Сравнение файлов
+        self.compare_file1 = tk.StringVar()
+        self.compare_file2 = tk.StringVar()
+        self.compare_output = tk.StringVar(value="comparison.xlsx")
         
         # PIN protection
         self.unlocked = False
@@ -116,8 +122,33 @@ class BOMCategorizerApp(tk.Tk):
         """Создает все виджеты интерфейса"""
         pad = {"padx": 8, "pady": 6}
 
-        frm = ttk.Frame(self)
-        frm.pack(fill=tk.BOTH, expand=True)
+        # Создать Canvas с вертикальной прокруткой
+        main_container = ttk.Frame(self)
+        main_container.pack(fill=tk.BOTH, expand=True)
+        
+        canvas = tk.Canvas(main_container)
+        scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
+        
+        # Создать фрейм внутри canvas для содержимого
+        frm = ttk.Frame(canvas)
+        
+        # Привязать фрейм к canvas
+        frm.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=frm, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Разместить canvas и scrollbar
+        canvas.pack(side="left", fill=tk.BOTH, expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Привязать прокрутку колесом мыши
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         row = 0
         ttk.Label(frm, text="Входные файлы (XLSX/DOCX/DOC/TXT):").grid(row=row, column=0, sticky="w", **pad)
@@ -200,6 +231,61 @@ class BOMCategorizerApp(tk.Tk):
         btn7.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
         self.lockable_widgets.append(btn7)
 
+        # Секция для исключения элементов из BOM
+        row += 1
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        row += 1
+        ttk.Label(frm, text="Исключение элементов из BOM:").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="Формат: Название ИВП, количество (по одному на строку). Пример: AD9221AR, 2").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        self.exclude_items_text = tk.Text(frm, height=4, wrap=tk.WORD)
+        self.exclude_items_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+        self.lockable_widgets.append(self.exclude_items_text)
+        frm.grid_rowconfigure(row, weight=1)
+
+        # Секция для сравнения двух BOM файлов
+        row += 1
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        row += 1
+        ttk.Label(frm, text="Сравнение двух BOM файлов:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="Первый файл (базовый):").grid(row=row, column=0, sticky="w", **pad)
+        entry_cmp1 = ttk.Entry(frm, textvariable=self.compare_file1)
+        entry_cmp1.grid(row=row, column=1, sticky="ew", **pad)
+        self.lockable_widgets.append(entry_cmp1)
+        btn_cmp1 = ttk.Button(frm, text="Выбрать...", command=self.on_select_compare_file1)
+        btn_cmp1.grid(row=row, column=2, sticky="w", **pad)
+        self.lockable_widgets.append(btn_cmp1)
+        
+        row += 1
+        ttk.Label(frm, text="Второй файл (новый):").grid(row=row, column=0, sticky="w", **pad)
+        entry_cmp2 = ttk.Entry(frm, textvariable=self.compare_file2)
+        entry_cmp2.grid(row=row, column=1, sticky="ew", **pad)
+        self.lockable_widgets.append(entry_cmp2)
+        btn_cmp2 = ttk.Button(frm, text="Выбрать...", command=self.on_select_compare_file2)
+        btn_cmp2.grid(row=row, column=2, sticky="w", **pad)
+        self.lockable_widgets.append(btn_cmp2)
+        
+        row += 1
+        ttk.Label(frm, text="Файл результата:").grid(row=row, column=0, sticky="w", **pad)
+        entry_cmp_out = ttk.Entry(frm, textvariable=self.compare_output)
+        entry_cmp_out.grid(row=row, column=1, sticky="ew", **pad)
+        self.lockable_widgets.append(entry_cmp_out)
+        btn_cmp_out = ttk.Button(frm, text="Сохранить как...", command=self.on_select_compare_output)
+        btn_cmp_out.grid(row=row, column=2, sticky="w", **pad)
+        self.lockable_widgets.append(btn_cmp_out)
+        
+        row += 1
+        btn_compare = ttk.Button(frm, text="Сравнить файлы", command=self.on_compare_files)
+        btn_compare.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
+        self.lockable_widgets.append(btn_compare)
+
         row += 1
         ttk.Label(frm, text="Лог:").grid(row=row, column=0, sticky="w", **pad)
         self.txt = tk.Text(frm, height=10, wrap=tk.WORD)
@@ -271,6 +357,76 @@ class BOMCategorizerApp(tk.Tk):
         d = filedialog.askdirectory(title="Выберите папку для TXT файлов")
         if d:
             self.txt_dir.set(d)
+    
+    def on_select_compare_file1(self):
+        """Обработчик выбора первого файла для сравнения"""
+        f = filedialog.askopenfilename(
+            title="Выберите первый файл (базовый)",
+            filetypes=[("Excel", "*.xlsx")]
+        )
+        if f:
+            self.compare_file1.set(f)
+    
+    def on_select_compare_file2(self):
+        """Обработчик выбора второго файла для сравнения"""
+        f = filedialog.askopenfilename(
+            title="Выберите второй файл (новый)",
+            filetypes=[("Excel", "*.xlsx")]
+        )
+        if f:
+            self.compare_file2.set(f)
+    
+    def on_select_compare_output(self):
+        """Обработчик выбора выходного файла для результатов сравнения"""
+        f = filedialog.asksaveasfilename(
+            title="Сохранить результат сравнения как",
+            defaultextension=".xlsx",
+            filetypes=[("Excel", "*.xlsx")]
+        )
+        if f:
+            self.compare_output.set(f)
+    
+    def on_compare_files(self):
+        """Обработчик кнопки сравнения файлов"""
+        file1 = self.compare_file1.get().strip()
+        file2 = self.compare_file2.get().strip()
+        output = self.compare_output.get().strip()
+        
+        if not file1 or not file2:
+            messagebox.showerror("Ошибка", "Выберите оба файла для сравнения")
+            return
+        
+        if not output:
+            messagebox.showerror("Ошибка", "Укажите имя файла для результатов")
+            return
+        
+        # Формируем аргументы для CLI
+        args = ["--compare", file1, file2, "--compare-output", output, "--no-interactive"]
+        
+        self.txt.delete("1.0", tk.END)
+        self.txt.insert(tk.END, f"Сравнение файлов:\n")
+        self.txt.insert(tk.END, f"  Первый:  {file1}\n")
+        self.txt.insert(tk.END, f"  Второй:  {file2}\n")
+        self.txt.insert(tk.END, f"  Результат: {output}\n\n")
+        self.update_idletasks()
+        
+        def after_compare(output_text):
+            self.txt.insert(tk.END, output_text)
+            self.txt.insert(tk.END, "\n\n✅ Сравнение завершено!\n")
+            self.txt.see(tk.END)
+            self.update_idletasks()
+            
+            # Предложить открыть файл
+            if os.path.exists(output):
+                result = messagebox.askyesno(
+                    "Готово", 
+                    f"Сравнение завершено!\nФайл сохранен: {output}\n\nОткрыть файл?"
+                )
+                if result:
+                    import subprocess
+                    subprocess.Popen([output], shell=True)
+        
+        run_cli_async(args, after_compare)
 
     def _build_args(self, output_file):
         """
@@ -296,6 +452,19 @@ class BOMCategorizerApp(tk.Tk):
         td = self.txt_dir.get().strip()
         if td:
             args.extend(["--txt-dir", td])
+        
+        # Обработка исключений элементов
+        if self.exclude_items_text:
+            exclude_text = self.exclude_items_text.get("1.0", tk.END).strip()
+            if exclude_text:
+                # Создать временный файл с исключениями
+                import tempfile
+                temp_exclude_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', 
+                                                                  suffix='.txt', delete=False)
+                temp_exclude_file.write(exclude_text)
+                temp_exclude_file.close()
+                args.extend(["--exclude-items", temp_exclude_file.name])
+        
         # Всегда отключаем автоматический интерактивный режим в GUI
         args.append("--no-interactive")
         return args
