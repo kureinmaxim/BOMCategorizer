@@ -163,20 +163,20 @@ def classify_row(
         if not has_any(text_blob, ["fc/", "sc/", "lc/", "оптическ", "optical", "fiber"]):
             return "connectors"
     
-    # СВЧ компоненты (аттенюаторы, делители, ответвители) от специфичных производителей в dev_boards
+    # СВЧ компоненты (аттенюаторы, делители, ответвители) от специфичных производителей в rf_modules
     if has_any(text_blob, ["аттенюатор", "attenuator", "делитель мощности", "делитель  мощности", "power divider", 
                            "ответвитель направленный", "ограничитель", "линия задержек"]):
         if has_any(text_blob, ["qualwave", "mini-circuits", "api technologies", "weinschel", "a-info", "gigabaudics", 
                                "quantic pmi", "quantic", "pmi", "jfw", "umcc"]):
-            return "dev_boards"
+            return "rf_modules"
     
     # Оборудование RITTAL всегда в "Другие"
     if has_any(text_blob, ["rittal"]):
         return "others"
     
-    # Нагрузка согласованная в "Отладочные платы"
+    # Нагрузка согласованная в "СВЧ модули"
     if has_any(text_blob, ["нагрузка согласованная", "согласованная нагрузка", "matched load"]):
-        return "dev_boards"
+        return "rf_modules"
     
     # Вентили в индуктивности
     if has_any(text_blob, ["вентиль свч", "вентиль вч", "circulator", "isolator", "ферритов", "прибор фвк", "прибор фквн", "фвк3-", "фквн3-"]):

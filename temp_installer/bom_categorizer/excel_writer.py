@@ -228,6 +228,11 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         
         result_df[desc_col_name] = [item[0] for item in cleaned_data]
     
+    # НЕ добавляем префиксы категорий, так как clean_component_name уже удалил их
+    # Компоненты должны остаться в своем "чистом" виде
+    # Например: "МАТРИЦА ТРАНЗИСТОРНАЯ 1НТ251" остается как есть
+    #           "Адаптер QASNL-FF" остается как есть
+    
     # Для "Наших разработок" - если название пустое, взять из source_file
     if sheet_name == 'Наши разработки' and 'source_file' in result_df.columns:
         for idx in result_df.index:
@@ -259,11 +264,11 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         
         standard_type = category_standard_types.get(sheet_name, '')
         
-        # Если тип компонента совпадает со стандартным - ставим "-"
+        # Если тип компонента совпадает со стандартным - оставляем пустую ячейку
         primechanie = []
         for comp_type in component_types:
             if not comp_type or comp_type == standard_type:
-                primechanie.append('-')
+                primechanie.append('')  # Пустая ячейка вместо прочерка
             else:
                 primechanie.append(comp_type)
         

@@ -85,7 +85,7 @@ class BOMCategorizerApp(tk.Tk):
         ver = self.cfg.get("app_info", {}).get("version", "dev")
         name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("750x700")  # Ширина увеличена для scrollbar, высота уменьшена для помещения на экран
+        self.geometry("750x700")  # Стандартный размер с прокруткой
 
         self.input_files: list[str] = []
         self.sheet_spec = tk.StringVar()
@@ -151,105 +151,74 @@ class BOMCategorizerApp(tk.Tk):
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         row = 0
-        ttk.Label(frm, text="Входные файлы (XLSX/DOCX/DOC/TXT):").grid(row=row, column=0, sticky="w", **pad)
-        btn1 = ttk.Button(frm, text="Добавить файлы", command=self.on_add_files)
-        btn1.grid(row=row, column=1, sticky="w", **pad)
+        
+        # Главная рабочая зона (в рамке)
+        main_work_frame = ttk.LabelFrame(frm, text=" Основные настройки ", padding=10)
+        main_work_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+        
+        # Сбросить счетчик строк для рамки
+        work_row = 0
+        ttk.Label(main_work_frame, text="Входные файлы (XLSX/DOCX/DOC/TXT):").grid(row=work_row, column=0, sticky="w", **pad)
+        btn1 = ttk.Button(main_work_frame, text="Добавить файлы", command=self.on_add_files)
+        btn1.grid(row=work_row, column=1, sticky="w", **pad)
         self.lockable_widgets.append(btn1)
         
-        btn2 = ttk.Button(frm, text="Очистить", command=self.on_clear_files)
-        btn2.grid(row=row, column=2, sticky="w", **pad)
+        btn2 = ttk.Button(main_work_frame, text="Очистить", command=self.on_clear_files)
+        btn2.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn2)
         
-        self.listbox = tk.Listbox(frm, height=5)
-        self.listbox.grid(row=row+1, column=0, columnspan=3, sticky="nsew", **pad)
+        self.listbox = tk.Listbox(main_work_frame, height=5)
+        self.listbox.grid(row=work_row+1, column=0, columnspan=3, sticky="nsew", **pad)
         self.lockable_widgets.append(self.listbox)
-        frm.grid_rowconfigure(row+1, weight=1)
-        frm.grid_columnconfigure(2, weight=1)
+        main_work_frame.grid_rowconfigure(work_row+1, weight=1)
+        main_work_frame.grid_columnconfigure(2, weight=1)
 
-        row += 2
-        ttk.Label(frm, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        entry1 = ttk.Entry(frm, textvariable=self.sheet_spec)
-        entry1.grid(row=row+1, column=0, columnspan=3, sticky="ew", **pad)
+        work_row += 2
+        ttk.Label(main_work_frame, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
+        entry1 = ttk.Entry(main_work_frame, textvariable=self.sheet_spec)
+        entry1.grid(row=work_row+1, column=0, columnspan=3, sticky="ew", **pad)
         self.lockable_widgets.append(entry1)
 
-        row += 2
-        ttk.Label(frm, text="Выходной XLSX:").grid(row=row, column=0, sticky="w", **pad)
-        entry2 = ttk.Entry(frm, textvariable=self.output_xlsx)
-        entry2.grid(row=row, column=1, sticky="ew", **pad)
+        work_row += 2
+        ttk.Label(main_work_frame, text="Выходной XLSX:").grid(row=work_row, column=0, sticky="w", **pad)
+        entry2 = ttk.Entry(main_work_frame, textvariable=self.output_xlsx)
+        entry2.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry2)
         
-        btn3 = ttk.Button(frm, text="Сохранить как...", command=self.on_pick_output)
-        btn3.grid(row=row, column=2, sticky="w", **pad)
+        btn3 = ttk.Button(main_work_frame, text="Сохранить как...", command=self.on_pick_output)
+        btn3.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn3)
 
-        row += 1
-        ttk.Label(frm, text="Папка для TXT файлов (опционально):").grid(row=row, column=0, sticky="w", **pad)
-        entry3 = ttk.Entry(frm, textvariable=self.txt_dir)
-        entry3.grid(row=row, column=1, sticky="ew", **pad)
+        work_row += 1
+        ttk.Label(main_work_frame, text="Папка для TXT файлов (опционально):").grid(row=work_row, column=0, sticky="w", **pad)
+        entry3 = ttk.Entry(main_work_frame, textvariable=self.txt_dir)
+        entry3.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry3)
         
-        btn4 = ttk.Button(frm, text="Выбрать...", command=self.on_pick_txt_dir)
-        btn4.grid(row=row, column=2, sticky="w", **pad)
+        btn4 = ttk.Button(main_work_frame, text="Выбрать...", command=self.on_pick_txt_dir)
+        btn4.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn4)
 
-        row += 1
-        chk1 = ttk.Checkbutton(frm, text="Суммарная комплектация (SUMMARY)", variable=self.combine)
-        chk1.grid(row=row, column=0, sticky="w", **pad)
+        work_row += 1
+        chk1 = ttk.Checkbutton(main_work_frame, text="Суммарная комплектация (SUMMARY)", variable=self.combine)
+        chk1.grid(row=work_row, column=0, sticky="w", **pad)
         self.lockable_widgets.append(chk1)
         
-        chk2 = ttk.Checkbutton(frm, text="Более свободные эвристики", variable=self.loose)
-        chk2.grid(row=row, column=1, sticky="w", **pad)
+        chk2 = ttk.Checkbutton(main_work_frame, text="Более свободные эвристики", variable=self.loose)
+        chk2.grid(row=work_row, column=1, sticky="w", **pad)
         self.lockable_widgets.append(chk2)
 
-        row += 1
-        btn5 = ttk.Button(frm, text="Запустить обработку", command=self.on_run)
-        btn5.grid(row=row, column=0, columnspan=2, sticky="ew", **pad)
+        work_row += 1
+        # Кнопки запуска - выделяем цветом и крупнее
+        btn5 = ttk.Button(main_work_frame, text="▶ Запустить обработку", command=self.on_run)
+        btn5.grid(row=work_row, column=0, columnspan=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn5)
         
-        btn6 = ttk.Button(frm, text="Интерактивная классификация", command=self.on_interactive_classify)
-        btn6.grid(row=row, column=2, sticky="ew", **pad)
+        btn6 = ttk.Button(main_work_frame, text="Интерактивная классификация", command=self.on_interactive_classify)
+        btn6.grid(row=work_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn6)
         
-        # Секция для переноса компонентов в "Не распределено"
-        row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
-        
-        row += 1
-        ttk.Label(frm, text="Перенос компонентов в 'Не распределено':").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="Введите названия компонентов (по одному на строку):").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        self.reclassify_text = tk.Text(frm, height=4, wrap=tk.WORD)
-        self.reclassify_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
-        self.lockable_widgets.append(self.reclassify_text)
-        frm.grid_rowconfigure(row, weight=1)
-        
-        row += 1
-        btn7 = ttk.Button(frm, text="Перенести в 'Не распределено'", command=self.on_move_to_unclassified)
-        btn7.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
-        self.lockable_widgets.append(btn7)
-
-        # Секция для исключения элементов из BOM
-        row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
-        
-        row += 1
-        ttk.Label(frm, text="Исключение элементов из BOM:").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="Формат: Название ИВП, количество (по одному на строку). Пример: AD9221AR, 2").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="После ввода элементов нажмите кнопку 'Запустить обработку' выше").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        self.exclude_items_text = tk.Text(frm, height=4, wrap=tk.WORD)
-        self.exclude_items_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
-        self.lockable_widgets.append(self.exclude_items_text)
-        frm.grid_rowconfigure(row, weight=1)
-
+        # Продолжаем с основным фреймом
         # Секция для сравнения двух BOM файлов
         row += 1
         ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
@@ -289,12 +258,64 @@ class BOMCategorizerApp(tk.Tk):
         btn_compare.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
         self.lockable_widgets.append(btn_compare)
 
+        # Секция для исключения элементов из BOM
         row += 1
-        ttk.Label(frm, text="Лог:").grid(row=row, column=0, sticky="w", **pad)
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        row += 1
+        ttk.Label(frm, text="Исключение элементов из BOM:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        help_text_exclude = "Элементы будут удалены из входных данных в процессе обработки. Входной файл не изменяется, выходной файл создается уже без исключенных элементов."
+        ttk.Label(frm, text=help_text_exclude, wraplength=700, justify='left').grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="Формат: Название ИВП, количество (по одному на строку). Пример: AD9221AR, 2").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="После ввода элементов нажмите кнопку 'Запустить обработку' выше").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        self.exclude_items_text = tk.Text(frm, height=4, wrap=tk.WORD)
+        self.exclude_items_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+        self.lockable_widgets.append(self.exclude_items_text)
+        frm.grid_rowconfigure(row, weight=1)
+
+        # Секция Лог
+        row += 1
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        row += 1
+        ttk.Label(frm, text="Лог:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, sticky="w", **pad)
         self.txt = tk.Text(frm, height=10, wrap=tk.WORD)
         self.txt.grid(row=row+1, column=0, columnspan=3, sticky="nsew", **pad)
         self.lockable_widgets.append(self.txt)
         frm.grid_rowconfigure(row+1, weight=2)
+        
+        # Секция для переноса компонентов в "Не распределено" (внизу)
+        row += 2
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        row += 1
+        ttk.Label(frm, text="Перенос компонентов в 'Не распределено':", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        help_text = "Эта функция перемещает ранее ошибочно классифицированные компоненты в категорию 'Не распределено'."
+        ttk.Label(frm, text=help_text, wraplength=700, justify='left').grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="Введите названия компонентов (по одному на строку, частичное совпадение):").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        self.reclassify_text = tk.Text(frm, height=4, wrap=tk.WORD)
+        self.reclassify_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+        self.lockable_widgets.append(self.reclassify_text)
+        frm.grid_rowconfigure(row, weight=1)
+        
+        row += 1
+        btn7 = ttk.Button(frm, text="Перенести в 'Не распределено'", command=self.on_move_to_unclassified)
+        btn7.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
+        self.lockable_widgets.append(btn7)
         
         # Футер с информацией о разработчике
         self._create_footer()
