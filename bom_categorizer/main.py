@@ -247,6 +247,103 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
     return df
 
 
+def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_files: bool = False) -> pd.DataFrame:
+    """
+    Объединяет одинаковые элементы из одного источника (документа)
+    Суммирует количество и объединяет позиционные обозначения через запятую
+    
+    Args:
+        df: DataFrame с данными
+        desc_col: Название колонки с описанием
+        combine_across_files: Если True, объединяет одинаковые элементы из разных файлов
+        
+    Returns:
+        DataFrame с объединенными элементами
+    """
+    if desc_col not in df.columns:
+        return df
+    
+    # Нормализуем описания для группировки (убираем лишние пробелы, нормализуем символы)
+    def normalize_description(desc):
+        """Нормализует описание для сравнения"""
+        if pd.isna(desc):
+            return desc
+        desc_str = str(desc)
+        # Убираем символ ± (может быть в разных вариантах, или вообще отсутствовать)
+        desc_str = desc_str.replace('±', '')
+        # Убираем множественные пробелы (в том числе там, где был ±)
+        desc_str = re.sub(r'\s+', ' ', desc_str)
+        # Убираем пробелы в начале и конце
+        return desc_str.strip()
+    
+    # Создаем временную колонку для нормализованного описания
+    df['_normalized_desc_'] = df[desc_col].apply(normalize_description)
+    
+    # Найти колонку quantity
+    qty_col = find_column([
+        "qty", "quantity", "количество", "кол.", "кол-во", "_merged_qty_"
+    ], list(df.columns))
+    
+    # Найти колонку reference
+    ref_col = find_column([
+        "ref", "reference", "designator", "refdes", "обозначение", "позиционное обозначение"
+    ], list(df.columns))
+    
+    if not qty_col and not ref_col:
+        return df
+    
+    # Группируем по source_file, source_sheet и нормализованному description
+    group_cols = []
+    # Если combine_across_files=True, НЕ группируем по source_file
+    # (чтобы одинаковые элементы из разных файлов объединялись)
+    if not combine_across_files and 'source_file' in df.columns:
+        group_cols.append('source_file')
+    if 'source_sheet' in df.columns:
+        group_cols.append('source_sheet')
+    group_cols.append('_normalized_desc_')
+    
+    # Также группируем по категории, если она уже есть
+    if 'category' in df.columns:
+        group_cols.append('category')
+    
+    # Создаем копию для агрегации
+    agg_dict = {}
+    
+    # Суммируем количество
+    if qty_col:
+        agg_dict[qty_col] = 'sum'
+    
+    # Объединяем reference через запятую
+    if ref_col:
+        agg_dict[ref_col] = lambda x: ', '.join(str(v) for v in x if pd.notna(v) and str(v).strip())
+    
+    # Если combine_across_files=True, объединяем source_file через ", "
+    if combine_across_files and 'source_file' in df.columns:
+        agg_dict['source_file'] = lambda x: ', '.join(sorted(set(str(v) for v in x if pd.notna(v) and str(v).strip())))
+    
+    # Берем первое значение для остальных колонок
+    for col in df.columns:
+        if col not in group_cols and col not in agg_dict:
+            agg_dict[col] = 'first'
+    
+    # Группируем и агрегируем
+    try:
+        df_agg = df.groupby(group_cols, as_index=False, dropna=False).agg(agg_dict)
+        
+        # Обновляем исходную колонку description нормализованным значением
+        if '_normalized_desc_' in df_agg.columns and desc_col in df_agg.columns:
+            df_agg[desc_col] = df_agg['_normalized_desc_']
+            df_agg = df_agg.drop(columns=['_normalized_desc_'])
+        
+        return df_agg
+    except Exception as e:
+        print(f"⚠️ Предупреждение: не удалось агрегировать дубликаты: {e}")
+        # Удаляем временную колонку даже в случае ошибки
+        if '_normalized_desc_' in df.columns:
+            df = df.drop(columns=['_normalized_desc_'])
+        return df
+
+
 def normalize_and_merge_columns(df: pd.DataFrame) -> tuple:
     """
     Нормализует названия колонок и объединяет дублирующиеся колонки
@@ -718,6 +815,14 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
     # Нормализовать колонки
     df, ref_col, desc_col, value_col, part_col, qty_col, mr_col = normalize_and_merge_columns(df)
     
+    # Агрегировать одинаковые элементы из DOC/DOCX/TXT файлов
+    has_docx_data = 'zone' in df.columns or (
+        find_column(["reference", "ref"], list(df.columns)) and 
+        'source_file' in df.columns
+    )
+    if has_docx_data:
+        df = aggregate_duplicate_items(df, desc_col)
+    
     # Фильтровать пустые строки
     if desc_col in df.columns:
         df = df[df[desc_col].notna() & (df[desc_col].astype(str).str.strip() != '')]
@@ -738,6 +843,10 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
         if unclassified_count > 0:
             print(f"[INFO] Перенос {unclassified_count} нераспределенных элементов в категорию 'Другие'")
             df.loc[unclassified_mask, "category"] = "others"
+    
+    # Сохранить оригинальные описания для сравнения (до применения clean_component_name)
+    if desc_col in df.columns and '_comparison_original_' not in df.columns:
+        df['_comparison_original_'] = df[desc_col].copy()
     
     # Очистить названия
     if not has_existing_category:
@@ -765,29 +874,60 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
     
     # ВАЖНО: Применить format_excel_output для каждой категории
     # Это приводит данные к стандартному виду (извлекает ТУ, добавляет колонки, нормализует)
+    # НО ТОЛЬКО если файл еще не обработан!
     from .excel_writer import format_excel_output, RUS_SHEET_NAMES
     processed_outputs = {}
     
     for category, cat_df in outputs.items():
         if not cat_df.empty:
-            # Получить русское название категории для правильной обработки
-            sheet_name = RUS_SHEET_NAMES.get(category, category)
+            # Проверить, обработан ли уже этот файл (есть ли колонки "ТУ" и "Примечание")
+            has_tu_column = 'ТУ' in cat_df.columns or 'ту' in cat_df.columns
+            has_primechanie_column = 'Примечание' in cat_df.columns or 'примечание' in cat_df.columns
             
-            # Применить полную обработку (извлечение ТУ, очистка, сортировка)
-            # force_reprocess=True: всегда обрабатывать заново, даже если файл уже обработан
-            processed_df = format_excel_output(
-                cat_df, 
-                sheet_name, 
-                desc_col,
-                force_reprocess=True
-            )
-            processed_outputs[category] = processed_df
+            if has_existing_category and has_tu_column and has_primechanie_column:
+                # Файл уже обработан, НЕ применяем format_excel_output заново
+                print(f"[INFO] Категория '{category}' уже обработана, пропускаем повторную обработку")
+                processed_outputs[category] = cat_df
+            else:
+                # Получить русское название категории для правильной обработки
+                sheet_name = RUS_SHEET_NAMES.get(category, category)
+                
+                # Применить полную обработку (извлечение ТУ, очистка, сортировка)
+                processed_df = format_excel_output(
+                    cat_df, 
+                    sheet_name, 
+                    desc_col,
+                    force_reprocess=False  # НЕ пересоздавать колонки для уже обработанных файлов
+                )
+                processed_outputs[category] = processed_df
         else:
             processed_outputs[category] = cat_df
     
     print(f"[OK] Файл обработан: {len(df)} элементов в {len(outputs)} категориях")
     
     return processed_outputs
+
+
+def normalize_name_for_comparison(name: str) -> str:
+    """
+    Нормализует название для сравнения - удаляет лишние пробелы
+    
+    Args:
+        name: Исходное название
+        
+    Returns:
+        Нормализованное название
+    """
+    import re
+    if not name or pd.isna(name):
+        return ""
+    
+    name = str(name).strip()
+    
+    # Удаляем множественные пробелы
+    name = re.sub(r'\s+', ' ', name).strip()
+    
+    return name
 
 
 def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_interactive: bool = True):
@@ -823,19 +963,21 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
         if df1.empty and df2.empty:
             continue
         
-        # Найти колонку описания
-        desc_col1 = find_column(df1, ['Наименование ИВП', 'наименование ивп', 'description', '_merged_description_']) if not df1.empty else None
-        desc_col2 = find_column(df2, ['Наименование ИВП', 'наименование ивп', 'description', '_merged_description_']) if not df2.empty else None
+        # Найти колонку описания (используем оригинальные описания для сравнения)
+        desc_col1 = find_column(df1, ['_comparison_original_', 'Наименование ИВП', 'наименование ивп', 'description', '_merged_description_']) if not df1.empty else None
+        desc_col2 = find_column(df2, ['_comparison_original_', 'Наименование ИВП', 'наименование ивп', 'description', '_merged_description_']) if not df2.empty else None
         
         # Найти колонку количества
         qty_col1 = find_column(df1, ['Кол-во', 'qty', '_merged_qty_', 'Количество']) if not df1.empty else None
         qty_col2 = find_column(df2, ['Кол-во', 'qty', '_merged_qty_', 'Количество']) if not df2.empty else None
         
-        # Создать словари для сравнения: название -> количество
+        # Создать словари для сравнения: нормализованное_название -> количество
         items1 = {}
         if not df1.empty and desc_col1 and qty_col1:
             for _, row in df1.iterrows():
                 name = str(row[desc_col1]) if pd.notna(row[desc_col1]) else ""
+                # Нормализуем название для сравнения (удаляем ТУ-коды и т.д.)
+                normalized_name = normalize_name_for_comparison(name)
                 qty_val = row[qty_col1]
                 # Обработка пустых значений, NaN и строк
                 if pd.notna(qty_val) and str(qty_val).strip():
@@ -845,12 +987,14 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
                         qty = 0
                 else:
                     qty = 0
-                items1[name] = items1.get(name, 0) + qty
+                items1[normalized_name] = items1.get(normalized_name, 0) + qty
         
         items2 = {}
         if not df2.empty and desc_col2 and qty_col2:
             for _, row in df2.iterrows():
                 name = str(row[desc_col2]) if pd.notna(row[desc_col2]) else ""
+                # Нормализуем название для сравнения (удаляем ТУ-коды и т.д.)
+                normalized_name = normalize_name_for_comparison(name)
                 qty_val = row[qty_col2]
                 # Обработка пустых значений, NaN и строк
                 if pd.notna(qty_val) and str(qty_val).strip():
@@ -860,7 +1004,7 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
                         qty = 0
                 else:
                     qty = 0
-                items2[name] = items2.get(name, 0) + qty
+                items2[normalized_name] = items2.get(normalized_name, 0) + qty
         
         # Найти различия
         all_items = set(list(items1.keys()) + list(items2.keys()))
@@ -977,6 +1121,22 @@ def main():
     # Normalize and merge columns
     df, ref_col, desc_col, value_col, part_col, qty_col, mr_col = normalize_and_merge_columns(df)
     
+    # Агрегировать одинаковые элементы из DOC/DOCX/TXT файлов (объединяем дубликаты)
+    # Проверяем, есть ли данные из DOC/DOCX (по наличию колонки 'zone' или большого количества reference)
+    has_docx_data = 'zone' in df.columns or (
+        find_column(["reference", "ref"], list(df.columns)) and 
+        'source_file' in df.columns
+    )
+    
+    if has_docx_data:
+        print("[АГРЕГАЦИЯ] Объединение одинаковых элементов из документов...")
+        initial_count = len(df)
+        # Если используется --combine, объединяем элементы из разных файлов
+        df = aggregate_duplicate_items(df, desc_col, combine_across_files=args.combine)
+        final_count = len(df)
+        if initial_count != final_count:
+            print(f"[OK] Объединено: {initial_count} -> {final_count} строк (сэкономлено {initial_count - final_count})")
+    
     # Применить исключения элементов (если указано)
     if args.exclude_items:
         print(f"\n🔧 Применение исключений из файла: {args.exclude_items}")
@@ -999,7 +1159,7 @@ def main():
     has_existing_category = 'category' in df.columns
     
     if has_existing_category:
-        print("✓ Обнаружена существующая колонка 'category' (файл уже был обработан ранее).")
+        print("[OK] Обнаружена существующая колонка 'category' (файл уже был обработан ранее).")
         print("  Используем существующую классификацию без изменений.")
         # НЕ удаляем и НЕ перезапускаем классификацию!
         # Данные уже очищены и классифицированы, повторная классификация только ухудшит результат

@@ -26,6 +26,54 @@ def normalize_cell(s: Any) -> str:
     return (str(s or "").strip())
 
 
+def count_from_reference(ref: str) -> int:
+    """
+    Подсчитывает количество элементов из позиционного обозначения
+    
+    Examples:
+        R1 -> 1
+        R1, R2 -> 2
+        R1-R6 -> 6
+        FU1-FU6 -> 6
+        C1, C2, C3-C5 -> 5
+    
+    Args:
+        ref: Позиционное обозначение
+        
+    Returns:
+        Количество элементов
+    """
+    if not ref or not ref.strip():
+        return 1
+    
+    ref = ref.strip()
+    total = 0
+    
+    # Разделяем по запятым
+    parts = [p.strip() for p in ref.split(',')]
+    
+    for part in parts:
+        # Проверяем на диапазон (R1-R6, FU1-FU6, и т.д.)
+        range_match = re.match(r'([A-Za-z]+)(\d+)\s*[-–—]\s*([A-Za-z]+)?(\d+)', part)
+        if range_match:
+            prefix1 = range_match.group(1)
+            num1 = int(range_match.group(2))
+            prefix2 = range_match.group(3) or prefix1  # Если второй префикс отсутствует, используем первый
+            num2 = int(range_match.group(4))
+            
+            # Подсчитываем диапазон
+            if prefix1 == prefix2 and num2 >= num1:
+                total += (num2 - num1 + 1)
+            else:
+                # Если префиксы разные или порядок неправильный, считаем как 2 элемента
+                total += 2
+        else:
+            # Одиночный элемент
+            total += 1
+    
+    return max(total, 1)
+
+
 def parse_txt_like(path: str) -> pd.DataFrame:
     """
     Парсит текстовый файл с разделителями
@@ -198,24 +246,54 @@ def parse_docx(path: str) -> pd.DataFrame:
                 except Exception:
                     qty = 1
 
-            # Добавить ТУ и тип из заголовка группы в note
-            if current_group_tu or current_group_type:
-                parts = []
-                if current_group_type:
-                    parts.append(current_group_type)
-                if current_group_tu:
-                    parts.append(current_group_tu)
-                note = ' | '.join(parts) if parts else note
+            # Добавить ТОЛЬКО ТУ из заголовка группы в note (НЕ тип компонента!)
+            # Тип компонента из заголовка может быть неточным и перевесить правильную классификацию
+            if current_group_tu:
+                note = current_group_tu
 
             # Не добавлять строку без данных
             if not ref.strip() and not name.strip():
                 continue
+            
+            # Фильтровать служебные записи (Изм., Лист регистрации, и т.д.)
+            name_check = name.lower().strip()
+            service_keywords = [
+                'изм.', 'изме-ненных', 'заме-ненных', 'аннули-рован', 'всего листов', 
+                'номер докум', 'входя-щий', 'сопрово-дитель', 'подп.',
+                'лист регистрации', 'регистрации изменений'
+            ]
+            if any(kw in name_check for kw in service_keywords):
+                continue
+            
+            # Обработать строки "ф. Производитель" (без reference)
+            # Это строка с производителем для ПРЕДЫДУЩЕГО элемента
+            if not ref.strip() and name.strip().startswith('ф.'):
+                if extracted:
+                    manufacturer_text = name.strip()
+                    # Извлечь производителя (после "ф.")
+                    mfr_match = re.search(r'ф\.\s*(.+)', manufacturer_text)
+                    if mfr_match:
+                        manufacturer = mfr_match.group(1).strip()
+                        # Добавить производителя к note последнего элемента
+                        # Если note уже содержит ТУ-код, добавляем производителя через " | "
+                        if extracted[-1]['note']:
+                            extracted[-1]['note'] = manufacturer + ' | ' + extracted[-1]['note']
+                        else:
+                            extracted[-1]['note'] = manufacturer
+                continue
+            
+            # Убираем запятую в конце названия (если есть)
+            name = name.rstrip(',').strip()
+
+            # Если количество не указано явно, пытаемся посчитать из reference (например, FU1-FU6 = 6)
+            if qty is None or qty == 0:
+                qty = count_from_reference(ref)
 
             row = {
                 "zone": zone,
                 "reference": ref,
                 "description": name if name else note,
-                "qty": qty if qty is not None else 1,
+                "qty": qty,
                 "note": note,
             }
             extracted.append(row)
@@ -225,6 +303,17 @@ def parse_docx(path: str) -> pd.DataFrame:
         t = normalize_cell(p.text)
         if not t:
             continue
+        
+        # Фильтровать служебные записи из параграфов
+        t_check = t.lower().strip()
+        service_keywords = [
+            'изм.', 'изме-ненных', 'заме-ненных', 'аннули-рован', 'всего листов', 
+            'номер докум', 'входя-щий', 'сопрово-дитель', 'подп.',
+            'лист регистрации', 'регистрации изменений'
+        ]
+        if any(kw in t_check for kw in service_keywords):
+            continue
+        
         parts = [s.strip() for s in LINE_SPLIT_RE.split(t) if s.strip()]
         if parts:
             pos = parts[0] if POS_PREFIX_RE.match(parts[0]) else ""

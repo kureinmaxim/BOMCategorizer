@@ -153,7 +153,11 @@ class BOMCategorizerApp(tk.Tk):
         row = 0
         
         # Главная рабочая зона (в рамке)
-        main_work_frame = ttk.LabelFrame(frm, text=" Основные настройки ", padding=10)
+        # Стиль для LabelFrame с жирным шрифтом
+        style = ttk.Style()
+        style.configure('Bold.TLabelframe.Label', font=('TkDefaultFont', 11, 'bold'))
+        
+        main_work_frame = ttk.LabelFrame(frm, text=" Основные настройки ", padding=10, style='Bold.TLabelframe')
         main_work_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
         
         # Сбросить счетчик строк для рамки
@@ -188,6 +192,10 @@ class BOMCategorizerApp(tk.Tk):
         btn3 = ttk.Button(main_work_frame, text="Сохранить как...", command=self.on_pick_output)
         btn3.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn3)
+
+        work_row += 1
+        output_hint = "Этот файл будет содержать результат обработки и может быть использован для переноса компонентов (см. раздел внизу)"
+        ttk.Label(main_work_frame, text=output_hint, font=('TkDefaultFont', 8), foreground='gray').grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
 
         work_row += 1
         ttk.Label(main_work_frame, text="Папка для TXT файлов (опционально):").grid(row=work_row, column=0, sticky="w", **pad)
@@ -300,7 +308,10 @@ class BOMCategorizerApp(tk.Tk):
         ttk.Label(frm, text="Перенос компонентов в 'Не распределено':", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
         
         row += 1
-        help_text = "Эта функция перемещает ранее ошибочно классифицированные компоненты в категорию 'Не распределено'."
+        help_text = ("Эта функция работает с ВЫХОДНЫМ файлом, созданным ранее. Она перемещает указанные "
+                     "компоненты из их текущих категорий (Резисторы, Конденсаторы и т.д.) в категорию "
+                     "'Не распределено'. Используйте, если некоторые компоненты были ошибочно "
+                     "классифицированы и нужно их вернуть для повторной обработки.")
         ttk.Label(frm, text=help_text, wraplength=700, justify='left').grid(row=row, column=0, columnspan=3, sticky="w", **pad)
         
         row += 1

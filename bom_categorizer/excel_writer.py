@@ -204,11 +204,16 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             # Извлечь ТУ из note (если есть)
             note_tu = ""
             note_type = ""
-            if note and '|' in note:
-                parts = note.split('|')
-                if len(parts) >= 2:
-                    note_type = parts[0].strip()
-                    note_tu = parts[1].strip()
+            if note:
+                if '|' in note:
+                    # Формат: "тип | ТУ" (например, "Микросхемы | И93.456.000ТУ")
+                    parts = note.split('|')
+                    if len(parts) >= 2:
+                        note_type = parts[0].strip()
+                        note_tu = parts[1].strip()
+                else:
+                    # Весь note это производитель или ТУ (например, "STMicroelectronics")
+                    note_tu = note.strip()
             
             # НЕ ПРИМЕНЯЕМ clean_component_name здесь, так как данные уже очищены в main.py!
             # Просто используем text как есть
@@ -217,7 +222,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             # Извлечь ТУ из текста
             cleaned_text, tu_code = extract_tu_code(cleaned_text)
             
-            # Если ТУ был в note, используем его
+            # Если ТУ был в note, используем его (приоритет у note)
             if note_tu:
                 tu_code = note_tu
             
@@ -375,6 +380,21 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                 
                 result_df['Источник'] = result_df.apply(add_pp_number, axis=1)
     
+    # Перенести позиционные обозначения из 'reference' в 'Примечание' (для DOC/DOCX файлов)
+    if 'reference' in result_df.columns:
+        # Если колонка "Примечание" есть - добавляем reference туда
+        if 'Примечание' in result_df.columns:
+            for idx in result_df.index:
+                ref_val = result_df.loc[idx, 'reference']
+                prim_val = result_df.loc[idx, 'Примечание']
+                
+                # Если reference не пустой
+                if pd.notna(ref_val) and str(ref_val).strip():
+                    result_df.loc[idx, 'Примечание'] = str(ref_val).strip()
+        else:
+            # Если колонки "Примечание" нет - создаем её из reference
+            result_df['Примечание'] = result_df['reference'].fillna('')
+    
     # Удалить ненужные колонки (НЕ удаляем Код МР!)
     cols_to_remove = ['ед. изм. ктд', '_merged_qty_', 
                       'ед. изм. КТД',
@@ -383,7 +403,9 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                       'категория',  # дубликат категории
                       'общее количество',  # дубликат
                       'source_file', 'source_sheet',  # служебные колонки (уже в "Источник")
-                      'note']  # служебная колонка
+                      'note',  # служебная колонка
+                      'zone',  # служебная колонка из DOC/DOCX (уже не нужна)
+                      'reference']  # служебная колонка из DOC/DOCX (перенесена в Примечание)
     
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
     pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]

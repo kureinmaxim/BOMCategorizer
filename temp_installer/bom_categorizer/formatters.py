@@ -57,9 +57,6 @@ def clean_component_name(original_text: str, note: str = "") -> str:
         # Микросхемы
         'НАБОР МИКРОСХЕМ',
         'МИКРОСХЕМА',
-        
-        # Отладочные платы
-        'ПЛАТА ИНСТРУМЕНТАЛЬНАЯ',
     ]
     
     # Check if note contains a component type (from group header)
@@ -243,9 +240,29 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
     if not tu_code:
         manufacturer = ""
         
+        # Сначала проверяем известные префиксы плат (высокий приоритет для dev boards)
+        board_prefixes = {
+            'NUCLEO-': 'STMicroelectronics',
+            'NUCLEO': 'STMicroelectronics',  # Если без дефиса
+            'DISCOVERY-': 'STMicroelectronics',
+            'DISCOVERY': 'STMicroelectronics',
+            'STM32-': 'STMicroelectronics',
+            'STM32': 'STMicroelectronics',
+            'EVAL-ADF': 'Analog Devices',  # EVAL-ADFxxxx
+            'EVAL-AD': 'Analog Devices',   # EVAL-ADxxxx
+        }
+        
+        text_upper = clean_text.upper()
+        for prefix, mfr in board_prefixes.items():
+            if prefix in text_upper:
+                manufacturer = mfr
+                # Не удаляем префикс из названия, так как это часть артикула
+                break
+        
         # Список известных производителей (в порядке от более специфичных к менее)
         # Сначала идут полные названия, потом сокращения (чтобы избежать ложных срабатываний)
-        known_manufacturers = [
+        if not manufacturer:
+            known_manufacturers = [
             'Texas Instruments',
             'MAXIM INTEGRATED',
             'Maxim Integrated',
@@ -279,70 +296,72 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
             'MAXIM INTEGRATED': 'Maxim Integrated',
         }
         
-        # 1. Сначала ищем "ф." + производитель (высокий приоритет)
-        # Паттерн для извлечения производителя после "ф." или "ф ."
-        # Ищем "ф." и берем производителя (до разделителя)
-        # Поддерживает: Avnet, Huber+Suhner, API Technologies corp.
-        mfr_pattern = r'\s*ф\s*\.\s*([A-Za-zА-ЯЁа-яё][A-Za-zА-ЯЁа-яё\s\-\.\+]+?)(?=\s*$|,|;|/|\(|\s+\d)'
-        match = re.search(mfr_pattern, clean_text, re.IGNORECASE)
-        
-        if match:
-            manufacturer = match.group(1).strip()
+        # Если производитель еще не найден по префиксу, продолжаем поиск
+        if not manufacturer:
+            # 1. Сначала ищем "ф." + производитель (высокий приоритет)
+            # Паттерн для извлечения производителя после "ф." или "ф ."
+            # Ищем "ф." и берем производителя (до разделителя)
+            # Поддерживает: Avnet, Huber+Suhner, API Technologies corp.
+            mfr_pattern = r'\s*ф\s*\.\s*([A-Za-zА-ЯЁа-яё][A-Za-zА-ЯЁа-яё\s\-\.\+]+?)(?=\s*$|,|;|/|\(|\s+\d)'
+            match = re.search(mfr_pattern, clean_text, re.IGNORECASE)
             
-            # Удаляем "ф.Производитель" и всё после него
-            # 1. Найти позицию начала "ф."
-            start_pos = match.start()
-            
-            # 2. Взять только текст ДО "ф."
-            clean_text = clean_text[:start_pos].strip()
-            
-            # Альтернативный способ: удалить " ф.Производитель" и всё что после него
-            # clean_text = re.sub(r'\s+ф\s*\.\s*.*$', '', clean_text, flags=re.IGNORECASE).strip()
-            
-            # Нормализуем производителя сразу (преобразуем сокращения в полные названия)
-            manufacturer_upper = manufacturer.upper()
-            if manufacturer_upper in manufacturer_aliases:
-                manufacturer = manufacturer_aliases[manufacturer_upper]
-        else:
-            # 2. Ищем известного производителя в начале строки (второй приоритет)
-            for mfr in known_manufacturers:
-                # Проверяем, начинается ли текст с производителя (с учетом регистра)
-                if clean_text.upper().startswith(mfr.upper()):
-                    manufacturer = mfr
-                    # Удаляем производителя из начала текста
-                    clean_text = clean_text[len(mfr):].strip()
-                    
-                    # Нормализуем производителя
-                    manufacturer_upper = manufacturer.upper()
-                    if manufacturer_upper in manufacturer_aliases:
-                        manufacturer = manufacturer_aliases[manufacturer_upper]
-                    break
-            
-            # 3. Если не нашли в начале, ищем производителя в любом месте текста (третий приоритет)
-            if not manufacturer:
-                text_upper = clean_text.upper()
+            if match:
+                manufacturer = match.group(1).strip()
+                
+                # Удаляем "ф.Производитель" и всё после него
+                # 1. Найти позицию начала "ф."
+                start_pos = match.start()
+                
+                # 2. Взять только текст ДО "ф."
+                clean_text = clean_text[:start_pos].strip()
+                
+                # Альтернативный способ: удалить " ф.Производитель" и всё что после него
+                # clean_text = re.sub(r'\s+ф\s*\.\s*.*$', '', clean_text, flags=re.IGNORECASE).strip()
+                
+                # Нормализуем производителя сразу (преобразуем сокращения в полные названия)
+                manufacturer_upper = manufacturer.upper()
+                if manufacturer_upper in manufacturer_aliases:
+                    manufacturer = manufacturer_aliases[manufacturer_upper]
+            else:
+                # 2. Ищем известного производителя в начале строки (второй приоритет)
                 for mfr in known_manufacturers:
-                    mfr_upper = mfr.upper()
-                    
-                    # Для коротких сокращений (2-3 символа) проверяем, что это отдельное слово
-                    if len(mfr) <= 3:
-                        # Используем word boundary (\b) для поиска целого слова
-                        pattern = r'\b' + re.escape(mfr) + r'\b'
-                        match = re.search(pattern, clean_text, re.IGNORECASE)
-                        if match:
-                            manufacturer = mfr
-                            # Удаляем найденное слово
-                            clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
-                            clean_text = clean_text.strip()
-                            break
-                    else:
-                        # Для длинных названий ищем как подстроку
-                        if mfr_upper in text_upper:
-                            manufacturer = mfr
-                            # Удаляем производителя из текста (case-insensitive)
-                            clean_text = re.sub(re.escape(mfr), '', clean_text, flags=re.IGNORECASE)
-                            clean_text = clean_text.strip()
-                            break
+                    # Проверяем, начинается ли текст с производителя (с учетом регистра)
+                    if clean_text.upper().startswith(mfr.upper()):
+                        manufacturer = mfr
+                        # Удаляем производителя из начала текста
+                        clean_text = clean_text[len(mfr):].strip()
+                        
+                        # Нормализуем производителя
+                        manufacturer_upper = manufacturer.upper()
+                        if manufacturer_upper in manufacturer_aliases:
+                            manufacturer = manufacturer_aliases[manufacturer_upper]
+                        break
+                
+                # 3. Если не нашли в начале, ищем производителя в любом месте текста (третий приоритет)
+                if not manufacturer:
+                    text_upper = clean_text.upper()
+                    for mfr in known_manufacturers:
+                        mfr_upper = mfr.upper()
+                        
+                        # Для коротких сокращений (2-3 символа) проверяем, что это отдельное слово
+                        if len(mfr) <= 3:
+                            # Используем word boundary (\b) для поиска целого слова
+                            pattern = r'\b' + re.escape(mfr) + r'\b'
+                            match = re.search(pattern, clean_text, re.IGNORECASE)
+                            if match:
+                                manufacturer = mfr
+                                # Удаляем найденное слово
+                                clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
+                                clean_text = clean_text.strip()
+                                break
+                        else:
+                            # Для длинных названий ищем как подстроку
+                            if mfr_upper in text_upper:
+                                manufacturer = mfr
+                                # Удаляем производителя из текста (case-insensitive)
+                                clean_text = re.sub(re.escape(mfr), '', clean_text, flags=re.IGNORECASE)
+                                clean_text = clean_text.strip()
+                                break
         
         if manufacturer:
             # Нормализуем производителя (преобразуем сокращения в полные названия)
