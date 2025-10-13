@@ -56,12 +56,64 @@ def add_excel_row_numbers(df: pd.DataFrame, header_offset: int = 2) -> pd.DataFr
     return df
 
 
+def multiply_quantities(df: pd.DataFrame, multiplier: int) -> pd.DataFrame:
+    """
+    Умножает количество всех элементов на заданный множитель
+    
+    Args:
+        df: DataFrame с данными
+        multiplier: Множитель для количества
+        
+    Returns:
+        DataFrame с умноженными количествами
+    """
+    if multiplier == 1:
+        return df
+    
+    # Найти колонку с количеством (без учета регистра)
+    qty_col = None
+    qty_keywords = ["qty", "quantity", "количество", "кол.", "кол-во", "кол-в", "_merged_qty_"]
+    
+    # Сначала попробуем find_column (для обратной совместимости)
+    qty_col = find_column(qty_keywords, list(df.columns))
+    
+    # Если не нашли, ищем без учета регистра
+    if not qty_col:
+        columns_lower = {col.lower(): col for col in df.columns}
+        for keyword in qty_keywords:
+            if keyword.lower() in columns_lower:
+                qty_col = columns_lower[keyword.lower()]
+                break
+        
+        # Если все еще не нашли, ищем частичное совпадение без учета регистра
+        if not qty_col:
+            for keyword in qty_keywords:
+                for col in df.columns:
+                    if keyword.lower() in col.lower():
+                        qty_col = col
+                        break
+                if qty_col:
+                    break
+    
+    if qty_col and qty_col in df.columns:
+        # Умножаем количество
+        for idx in df.index:
+            current_qty = df.loc[idx, qty_col]
+            if pd.notna(current_qty):
+                try:
+                    df.loc[idx, qty_col] = int(float(current_qty)) * multiplier
+                except (ValueError, TypeError):
+                    pass  # Оставляем как есть, если не можем преобразовать
+    
+    return df
+
+
 def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = None, sheet: Optional[str] = None) -> pd.DataFrame:
     """
     Загружает и объединяет данные из всех входных файлов
     
     Args:
-        input_paths: Список путей к входным файлам
+        input_paths: Список путей к входным файлам (формат: "файл" или "файл:количество")
         sheets_str: Строка с номерами листов Excel (через запятую)
         sheet: Конкретный лист для чтения
         
@@ -70,7 +122,29 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
     """
     all_rows: List[pd.DataFrame] = []
     
-    for input_path in input_paths:
+    for input_spec in input_paths:
+        # Парсим формат "файл:количество"
+        # Проверяем, есть ли двоеточие и является ли последняя часть числом
+        multiplier = 1
+        input_path = input_spec
+        
+        if ':' in input_spec:
+            # Разделяем по последнему двоеточию
+            parts = input_spec.rsplit(':', 1)
+            if len(parts) == 2:
+                # Проверяем, является ли последняя часть числом
+                try:
+                    potential_multiplier = int(parts[1])
+                    # Если это число, то это множитель, а не часть пути
+                    if potential_multiplier > 0:
+                        input_path = parts[0]
+                        multiplier = potential_multiplier
+                    elif potential_multiplier <= 0:
+                        print(f"⚠️ Множитель должен быть положительным числом: {input_spec}", file=sys.stderr)
+                        # Оставляем multiplier = 1 и input_path = input_spec
+                except ValueError:
+                    # Последняя часть не число - это просто часть пути (например, C:\path)
+                    pass
         ext = os.path.splitext(input_path)[1].lower()
         
         # TXT parsing
@@ -79,7 +153,10 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 df_txt = parse_txt_like(input_path)
                 df_txt["source_file"] = os.path.basename(input_path)
                 df_txt["source_sheet"] = ""
+                df_txt = multiply_quantities(df_txt, multiplier)
                 all_rows.append(df_txt)
+                if multiplier > 1:
+                    print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             except Exception as exc:
                 print(f"⚠️ Не удалось прочитать TXT '{input_path}': {exc}", file=sys.stderr)
         
@@ -89,7 +166,10 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 df_docx = parse_docx(input_path)
                 df_docx["source_file"] = os.path.basename(input_path)
                 df_docx["source_sheet"] = ""
+                df_docx = multiply_quantities(df_docx, multiplier)
                 all_rows.append(df_docx)
+                if multiplier > 1:
+                    print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             except Exception as exc:
                 print(f"⚠️ Не удалось прочитать DOCX '{input_path}': {exc}", file=sys.stderr)
         
@@ -152,6 +232,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                             
                             dfi["source_file"] = os.path.basename(input_path)
                             dfi["source_sheet"] = str(sh)
+                            dfi = multiply_quantities(dfi, multiplier)
                             all_rows.append(dfi)
                         except Exception as exc:
                             print(f"⚠️ Не удалось прочитать лист '{sh}' из '{input_path}': {exc}", file=sys.stderr)
@@ -187,6 +268,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                     
                     df["source_file"] = os.path.basename(input_path)
                     df["source_sheet"] = str(src_sheet)
+                    df = multiply_quantities(df, multiplier)
                     all_rows.append(df)
                 
                 else:
@@ -215,7 +297,11 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                         
                         df_local["source_file"] = os.path.basename(input_path)
                         df_local["source_sheet"] = str(sheet_name)
+                        df_local = multiply_quantities(df_local, multiplier)
                         all_rows.append(df_local)
+                
+                if multiplier > 1:
+                    print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             
             except Exception as exc:
                 print(f"⚠️ Не удалось прочитать Excel '{input_path}': {exc}", file=sys.stderr)
@@ -302,8 +388,9 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
         group_cols.append('source_sheet')
     group_cols.append('_normalized_desc_')
     
-    # Также группируем по категории, если она уже есть
-    if 'category' in df.columns:
+    # Группируем по категории ТОЛЬКО если НЕ объединяем файлы
+    # (иначе XLSX с category='dev_boards' и DOCX с category=NaN не объединятся!)
+    if not combine_across_files and 'category' in df.columns:
         group_cols.append('category')
     
     # Создаем копию для агрегации
@@ -815,6 +902,25 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
     # Нормализовать колонки
     df, ref_col, desc_col, value_col, part_col, qty_col, mr_col = normalize_and_merge_columns(df)
     
+    # Проверить существующую категорию
+    has_existing_category = 'category' in df.columns
+    
+    # Сохранить оригинальные описания для сравнения (ДО применения clean_component_name)
+    if desc_col in df.columns and '_comparison_original_' not in df.columns:
+        df['_comparison_original_'] = df[desc_col].copy()
+    
+    # Очистить названия компонентов ДО агрегации для НОВЫХ файлов
+    if not has_existing_category:
+        from .formatters import clean_component_name
+        if desc_col in df.columns:
+            cleaned_values = []
+            for val in df[desc_col]:
+                if pd.notna(val):
+                    cleaned_values.append(clean_component_name(str(val)))
+                else:
+                    cleaned_values.append(val)
+            df[desc_col] = cleaned_values
+    
     # Агрегировать одинаковые элементы из DOC/DOCX/TXT файлов
     has_docx_data = 'zone' in df.columns or (
         find_column(["reference", "ref"], list(df.columns)) and 
@@ -826,9 +932,6 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
     # Фильтровать пустые строки
     if desc_col in df.columns:
         df = df[df[desc_col].notna() & (df[desc_col].astype(str).str.strip() != '')]
-    
-    # Проверить существующую категорию
-    has_existing_category = 'category' in df.columns
     
     if not has_existing_category:
         # Классифицировать
@@ -843,22 +946,6 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
         if unclassified_count > 0:
             print(f"[INFO] Перенос {unclassified_count} нераспределенных элементов в категорию 'Другие'")
             df.loc[unclassified_mask, "category"] = "others"
-    
-    # Сохранить оригинальные описания для сравнения (до применения clean_component_name)
-    if desc_col in df.columns and '_comparison_original_' not in df.columns:
-        df['_comparison_original_'] = df[desc_col].copy()
-    
-    # Очистить названия
-    if not has_existing_category:
-        from .formatters import clean_component_name
-        if desc_col in df.columns:
-            cleaned_values = []
-            for val in df[desc_col]:
-                if pd.notna(val):
-                    cleaned_values.append(clean_component_name(str(val)))
-                else:
-                    cleaned_values.append(val)
-            df[desc_col] = cleaned_values
     
     # Удалить все элементы с "АМФИ" из выходного файла
     if desc_col in df.columns:
@@ -1121,6 +1208,24 @@ def main():
     # Normalize and merge columns
     df, ref_col, desc_col, value_col, part_col, qty_col, mr_col = normalize_and_merge_columns(df)
     
+    # Определяем, есть ли уже обработанные данные (с колонкой 'category')
+    has_existing_category = 'category' in df.columns
+    
+    # Очистить названия компонентов ДО агрегации для НОВЫХ файлов
+    # Это критически важно для правильного объединения XLSX и DOCX файлов
+    if not has_existing_category:
+        from .formatters import clean_component_name
+        if desc_col in df.columns:
+            print("[ОЧИСТКА] Нормализация описаний компонентов...")
+            # Применяем clean_component_name ко всем значениям
+            cleaned_values = []
+            for val in df[desc_col]:
+                if pd.notna(val):
+                    cleaned_values.append(clean_component_name(str(val)))
+                else:
+                    cleaned_values.append(val)
+            df[desc_col] = cleaned_values
+    
     # Агрегировать одинаковые элементы из DOC/DOCX/TXT файлов (объединяем дубликаты)
     # Проверяем, есть ли данные из DOC/DOCX (по наличию колонки 'zone' или большого количества reference)
     has_docx_data = 'zone' in df.columns or (
@@ -1177,20 +1282,6 @@ def main():
     
     if args.interactive or auto_interactive:
         df = interactive_classification(df, desc_col, value_col, part_col, args.assign_json, auto_prompted=auto_interactive)
-    
-    # Очистить названия компонентов ТОЛЬКО для новых файлов
-    # Для уже обработанных файлов данные уже очищены
-    if not has_existing_category:
-        from .formatters import clean_component_name
-        if desc_col in df.columns:
-            # Применяем clean_component_name ко всем значениям
-            cleaned_values = []
-            for val in df[desc_col]:
-                if pd.notna(val):
-                    cleaned_values.append(clean_component_name(str(val)))
-                else:
-                    cleaned_values.append(val)
-            df[desc_col] = cleaned_values
     
     # Удалить все элементы с "АМФИ" из выходного файла
     if desc_col in df.columns:

@@ -87,7 +87,7 @@ class BOMCategorizerApp(tk.Tk):
         self.title(f"{name} v{ver}")
         self.geometry("750x700")  # Стандартный размер с прокруткой
 
-        self.input_files: list[str] = []
+        self.input_files: dict[str, int] = {}  # {путь_к_файлу: количество}
         self.sheet_spec = tk.StringVar()
         self.output_xlsx = tk.StringVar(value="categorized.xlsx")
         self.merge_into = tk.StringVar()
@@ -97,6 +97,8 @@ class BOMCategorizerApp(tk.Tk):
         self.assign_json = tk.StringVar()
         self.txt_dir = tk.StringVar()
         self.create_txt = tk.BooleanVar(value=False)
+        self.current_file_multiplier = tk.IntVar(value=1)  # Количество для выбранного файла
+        self.selected_file_index = None  # Индекс последнего выбранного файла
         self.exclude_items_text = None  # Текстовое поле для исключения элементов
         
         # Сравнение файлов
@@ -173,11 +175,32 @@ class BOMCategorizerApp(tk.Tk):
         
         self.listbox = tk.Listbox(main_work_frame, height=5)
         self.listbox.grid(row=work_row+1, column=0, columnspan=3, sticky="nsew", **pad)
+        self.listbox.bind('<<ListboxSelect>>', self.on_file_selected)
         self.lockable_widgets.append(self.listbox)
         main_work_frame.grid_rowconfigure(work_row+1, weight=1)
         main_work_frame.grid_columnconfigure(2, weight=1)
 
         work_row += 2
+        # Поле для указания количества для выбранного файла
+        multiplier_frame = ttk.Frame(main_work_frame)
+        multiplier_frame.grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
+        
+        ttk.Label(multiplier_frame, text="Количество экземпляров для выбранного файла:").pack(side="left")
+        self.file_multiplier_spinbox = ttk.Spinbox(multiplier_frame, from_=1, to=1000, 
+                                                     textvariable=self.current_file_multiplier, 
+                                                     width=10)
+        self.file_multiplier_spinbox.pack(side="left", padx=(10, 0))
+        self.lockable_widgets.append(self.file_multiplier_spinbox)
+        
+        # Добавляем кнопку "Применить" для явного обновления
+        apply_btn = ttk.Button(multiplier_frame, text="Применить", command=self.on_multiplier_changed)
+        apply_btn.pack(side="left", padx=(5, 0))
+        self.lockable_widgets.append(apply_btn)
+        
+        ttk.Label(multiplier_frame, text="(выберите файл и измените количество)", 
+                  font=('TkDefaultFont', 8), foreground='gray').pack(side="left", padx=(10, 0))
+
+        work_row += 1
         ttk.Label(main_work_frame, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
         entry1 = ttk.Entry(main_work_frame, textvariable=self.sheet_spec)
         entry1.grid(row=work_row+1, column=0, columnspan=3, sticky="ew", **pad)
@@ -373,13 +396,58 @@ class BOMCategorizerApp(tk.Tk):
             return
         for f in files:
             if f not in self.input_files:
-                self.input_files.append(f)
-                self.listbox.insert(tk.END, f)
+                self.input_files[f] = 1  # По умолчанию 1 экземпляр
+        self.update_listbox()
 
     def on_clear_files(self):
         """Обработчик кнопки очистки списка файлов"""
         self.input_files.clear()
         self.listbox.delete(0, tk.END)
+        self.current_file_multiplier.set(1)
+        self.selected_file_index = None
+    
+    def update_listbox(self):
+        """Обновляет отображение файлов в списке с указанием количества"""
+        self.listbox.delete(0, tk.END)
+        for file_path, count in self.input_files.items():
+            display_text = f"{file_path}  [x{count}]"
+            self.listbox.insert(tk.END, display_text)
+    
+    def on_file_selected(self, event):
+        """Обработчик выбора файла в списке"""
+        selection = self.listbox.curselection()
+        if not selection:
+            return
+        
+        idx = selection[0]
+        self.selected_file_index = idx  # Сохраняем индекс
+        file_paths = list(self.input_files.keys())
+        if idx < len(file_paths):
+            selected_file = file_paths[idx]
+            current_count = self.input_files.get(selected_file, 1)
+            self.current_file_multiplier.set(current_count)
+    
+    def on_multiplier_changed(self):
+        """Обработчик изменения количества для выбранного файла"""
+        # Используем сохраненный индекс вместо текущего выделения
+        if self.selected_file_index is None:
+            messagebox.showwarning("Внимание", "Сначала выберите файл в списке")
+            return
+        
+        idx = self.selected_file_index
+        file_paths = list(self.input_files.keys())
+        if idx < len(file_paths):
+            selected_file = file_paths[idx]
+            new_count = self.current_file_multiplier.get()
+            if new_count < 1:
+                new_count = 1
+                self.current_file_multiplier.set(1)
+            self.input_files[selected_file] = new_count
+            self.update_listbox()
+            # Восстанавливаем выделение
+            self.listbox.selection_clear(0, tk.END)
+            self.listbox.selection_set(idx)
+            self.listbox.see(idx)  # Прокручиваем к выбранному элементу
 
     def on_pick_output(self):
         """Обработчик выбора выходного файла"""
@@ -475,7 +543,14 @@ class BOMCategorizerApp(tk.Tk):
         """
         args = []
         if self.input_files:
-            args.extend(["--inputs"] + self.input_files)
+            # Формируем список файлов в формате "файл:количество"
+            file_specs = []
+            for file_path, count in self.input_files.items():
+                if count > 1:
+                    file_specs.append(f"{file_path}:{count}")
+                else:
+                    file_specs.append(file_path)
+            args.extend(["--inputs"] + file_specs)
         sheet_txt = self.sheet_spec.get().strip()
         if sheet_txt:
             args.extend(["--sheets", sheet_txt])

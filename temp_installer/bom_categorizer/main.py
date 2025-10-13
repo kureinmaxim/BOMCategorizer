@@ -56,12 +56,64 @@ def add_excel_row_numbers(df: pd.DataFrame, header_offset: int = 2) -> pd.DataFr
     return df
 
 
+def multiply_quantities(df: pd.DataFrame, multiplier: int) -> pd.DataFrame:
+    """
+    Умножает количество всех элементов на заданный множитель
+    
+    Args:
+        df: DataFrame с данными
+        multiplier: Множитель для количества
+        
+    Returns:
+        DataFrame с умноженными количествами
+    """
+    if multiplier == 1:
+        return df
+    
+    # Найти колонку с количеством (без учета регистра)
+    qty_col = None
+    qty_keywords = ["qty", "quantity", "количество", "кол.", "кол-во", "кол-в", "_merged_qty_"]
+    
+    # Сначала попробуем find_column (для обратной совместимости)
+    qty_col = find_column(qty_keywords, list(df.columns))
+    
+    # Если не нашли, ищем без учета регистра
+    if not qty_col:
+        columns_lower = {col.lower(): col for col in df.columns}
+        for keyword in qty_keywords:
+            if keyword.lower() in columns_lower:
+                qty_col = columns_lower[keyword.lower()]
+                break
+        
+        # Если все еще не нашли, ищем частичное совпадение без учета регистра
+        if not qty_col:
+            for keyword in qty_keywords:
+                for col in df.columns:
+                    if keyword.lower() in col.lower():
+                        qty_col = col
+                        break
+                if qty_col:
+                    break
+    
+    if qty_col and qty_col in df.columns:
+        # Умножаем количество
+        for idx in df.index:
+            current_qty = df.loc[idx, qty_col]
+            if pd.notna(current_qty):
+                try:
+                    df.loc[idx, qty_col] = int(float(current_qty)) * multiplier
+                except (ValueError, TypeError):
+                    pass  # Оставляем как есть, если не можем преобразовать
+    
+    return df
+
+
 def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = None, sheet: Optional[str] = None) -> pd.DataFrame:
     """
     Загружает и объединяет данные из всех входных файлов
     
     Args:
-        input_paths: Список путей к входным файлам
+        input_paths: Список путей к входным файлам (формат: "файл" или "файл:количество")
         sheets_str: Строка с номерами листов Excel (через запятую)
         sheet: Конкретный лист для чтения
         
@@ -70,7 +122,29 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
     """
     all_rows: List[pd.DataFrame] = []
     
-    for input_path in input_paths:
+    for input_spec in input_paths:
+        # Парсим формат "файл:количество"
+        # Проверяем, есть ли двоеточие и является ли последняя часть числом
+        multiplier = 1
+        input_path = input_spec
+        
+        if ':' in input_spec:
+            # Разделяем по последнему двоеточию
+            parts = input_spec.rsplit(':', 1)
+            if len(parts) == 2:
+                # Проверяем, является ли последняя часть числом
+                try:
+                    potential_multiplier = int(parts[1])
+                    # Если это число, то это множитель, а не часть пути
+                    if potential_multiplier > 0:
+                        input_path = parts[0]
+                        multiplier = potential_multiplier
+                    elif potential_multiplier <= 0:
+                        print(f"⚠️ Множитель должен быть положительным числом: {input_spec}", file=sys.stderr)
+                        # Оставляем multiplier = 1 и input_path = input_spec
+                except ValueError:
+                    # Последняя часть не число - это просто часть пути (например, C:\path)
+                    pass
         ext = os.path.splitext(input_path)[1].lower()
         
         # TXT parsing
@@ -79,7 +153,10 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 df_txt = parse_txt_like(input_path)
                 df_txt["source_file"] = os.path.basename(input_path)
                 df_txt["source_sheet"] = ""
+                df_txt = multiply_quantities(df_txt, multiplier)
                 all_rows.append(df_txt)
+                if multiplier > 1:
+                    print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             except Exception as exc:
                 print(f"⚠️ Не удалось прочитать TXT '{input_path}': {exc}", file=sys.stderr)
         
@@ -89,7 +166,10 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 df_docx = parse_docx(input_path)
                 df_docx["source_file"] = os.path.basename(input_path)
                 df_docx["source_sheet"] = ""
+                df_docx = multiply_quantities(df_docx, multiplier)
                 all_rows.append(df_docx)
+                if multiplier > 1:
+                    print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             except Exception as exc:
                 print(f"⚠️ Не удалось прочитать DOCX '{input_path}': {exc}", file=sys.stderr)
         
@@ -152,6 +232,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                             
                             dfi["source_file"] = os.path.basename(input_path)
                             dfi["source_sheet"] = str(sh)
+                            dfi = multiply_quantities(dfi, multiplier)
                             all_rows.append(dfi)
                         except Exception as exc:
                             print(f"⚠️ Не удалось прочитать лист '{sh}' из '{input_path}': {exc}", file=sys.stderr)
@@ -187,6 +268,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                     
                     df["source_file"] = os.path.basename(input_path)
                     df["source_sheet"] = str(src_sheet)
+                    df = multiply_quantities(df, multiplier)
                     all_rows.append(df)
                 
                 else:
@@ -215,7 +297,11 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                         
                         df_local["source_file"] = os.path.basename(input_path)
                         df_local["source_sheet"] = str(sheet_name)
+                        df_local = multiply_quantities(df_local, multiplier)
                         all_rows.append(df_local)
+                
+                if multiplier > 1:
+                    print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             
             except Exception as exc:
                 print(f"⚠️ Не удалось прочитать Excel '{input_path}': {exc}", file=sys.stderr)
@@ -247,7 +333,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
     return df
 
 
-def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str) -> pd.DataFrame:
+def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_files: bool = False) -> pd.DataFrame:
     """
     Объединяет одинаковые элементы из одного источника (документа)
     Суммирует количество и объединяет позиционные обозначения через запятую
@@ -255,6 +341,7 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str) -> pd.DataFrame:
     Args:
         df: DataFrame с данными
         desc_col: Название колонки с описанием
+        combine_across_files: Если True, объединяет одинаковые элементы из разных файлов
         
     Returns:
         DataFrame с объединенными элементами
@@ -293,7 +380,9 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str) -> pd.DataFrame:
     
     # Группируем по source_file, source_sheet и нормализованному description
     group_cols = []
-    if 'source_file' in df.columns:
+    # Если combine_across_files=True, НЕ группируем по source_file
+    # (чтобы одинаковые элементы из разных файлов объединялись)
+    if not combine_across_files and 'source_file' in df.columns:
         group_cols.append('source_file')
     if 'source_sheet' in df.columns:
         group_cols.append('source_sheet')
@@ -313,6 +402,10 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str) -> pd.DataFrame:
     # Объединяем reference через запятую
     if ref_col:
         agg_dict[ref_col] = lambda x: ', '.join(str(v) for v in x if pd.notna(v) and str(v).strip())
+    
+    # Если combine_across_files=True, объединяем source_file через ", "
+    if combine_across_files and 'source_file' in df.columns:
+        agg_dict['source_file'] = lambda x: ', '.join(sorted(set(str(v) for v in x if pd.notna(v) and str(v).strip())))
     
     # Берем первое значение для остальных колонок
     for col in df.columns:
@@ -1124,7 +1217,8 @@ def main():
     if has_docx_data:
         print("[АГРЕГАЦИЯ] Объединение одинаковых элементов из документов...")
         initial_count = len(df)
-        df = aggregate_duplicate_items(df, desc_col)
+        # Если используется --combine, объединяем элементы из разных файлов
+        df = aggregate_duplicate_items(df, desc_col, combine_across_files=args.combine)
         final_count = len(df)
         if initial_count != final_count:
             print(f"[OK] Объединено: {initial_count} -> {final_count} строк (сэкономлено {initial_count - final_count})")
@@ -1151,7 +1245,7 @@ def main():
     has_existing_category = 'category' in df.columns
     
     if has_existing_category:
-        print("✓ Обнаружена существующая колонка 'category' (файл уже был обработан ранее).")
+        print("[OK] Обнаружена существующая колонка 'category' (файл уже был обработан ранее).")
         print("  Используем существующую классификацию без изменений.")
         # НЕ удаляем и НЕ перезапускаем классификацию!
         # Данные уже очищены и классифицированы, повторная классификация только ухудшит результат
