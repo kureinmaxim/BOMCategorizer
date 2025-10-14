@@ -142,7 +142,7 @@ def classify_row(
     # Оптические модули и компоненты
     if has_any(text_blob, [
         "оптический модуль", "optical module", "передающий оптический", "приемный оптический",
-        "аттенюатор оптический", "optical attenuator",
+        "оптический аттенюатор", "аттенюатор оптический", "optical attenuator",
         "mp2320", "mp2220", "fc/apc", "fc/upc", "соединительный оптический",
         "оптоволокон", "fiber optic", "мвол", "линия многоканальная задержки",
         "коммутатор оптический", "оптический коммутатор", "optical switch",
@@ -185,12 +185,18 @@ def classify_row(
         if not has_any(text_blob, ["fc/", "sc/", "lc/", "оптическ", "optical", "fiber"]):
             return "connectors"
     
-    # СВЧ компоненты (аттенюаторы, делители, ответвители) от специфичных производителей в rf_modules
+    # СВЧ компоненты (аттенюаторы, делители, ответвители) от специфичных производителей
     if has_any(text_blob, ["аттенюатор", "attenuator", "делитель мощности", "делитель  мощности", "power divider", 
                            "ответвитель направленный", "ограничитель", "линия задержек"]):
-        if has_any(text_blob, ["qualwave", "mini-circuits", "api technologies", "weinschel", "a-info", "gigabaudics", 
-                               "quantic pmi", "quantic", "pmi", "jfw", "umcc"]):
-            return "rf_modules"
+        # ВАЖНО: Только НЕ-оптические компоненты!
+        if not has_any(text_blob, ["оптич", "optical", "fc/apc", "fc/upc", "fiber"]):
+            if has_any(text_blob, ["qualwave", "mini-circuits", "api technologies", "weinschel", "a-info", "gigabaudics", 
+                                   "quantic pmi", "quantic", "pmi", "jfw", "umcc"]):
+                return "rf_modules"
+            # Аттенюаторы без явного производителя также идут в rf_modules (СВЧ компоненты)
+            # НО! Только если есть явные маркеры СВЧ (BW, VAT, ZX76 и т.д.)
+            if has_any(text_blob, ["bw - ", "bw-", " vat - ", "vat-", "zx76", "zx60"]):
+                return "rf_modules"
     
     # Оборудование RITTAL всегда в "Другие"
     if has_any(text_blob, ["rittal"]):
@@ -235,10 +241,16 @@ def classify_row(
         # Prefix "A" or "А" (latin or cyrillic) -> отладочные платы
         if ref_prefix in ("A", "А"):
             return "dev_boards"
-        # Russian prefix "А" for attenuators (optics)
+        # Russian prefix "А" for attenuators
         if ref_prefix.startswith(("А", "A")) and len(ref_prefix) > 2:
-            if has_any(text_blob, ["аттенюат", "ослабител", "attenuator", "fc/apc", "fc/upc", "оптич", "optical"]):
-                return "optics"
+            # ВАЖНО: Только ОПТИЧЕСКИЕ аттенюаторы идут в optics
+            if has_any(text_blob, ["аттенюат", "ослабител", "attenuator"]):
+                # Проверяем, оптический ли это аттенюатор
+                if has_any(text_blob, ["оптич", "optical", "fc/apc", "fc/upc", "fiber"]):
+                    return "optics"
+                else:
+                    # СВЧ/электрические аттенюаторы -> отладочные платы и модули
+                    return "dev_boards"
         # Prefix "W" often used for RF modules
         if ref_prefix.startswith("W"):
             if has_any(text_blob, ["свч", "rf", "линия задержек", "delay line", "усилитель", "делитель", "сумматор", "splitter", "combiner", "amplifier"]):

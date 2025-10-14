@@ -1,4 +1,4 @@
-#define MyAppVersion "2.0.12"
+#define MyAppVersion "2.0.13"
 [Setup]
 AppName=BOM Categorizer
 AppVersion={#MyAppVersion}
