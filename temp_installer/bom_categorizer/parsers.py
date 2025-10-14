@@ -246,10 +246,28 @@ def parse_docx(path: str) -> pd.DataFrame:
                 except Exception:
                     qty = 1
 
+            # Проверить, есть ли в наименовании информация о производителе (формат "ф. Производитель")
+            manufacturer_in_name = ""
+            if name:
+                # Ищем паттерн "ф. Производитель" в конце или середине строки
+                mfr_pattern = r'\s+ф\.\s*([A-Za-z0-9\s\-]+)'
+                mfr_match = re.search(mfr_pattern, name)
+                if mfr_match:
+                    manufacturer_in_name = mfr_match.group(1).strip()
+                    # Удаляем информацию о производителе из наименования
+                    name = re.sub(mfr_pattern, '', name).strip()
+            
             # Добавить ТОЛЬКО ТУ из заголовка группы в note (НЕ тип компонента!)
             # Тип компонента из заголовка может быть неточным и перевесить правильную классификацию
-            if current_group_tu:
+            if current_group_tu and manufacturer_in_name:
+                # Есть и ТУ из заголовка, и производитель из наименования
+                note = current_group_tu + ' | ' + manufacturer_in_name
+            elif current_group_tu:
+                # Только ТУ из заголовка
                 note = current_group_tu
+            elif manufacturer_in_name:
+                # Только производитель из наименования
+                note = manufacturer_in_name
 
             # Не добавлять строку без данных
             if not ref.strip() and not name.strip():
@@ -275,10 +293,12 @@ def parse_docx(path: str) -> pd.DataFrame:
                     if mfr_match:
                         manufacturer = mfr_match.group(1).strip()
                         # Добавить производителя к note последнего элемента
-                        # Если note уже содержит ТУ-код, добавляем производителя через " | "
+                        # ИСПРАВЛЕНО: Порядок изменён на "ТУ | manufacturer" для правильной обработки
                         if extracted[-1]['note']:
-                            extracted[-1]['note'] = manufacturer + ' | ' + extracted[-1]['note']
+                            # Если note уже содержит ТУ-код, добавляем производителя ПОСЛЕ разделителя
+                            extracted[-1]['note'] = extracted[-1]['note'] + ' | ' + manufacturer
                         else:
+                            # Если note пустой, добавляем только производителя
                             extracted[-1]['note'] = manufacturer
                 continue
             

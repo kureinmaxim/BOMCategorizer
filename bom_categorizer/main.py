@@ -722,6 +722,44 @@ def combine_debug_modules(df: pd.DataFrame) -> pd.DataFrame:
     return debug_modules_combined
 
 
+def split_by_source_file(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Разделяет DataFrame на группы по source_file с пустыми строками между ними
+    
+    Args:
+        df: DataFrame с данными одной категории
+        
+    Returns:
+        DataFrame с добавленными пустыми строками-разделителями между источниками
+    """
+    if df.empty or 'source_file' not in df.columns:
+        return df
+    
+    # Получаем уникальные источники в порядке их появления
+    unique_sources = df['source_file'].unique()
+    
+    if len(unique_sources) <= 1:
+        # Если только один источник, разделение не нужно
+        return df
+    
+    result_parts = []
+    
+    for i, source in enumerate(unique_sources):
+        # Добавляем данные из этого источника
+        source_data = df[df['source_file'] == source]
+        result_parts.append(source_data)
+        
+        # Добавляем пустую строку-разделитель после каждого источника, кроме последнего
+        if i < len(unique_sources) - 1:
+            empty_row = pd.DataFrame([{col: '' for col in df.columns}])
+            result_parts.append(empty_row)
+    
+    # Объединяем все части
+    result = pd.concat(result_parts, ignore_index=True) if result_parts else pd.DataFrame()
+    
+    return result
+
+
 def create_outputs_dict(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     """
     Создает словарь выходных DataFrame по категориям
@@ -733,17 +771,17 @@ def create_outputs_dict(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     
     outputs = {
         "debug_modules": debug_modules_combined,
-        "ics": df[df["category"] == "ics"],
-        "resistors": df[df["category"] == "resistors"],
-        "capacitors": df[df["category"] == "capacitors"],
-        "inductors": df[df["category"] == "inductors"],
-        "semiconductors": df[df["category"] == "semiconductors"],
-        "connectors": df[df["category"] == "connectors"],
-        "optics": df[df["category"] == "optics"],
-        "power_modules": df[df["category"] == "power_modules"],
-        "cables": df[df["category"] == "cables"],
-        "others": df[df["category"] == "others"],
-        "unclassified": df[df["category"] == "unclassified"],
+        "ics": split_by_source_file(df[df["category"] == "ics"]),
+        "resistors": split_by_source_file(df[df["category"] == "resistors"]),
+        "capacitors": split_by_source_file(df[df["category"] == "capacitors"]),
+        "inductors": split_by_source_file(df[df["category"] == "inductors"]),
+        "semiconductors": split_by_source_file(df[df["category"] == "semiconductors"]),
+        "connectors": split_by_source_file(df[df["category"] == "connectors"]),
+        "optics": split_by_source_file(df[df["category"] == "optics"]),
+        "power_modules": split_by_source_file(df[df["category"] == "power_modules"]),
+        "cables": split_by_source_file(df[df["category"] == "cables"]),
+        "others": split_by_source_file(df[df["category"] == "others"]),
+        "unclassified": split_by_source_file(df[df["category"] == "unclassified"]),
     }
     
     return outputs
@@ -1211,13 +1249,26 @@ def main():
     # Определяем, есть ли уже обработанные данные (с колонкой 'category')
     has_existing_category = 'category' in df.columns
     
-    # Очистить названия компонентов ДО агрегации для НОВЫХ файлов
+    # Очистить названия компонентов ДО агрегации
     # Это критически важно для правильного объединения XLSX и DOCX файлов
-    if not has_existing_category:
-        from .formatters import clean_component_name
-        if desc_col in df.columns:
+    if desc_col in df.columns:
+        from .formatters import clean_component_name, extract_tu_code
+        
+        if has_existing_category:
+            # Если есть колонка category, очищаем ТОЛЬКО строки без категории (новые данные)
+            print("[ОЧИСТКА] Нормализация описаний для новых компонентов (без категории)...")
+            cleaned_values = []
+            for idx, val in enumerate(df[desc_col]):
+                # Если у строки нет категории или категория пустая - очищаем
+                has_cat = pd.notna(df.loc[idx, 'category']) and str(df.loc[idx, 'category']).strip()
+                if not has_cat and pd.notna(val):
+                    cleaned_values.append(clean_component_name(str(val)))
+                else:
+                    cleaned_values.append(val)
+            df[desc_col] = cleaned_values
+        else:
+            # Если нет колонки category, очищаем все
             print("[ОЧИСТКА] Нормализация описаний компонентов...")
-            # Применяем clean_component_name ко всем значениям
             cleaned_values = []
             for val in df[desc_col]:
                 if pd.notna(val):
@@ -1225,6 +1276,56 @@ def main():
                 else:
                     cleaned_values.append(val)
             df[desc_col] = cleaned_values
+        
+        # КРИТИЧЕСКИ ВАЖНО: Извлечь ТУ-коды из DOCX файлов ДО агрегации
+        # Это приводит DOCX к тому же формату что и XLSX (с отдельной колонкой ТУ)
+        # Проверяем, есть ли DOCX данные (по наличию колонки 'note')
+        if 'note' in df.columns:
+            print("[ИЗВЛЕЧЕНИЕ ТУ] Извлечение ТУ-кодов из наименований (для унификации с XLSX)...")
+            
+            # Если колонки ТУ еще нет - создаем
+            if 'ТУ' not in df.columns and 'ту' not in df.columns:
+                df['_extracted_tu_'] = ''
+            
+            for idx in df.index:
+                # Извлекаем ТУ только если:
+                # 1. У строки нет категории (DOCX) ИЛИ
+                # 2. У строки есть note но нет ТУ (DOCX с производителем)
+                has_cat = 'category' in df.columns and pd.notna(df.loc[idx, 'category']) and str(df.loc[idx, 'category']).strip()
+                has_tu = ('ТУ' in df.columns and pd.notna(df.loc[idx, 'ТУ']) and str(df.loc[idx, 'ТУ']).strip()) or \
+                         ('ту' in df.columns and pd.notna(df.loc[idx, 'ту']) and str(df.loc[idx, 'ту']).strip())
+                
+                # Если это XLSX с категорией и ТУ - пропускаем
+                if has_cat and has_tu:
+                    continue
+                
+                # Извлекаем ТУ из описания
+                desc_val = df.loc[idx, desc_col]
+                if pd.notna(desc_val):
+                    cleaned_desc, tu_code = extract_tu_code(str(desc_val))
+                    
+                    # Обновляем описание (без ТУ)
+                    df.loc[idx, desc_col] = cleaned_desc
+                    
+                    # Сохраняем ТУ
+                    if tu_code:
+                        if '_extracted_tu_' in df.columns:
+                            df.loc[idx, '_extracted_tu_'] = tu_code
+                        
+                        # Если есть note с производителем, объединяем: "ТУ | производитель"
+                        note_val = df.loc[idx, 'note'] if 'note' in df.columns else ''
+                        if note_val and pd.notna(note_val) and str(note_val).strip():
+                            # Проверяем, не является ли note ТУ-кодом (чтобы не дублировать)
+                            note_str = str(note_val).strip()
+                            if 'ТУ' not in note_str.upper():
+                                # note это производитель, объединяем
+                                df.loc[idx, 'note'] = tu_code + ' | ' + note_str
+                            else:
+                                # note уже содержит ТУ
+                                df.loc[idx, 'note'] = note_str
+                        else:
+                            # Нет note - просто ТУ
+                            df.loc[idx, 'note'] = tu_code
     
     # Агрегировать одинаковые элементы из DOC/DOCX/TXT файлов (объединяем дубликаты)
     # Проверяем, есть ли данные из DOC/DOCX (по наличию колонки 'zone' или большого количества reference)
@@ -1264,16 +1365,27 @@ def main():
     has_existing_category = 'category' in df.columns
     
     if has_existing_category:
-        print("[OK] Обнаружена существующая колонка 'category' (файл уже был обработан ранее).")
-        print("  Используем существующую классификацию без изменений.")
-        # НЕ удаляем и НЕ перезапускаем классификацию!
-        # Данные уже очищены и классифицированы, повторная классификация только ухудшит результат
+        # Если есть колонка category, классифицируем ТОЛЬКО строки без категории
+        rows_without_category = df['category'].isna() | (df['category'].astype(str).str.strip() == '')
+        rows_without_category_count = rows_without_category.sum()
+        
+        if rows_without_category_count > 0:
+            print(f"[КЛАССИФИКАЦИЯ] Обнаружено {rows_without_category_count} новых компонентов без категории.")
+            print("  Классифицируем только новые компоненты...")
+            
+            # Классифицируем только строки без категории
+            df_to_classify = df[rows_without_category].copy()
+            df_to_classify = run_classification(df_to_classify, ref_col, desc_col, value_col, part_col, args.loose)
+            df_to_classify = apply_rules_from_json(df_to_classify, args.assign_json, desc_col, value_col, part_col, ref_col)
+            
+            # Обновляем категории в основном DataFrame
+            df.loc[rows_without_category, 'category'] = df_to_classify['category'].values
+        else:
+            print("[OK] Все компоненты уже классифицированы.")
     else:
-        # Run classification только для новых файлов
+        # Run classification для всех строк
+        print("[КЛАССИФИКАЦИЯ] Классификация всех компонентов...")
         df = run_classification(df, ref_col, desc_col, value_col, part_col, args.loose)
-    
-    # Apply existing rules from JSON (только для новых файлов)
-    if not has_existing_category:
         df = apply_rules_from_json(df, args.assign_json, desc_col, value_col, part_col, ref_col)
     
     # Interactive classification if needed

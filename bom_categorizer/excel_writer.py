@@ -203,16 +203,33 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             
             # Извлечь ТУ из note (если есть)
             note_tu = ""
+            note_manufacturer = ""
             note_type = ""
             if note:
                 if '|' in note:
-                    # Формат: "тип | ТУ" (например, "Микросхемы | И93.456.000ТУ")
+                    # ИСПРАВЛЕНО: Формат "ТУ | manufacturer" (например, "АЕЯР.431320.420ТУ | Texas Instruments")
                     parts = note.split('|')
                     if len(parts) >= 2:
-                        note_type = parts[0].strip()
-                        note_tu = parts[1].strip()
+                        # Первая часть - ТУ (для отечественных) или пустая строка
+                        note_tu = parts[0].strip()
+                        # Вторая часть - производитель (для импортных)
+                        note_manufacturer = parts[1].strip()
+                        
+                        # Определяем что использовать в колонке ТУ:
+                        # Если первая часть похожа на ТУ-код (содержит "ТУ"), используем её
+                        # Иначе используем производителя
+                        if note_tu and ('ТУ' in note_tu.upper() or 'TU' in note_tu.upper()):
+                            # Это отечественный ТУ-код
+                            pass  # note_tu уже содержит правильное значение
+                        elif note_manufacturer:
+                            # Это импортный компонент, производитель в колонку ТУ
+                            note_tu = note_manufacturer
+                            note_manufacturer = ""
+                    else:
+                        # Если не удалось разделить, используем как есть
+                        note_tu = parts[0].strip()
                 else:
-                    # Весь note это производитель или ТУ (например, "STMicroelectronics")
+                    # Весь note это производитель или ТУ (например, "STMicroelectronics" или "АЕЯР.431320.420ТУ")
                     note_tu = note.strip()
             
             # НЕ ПРИМЕНЯЕМ clean_component_name здесь, так как данные уже очищены в main.py!
@@ -222,9 +239,11 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             # Извлечь ТУ из текста
             cleaned_text, tu_code = extract_tu_code(cleaned_text)
             
-            # Если ТУ был в note, используем его (приоритет у note)
+            # ИСПРАВЛЕНО: Если ТУ был в note, используем его (приоритет у note), 
+            # НО если note_tu пустой, а tu_code из текста есть - используем tu_code из текста
             if note_tu:
                 tu_code = note_tu
+            # Если note_tu пустой, но у нас уже есть tu_code из текста - оставляем его
             
             # Определить тип компонента
             comp_type = note_type if note_type else ""
@@ -528,8 +547,10 @@ def write_categorized_excel(
         desc_col: Название колонки с описанием
     """
     sheets_written = 0
+    category_sheets = []  # Список записанных листов категорий для SUMMARY
     
     with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer:
+        # Сначала записываем все категории
         for key, part_df in outputs.items():
             if len(part_df) == 0:
                 continue
@@ -560,36 +581,10 @@ def write_categorized_excel(
             
             # Записать в Excel
             result_df.to_excel(writer, sheet_name=sheet_name, index=False)
+            category_sheets.append(sheet_name)
             sheets_written += 1
         
-        # SUMMARY sheet
-        if combine:
-            summary_rows = []
-            for key, part_df in outputs.items():
-                if len(part_df) == 0:
-                    continue
-                category_name = RUS_SHEET_NAMES.get(key, key)
-                total_qty = part_df['Общее количество'].sum() if 'Общее количество' in part_df.columns else len(part_df)
-                
-                # Безопасное преобразование total_qty в int
-                try:
-                    qty_int = int(float(total_qty)) if pd.notna(total_qty) else 0
-                except (ValueError, TypeError):
-                    qty_int = 0
-                
-                summary_rows.append({
-                    '№ п/п': len(summary_rows) + 1,
-                    'Категория': category_name,
-                    'Кол-во позиций': len(part_df),
-                    'Общее количество': qty_int
-                })
-            
-            if summary_rows:
-                summary = pd.DataFrame(summary_rows)
-                summary.to_excel(writer, sheet_name="SUMMARY", index=False)
-                sheets_written += 1
-        
-        # SOURCES sheet
+        # SOURCES sheet (записываем до SUMMARY)
         sources = pd.DataFrame(
             sorted({(r.get("source_file", ""), r.get("source_sheet", "")) for _, r in df.iterrows()}), 
             columns=["source_file", "source_sheet"]
@@ -608,5 +603,75 @@ def write_categorized_excel(
         # Применить стили только если есть листы
         if sheets_written > 0:
             apply_excel_styles(writer)
+    
+    # После записи всех листов, создаем SUMMARY, читая реальные данные из файла
+    if combine and len(category_sheets) > 0:
+        summary_rows = []
+        
+        # Читаем каждый лист категории из уже записанного файла
+        for sheet_name in category_sheets:
+            try:
+                # Читаем лист обратно из файла
+                df_sheet = pd.read_excel(output_xlsx, sheet_name=sheet_name, dtype=str)
+                
+                # Ищем колонку с количеством
+                qty_col = find_column([
+                    "Кол-во", "qty", "quantity", "количество", "кол.", "кол-во"
+                ], list(df_sheet.columns))
+                
+                # Считаем количество позиций и общее количество
+                positions_count = len(df_sheet)
+                total_qty = 0
+                
+                if qty_col and qty_col in df_sheet.columns:
+                    for val in df_sheet[qty_col]:
+                        try:
+                            if pd.notna(val):
+                                total_qty += int(float(val))
+                        except (ValueError, TypeError):
+                            pass
+                else:
+                    # Если колонка не найдена, используем количество строк
+                    total_qty = positions_count
+                
+                summary_rows.append({
+                    '№ п/п': len(summary_rows) + 1,
+                    'Категория': sheet_name,
+                    'Кол-во позиций': positions_count,
+                    'Общее количество': total_qty
+                })
+            
+            except Exception as e:
+                print(f"[WARNING] Не удалось прочитать лист '{sheet_name}' для SUMMARY: {e}")
+        
+        # Записываем SUMMARY лист
+        if summary_rows:
+            from openpyxl import load_workbook
+            
+            wb = load_workbook(output_xlsx)
+            
+            # Создаем DataFrame для SUMMARY
+            summary_df = pd.DataFrame(summary_rows)
+            
+            # Если лист SUMMARY уже существует, удаляем его
+            if "SUMMARY" in wb.sheetnames:
+                del wb["SUMMARY"]
+            
+            # Создаем новый лист SUMMARY
+            ws = wb.create_sheet("SUMMARY", 0)  # Вставляем в начало
+            
+            # Записываем заголовки
+            for col_idx, col_name in enumerate(summary_df.columns, 1):
+                ws.cell(row=1, column=col_idx, value=col_name)
+            
+            # Записываем данные
+            for row_idx, row_data in enumerate(summary_df.values, 2):
+                for col_idx, value in enumerate(row_data, 1):
+                    ws.cell(row=row_idx, column=col_idx, value=value)
+            
+            wb.save(output_xlsx)
+            wb.close()
+            
+            print(f"[SUMMARY] Создан лист SUMMARY с {len(summary_rows)} категориями")
     
     print(f"XLSX written: {output_xlsx} ({sheets_written} sheets)")
