@@ -92,7 +92,6 @@ class BOMCategorizerApp(tk.Tk):
         self.output_xlsx = tk.StringVar(value="categorized.xlsx")
         self.merge_into = tk.StringVar()
         self.combine = tk.BooleanVar(value=True)
-        self.loose = tk.BooleanVar(value=False)
         self.interactive = tk.BooleanVar(value=False)
         self.assign_json = tk.StringVar()
         self.txt_dir = tk.StringVar()
@@ -202,11 +201,27 @@ class BOMCategorizerApp(tk.Tk):
 
         work_row += 1
         ttk.Label(main_work_frame, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
-        entry1 = ttk.Entry(main_work_frame, textvariable=self.sheet_spec)
-        entry1.grid(row=work_row+1, column=0, columnspan=3, sticky="ew", **pad)
-        self.lockable_widgets.append(entry1)
+        
+        work_row += 1
+        self.sheet_entry = ttk.Entry(main_work_frame, textvariable=self.sheet_spec, state='normal')
+        self.sheet_entry.grid(row=work_row, column=0, columnspan=3, sticky="ew", **pad)
+        self.lockable_widgets.append(self.sheet_entry)
+        
+        # Устанавливаем placeholder для ясности
+        if not self.sheet_spec.get():
+            self.sheet_spec.set("")
+        
+        # Подсказка о работе параметра "Листы"
+        work_row += 1
+        sheets_hint = ttk.Label(main_work_frame, 
+                               text="💡 Если поле ПУСТОЕ - обрабатываются ВСЕ листы из каждого .xlsx файла. Если ЗАПОЛНЕНО - только указанные листы из КАЖДОГО .xlsx файла.",
+                               font=('TkDefaultFont', 8), 
+                               foreground='gray',
+                               wraplength=680)
+        sheets_hint.grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
+        self.sheets_warning_label = sheets_hint
 
-        work_row += 2
+        work_row += 1
         ttk.Label(main_work_frame, text="Выходной XLSX:").grid(row=work_row, column=0, sticky="w", **pad)
         entry2 = ttk.Entry(main_work_frame, textvariable=self.output_xlsx)
         entry2.grid(row=work_row, column=1, sticky="ew", **pad)
@@ -215,10 +230,6 @@ class BOMCategorizerApp(tk.Tk):
         btn3 = ttk.Button(main_work_frame, text="Сохранить как...", command=self.on_pick_output)
         btn3.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn3)
-
-        work_row += 1
-        output_hint = "Этот файл будет содержать результат обработки и может быть использован для переноса компонентов (см. раздел внизу)"
-        ttk.Label(main_work_frame, text=output_hint, font=('TkDefaultFont', 8), foreground='gray').grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
 
         work_row += 1
         ttk.Label(main_work_frame, text="Папка для TXT файлов (опционально):").grid(row=work_row, column=0, sticky="w", **pad)
@@ -232,12 +243,8 @@ class BOMCategorizerApp(tk.Tk):
 
         work_row += 1
         chk1 = ttk.Checkbutton(main_work_frame, text="Суммарная комплектация (SUMMARY)", variable=self.combine)
-        chk1.grid(row=work_row, column=0, sticky="w", **pad)
+        chk1.grid(row=work_row, column=0, columnspan=2, sticky="w", **pad)
         self.lockable_widgets.append(chk1)
-        
-        chk2 = ttk.Checkbutton(main_work_frame, text="Более свободные эвристики", variable=self.loose)
-        chk2.grid(row=work_row, column=1, sticky="w", **pad)
-        self.lockable_widgets.append(chk2)
 
         work_row += 1
         # Кнопки запуска - выделяем цветом и крупнее
@@ -412,6 +419,24 @@ class BOMCategorizerApp(tk.Tk):
         for file_path, count in self.input_files.items():
             display_text = f"{file_path}  [x{count}]"
             self.listbox.insert(tk.END, display_text)
+        
+        # Управление полем "Листы" в зависимости от количества .xlsx файлов
+        xlsx_files = [f for f in self.input_files.keys() if f.lower().endswith(('.xlsx', '.xls'))]
+        
+        if len(xlsx_files) > 1:
+            # Несколько .xlsx файлов - отключаем поле и показываем предупреждение
+            self.sheet_entry.config(state='disabled')
+            self.sheet_spec.set("")  # Очищаем значение
+            self.sheets_warning_label.config(foreground='red')
+        elif len(xlsx_files) == 1:
+            # Один .xlsx файл - включаем поле, предупреждение обычное
+            self.sheet_entry.config(state='normal')
+            self.sheets_warning_label.config(foreground='gray')
+        else:
+            # Нет .xlsx файлов - отключаем поле
+            self.sheet_entry.config(state='disabled')
+            self.sheet_spec.set("")
+            self.sheets_warning_label.config(foreground='gray')
     
     def on_file_selected(self, event):
         """Обработчик выбора файла в списке"""
@@ -557,8 +582,6 @@ class BOMCategorizerApp(tk.Tk):
         args.extend(["--xlsx", output_file])
         if self.combine.get():
             args.append("--combine")
-        if self.loose.get():
-            args.append("--loose")
         td = self.txt_dir.get().strip()
         if td:
             args.extend(["--txt-dir", td])
@@ -580,11 +603,229 @@ class BOMCategorizerApp(tk.Tk):
         args.append("--no-interactive")
         return args
 
+    def check_and_convert_doc_files(self):
+        """
+        Проверяет наличие .doc файлов и предлагает конвертацию
+        
+        Returns:
+            True если можно продолжить, False если нужно остановить
+        """
+        import os
+        
+        # Ищем .doc файлы (старый формат)
+        doc_files = [f for f in self.input_files.keys() if f.lower().endswith('.doc') and not f.lower().endswith('.docx')]
+        
+        if not doc_files:
+            return True  # Нет .doc файлов, продолжаем
+        
+        # Показываем диалог выбора
+        dialog = tk.Toplevel(self)
+        dialog.title("⚠️ Обнаружены .doc файлы")
+        dialog.geometry("650x400")
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # Центрируем окно
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (650 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (400 // 2)
+        dialog.geometry(f"650x400+{x}+{y}")
+        
+        result = {"action": None}
+        
+        # Заголовок
+        header = ttk.Label(dialog, text="⚠️ ВНИМАНИЕ: Обнаружены файлы в старом формате .doc", 
+                          font=("Arial", 12, "bold"), foreground="orange")
+        header.pack(pady=10)
+        
+        # Список файлов
+        info_frame = ttk.Frame(dialog)
+        info_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        ttk.Label(info_frame, text="Следующие файлы имеют старый формат .doc:", 
+                 font=("Arial", 10)).pack(anchor=tk.W, pady=(0, 5))
+        
+        files_text = tk.Text(info_frame, height=5, wrap=tk.WORD, font=("Courier", 9))
+        files_text.pack(fill=tk.BOTH, expand=True)
+        for doc_file in doc_files:
+            files_text.insert(tk.END, f"  • {os.path.basename(doc_file)}\n")
+        files_text.config(state=tk.DISABLED)
+        
+        # Пояснение
+        explanation = ttk.Label(dialog, 
+                               text="Библиотека python-docx работает только с новым форматом .docx\n"
+                                    "Необходимо конвертировать файлы перед обработкой.",
+                               font=("Arial", 9), foreground="gray")
+        explanation.pack(pady=10)
+        
+        # Кнопки выбора
+        buttons_frame = ttk.Frame(dialog)
+        buttons_frame.pack(pady=20)
+        
+        def on_word_convert():
+            result["action"] = "word"
+            dialog.destroy()
+        
+        def on_manual():
+            result["action"] = "manual"
+            dialog.destroy()
+        
+        def on_cancel():
+            result["action"] = "cancel"
+            dialog.destroy()
+        
+        ttk.Button(buttons_frame, text="🔄 Конвертировать через Word (автоматически)", 
+                  command=on_word_convert, width=40).pack(pady=5)
+        
+        ttk.Label(buttons_frame, text="Требуется установленный Microsoft Word", 
+                 font=("Arial", 8), foreground="gray").pack()
+        
+        ttk.Separator(buttons_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        
+        ttk.Button(buttons_frame, text="📝 Конвертировать вручную (инструкция)", 
+                  command=on_manual, width=40).pack(pady=5)
+        
+        ttk.Label(buttons_frame, text="Откроет инструкцию и остановит обработку", 
+                 font=("Arial", 8), foreground="gray").pack()
+        
+        ttk.Separator(buttons_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
+        
+        ttk.Button(buttons_frame, text="❌ Отмена", 
+                  command=on_cancel, width=40).pack(pady=5)
+        
+        dialog.wait_window()
+        
+        # Обработка выбора
+        if result["action"] == "word":
+            # Автоматическая конвертация через Word
+            return self.convert_doc_files_with_word(doc_files)
+        
+        elif result["action"] == "manual":
+            # Показываем инструкцию
+            instruction = (
+                "📝 ИНСТРУКЦИЯ ПО КОНВЕРТАЦИИ .doc → .docx\n\n"
+                "1. Откройте каждый .doc файл в Microsoft Word\n"
+                "2. Нажмите: Файл → Сохранить как\n"
+                "3. В поле 'Тип файла' выберите: 'Документ Word (*.docx)'\n"
+                "4. Нажмите 'Сохранить'\n"
+                "5. Закройте Word\n"
+                "6. Добавьте .docx файлы в программу вместо .doc\n"
+                "7. Запустите обработку снова\n\n"
+                "Список файлов для конвертации:\n"
+            )
+            for doc_file in doc_files:
+                instruction += f"  • {doc_file}\n"
+            
+            messagebox.showinfo("Инструкция по конвертации", instruction)
+            return False  # Остановить обработку
+        
+        else:  # cancel
+            return False  # Остановить обработку
+    
+    def convert_doc_files_with_word(self, doc_files):
+        """
+        Конвертирует .doc файлы в .docx через Microsoft Word COM API
+        
+        Returns:
+            True если успешно, False если ошибка
+        """
+        try:
+            import win32com.client
+        except ImportError:
+            messagebox.showerror(
+                "Ошибка",
+                "Библиотека pywin32 не установлена!\n\n"
+                "Установите командой:\n"
+                "pip install pywin32\n\n"
+                "Или используйте ручную конвертацию."
+            )
+            return False
+        
+        progress_dialog = tk.Toplevel(self)
+        progress_dialog.title("Конвертация файлов")
+        progress_dialog.geometry("500x200")
+        progress_dialog.transient(self)
+        progress_dialog.grab_set()
+        
+        # Центрируем
+        progress_dialog.update_idletasks()
+        x = (progress_dialog.winfo_screenwidth() // 2) - (250)
+        y = (progress_dialog.winfo_screenheight() // 2) - (100)
+        progress_dialog.geometry(f"500x200+{x}+{y}")
+        
+        status_label = ttk.Label(progress_dialog, text="Инициализация...", font=("Arial", 10))
+        status_label.pack(pady=20)
+        
+        progress_text = tk.Text(progress_dialog, height=6, wrap=tk.WORD, font=("Courier", 9))
+        progress_text.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
+        
+        success = True
+        converted_files = []
+        
+        try:
+            import os
+            status_label.config(text="Запуск Microsoft Word...")
+            progress_text.insert(tk.END, "Открытие Microsoft Word...\n")
+            progress_dialog.update()
+            
+            word = win32com.client.Dispatch("Word.Application")
+            word.Visible = False
+            
+            for i, doc_file in enumerate(doc_files, 1):
+                status_label.config(text=f"Конвертация {i}/{len(doc_files)}: {os.path.basename(doc_file)}")
+                progress_text.insert(tk.END, f"\n[{i}/{len(doc_files)}] {os.path.basename(doc_file)}\n")
+                progress_dialog.update()
+                
+                doc_path = os.path.abspath(doc_file)
+                docx_path = doc_path.replace('.doc', '.docx')
+                
+                try:
+                    doc = word.Documents.Open(doc_path)
+                    doc.SaveAs(docx_path, FileFormat=16)  # 16 = wdFormatXMLDocument
+                    doc.Close()
+                    
+                    progress_text.insert(tk.END, f"  ✓ Создан: {os.path.basename(docx_path)}\n")
+                    converted_files.append((doc_file, docx_path))
+                    
+                except Exception as e:
+                    progress_text.insert(tk.END, f"  ✗ Ошибка: {str(e)}\n")
+                    success = False
+                
+                progress_dialog.update()
+            
+            word.Quit()
+            status_label.config(text="Готово!")
+            progress_text.insert(tk.END, "\nКонвертация завершена.\n")
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка конвертации", f"Не удалось запустить Word:\n{str(e)}")
+            success = False
+        
+        # Обновляем список файлов
+        if success and converted_files:
+            for old_file, new_file in converted_files:
+                if old_file in self.input_files:
+                    count = self.input_files[old_file]
+                    del self.input_files[old_file]
+                    self.input_files[new_file] = count
+            
+            self.update_listbox()
+            progress_text.insert(tk.END, "\n✓ Список файлов обновлен\n")
+        
+        ttk.Button(progress_dialog, text="Закрыть", command=progress_dialog.destroy).pack(pady=10)
+        progress_dialog.wait_window()
+        
+        return success
+    
     def on_run(self):
         """Обработчик кнопки запуска обработки"""
         if not self.input_files:
             messagebox.showerror("Ошибка", "Добавьте хотя бы один входной файл (XLSX/DOCX/DOC/TXT)")
             return
+        
+        # КРИТИЧНО: Проверяем и конвертируем .doc файлы
+        if not self.check_and_convert_doc_files():
+            return  # Пользователь отменил или нужна ручная конвертация
         
         args = self._build_args(self.output_xlsx.get())
         self.txt.delete("1.0", tk.END)

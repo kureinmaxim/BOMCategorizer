@@ -19,6 +19,53 @@ from .formatters import clean_component_name, extract_nominal_value, extract_tu_
 from .utils import find_column
 
 
+def add_plus_minus_to_percentages(text: str) -> str:
+    """
+    Добавляет знак ± перед процентами, если его там нет
+    
+    Примеры:
+        "100 Ом 5% - Т" → "100 Ом ± 5% - Т"
+        "1 кОм ± 5%" → "1 кОм ± 5%" (не меняется)
+        "220 пФ 10%-М" → "220 пФ ± 10%-М"
+    
+    Args:
+        text: Исходный текст
+        
+    Returns:
+        Текст с добавленным знаком ± перед процентами
+    """
+    if not text or pd.isna(text):
+        return text
+    
+    text_str = str(text)
+    
+    # Паттерн: ищем процент, перед которым НЕТ знака ±
+    # Захватываем: (единица измерения или цифра)(пробел?)(цифры%)(остальное)
+    # Примеры совпадений: "Ом 5%", "Ом5%", "пФ 10%", "кОм2%"
+    pattern = r'(Ом|пФ|нФ|мкФ|мФ|кОм|МОм|Гн|мГн|мкГн|нГн|\d)\s*(\d+%)'
+    
+    # Функция замены: добавляет ± между единицей измерения и процентом
+    def replace_with_plus_minus(match):
+        unit_or_digit = match.group(1)
+        percentage = match.group(2)
+        
+        # Проверяем, не стоит ли уже ± перед найденным местом
+        start_pos = match.start()
+        if start_pos > 0:
+            # Смотрим на 3 символа назад (на случай пробелов)
+            prefix = text_str[max(0, start_pos-3):start_pos]
+            if '±' in prefix:
+                # Знак ± уже есть, не добавляем
+                return match.group(0)
+        
+        # Добавляем пробел ± пробел между единицей и процентом
+        return f"{unit_or_digit} ± {percentage}"
+    
+    result = re.sub(pattern, replace_with_plus_minus, text_str, flags=re.IGNORECASE)
+    
+    return result
+
+
 # Русские названия категорий для листов Excel
 RUS_SHEET_NAMES = {
     "debug_modules": "Отладочные платы и модули",
@@ -424,7 +471,8 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                       'source_file', 'source_sheet',  # служебные колонки (уже в "Источник")
                       'note',  # служебная колонка
                       'zone',  # служебная колонка из DOC/DOCX (уже не нужна)
-                      'reference']  # служебная колонка из DOC/DOCX (перенесена в Примечание)
+                      'reference',  # служебная колонка из DOC/DOCX (перенесена в Примечание)
+                      '_extracted_tu_']  # техническая колонка для извлечения ТУ (не показываем пользователю)
     
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
     pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
@@ -458,13 +506,17 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         final_cols.append('Примечание')
     result_df = result_df[final_cols]
     
+    # Добавить знак ± перед процентами в Наименовании ИВП
+    if 'Наименование ИВП' in result_df.columns:
+        result_df['Наименование ИВП'] = result_df['Наименование ИВП'].apply(add_plus_minus_to_percentages)
+    
     return result_df
 
 
 def apply_excel_styles(writer: pd.ExcelWriter):
     """
     Применяет стили к Excel файлу:
-    - Выравнивание (center для большинства, left для описания и ТУ)
+    - Выравнивание (center для большинства, left для описания, ТУ, Примечание и Источник)
     - Автоматическая ширина столбцов
     
     Args:
@@ -473,10 +525,12 @@ def apply_excel_styles(writer: pd.ExcelWriter):
     for sheet_name in writer.book.sheetnames:
         ws = writer.book[sheet_name]
         
-        # Найти индексы столбцов "Наименование ИВП", "ТУ" и "Код МР"
+        # Найти индексы столбцов "Наименование ИВП", "ТУ", "Код МР", "Примечание" и "Источник"
         desc_col_idx = None
         tu_col_idx = None
         kod_mr_col_idx = None
+        note_col_idx = None
+        source_col_idx = None
         for idx, cell in enumerate(ws[1], start=1):
             cell_val = str(cell.value).lower() if cell.value else ''
             if 'наименование ивп' in cell_val or 'наименование' in cell_val:
@@ -485,6 +539,10 @@ def apply_excel_styles(writer: pd.ExcelWriter):
                 tu_col_idx = idx
             elif 'код мр' in cell_val:
                 kod_mr_col_idx = idx
+            elif 'примечание' in cell_val:
+                note_col_idx = idx
+            elif 'источник' in cell_val:
+                source_col_idx = idx
         
         # Установить текстовый формат для колонки "Код МР" (чтобы избежать научной нотации)
         if kod_mr_col_idx:
@@ -501,12 +559,12 @@ def apply_excel_styles(writer: pd.ExcelWriter):
             bottom=Side(style='thin', color='000000')
         )
         
-        # Центрировать все ячейки, кроме "наименование ивп" и "ТУ", и добавить границы
+        # Центрировать все ячейки, кроме "наименование ивп", "ТУ", "Примечание" и "Источник", и добавить границы
         for row_idx, row in enumerate(ws.iter_rows(), start=1):
             for col_idx, cell in enumerate(row, start=1):
                 # Выравнивание
-                if col_idx == desc_col_idx or col_idx == tu_col_idx:
-                    # Наименование ИВП и ТУ - выравнивание по левому краю
+                if col_idx in (desc_col_idx, tu_col_idx, note_col_idx, source_col_idx):
+                    # Наименование ИВП, ТУ, Примечание и Источник - выравнивание по левому краю
                     cell.alignment = Alignment(horizontal='left', vertical='center')
                 else:
                     # Все остальные - по центру
@@ -647,6 +705,7 @@ def write_categorized_excel(
         # Записываем SUMMARY лист
         if summary_rows:
             from openpyxl import load_workbook
+            from openpyxl.styles import Font, Alignment
             
             wb = load_workbook(output_xlsx)
             
@@ -660,14 +719,35 @@ def write_categorized_excel(
             # Создаем новый лист SUMMARY
             ws = wb.create_sheet("SUMMARY", 0)  # Вставляем в начало
             
-            # Записываем заголовки
+            # Записываем заголовки с жирным шрифтом
+            header_font = Font(bold=True)
             for col_idx, col_name in enumerate(summary_df.columns, 1):
-                ws.cell(row=1, column=col_idx, value=col_name)
+                cell = ws.cell(row=1, column=col_idx, value=col_name)
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal='center', vertical='center')
             
             # Записываем данные
             for row_idx, row_data in enumerate(summary_df.values, 2):
                 for col_idx, value in enumerate(row_data, 1):
-                    ws.cell(row=row_idx, column=col_idx, value=value)
+                    cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                    # Центрируем все ячейки, кроме "Категория"
+                    if col_idx == 2:  # Колонка "Категория"
+                        cell.alignment = Alignment(horizontal='left', vertical='center')
+                    else:
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Автоподбор ширины колонок
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    except Exception:
+                        pass
+                adjusted_width = min(max_length + 2, 50)  # Максимум 50
+                ws.column_dimensions[column_letter].width = adjusted_width
             
             wb.save(output_xlsx)
             wb.close()

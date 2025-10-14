@@ -357,6 +357,12 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
         desc_str = str(desc)
         # Убираем символ ± (может быть в разных вариантах, или вообще отсутствовать)
         desc_str = desc_str.replace('±', '')
+        # Нормализуем пробел между единицами измерения и процентами (всегда добавляем пробел)
+        # Это решает проблему: "100 Ом 5%-Т" vs "100 Ом5%-Т" -> "100 Ом 5%-Т"
+        desc_str = re.sub(r'(Ом|пФ|нФ|мкФ|мФ|кОм|МОм|Гн|мГн|мкГн|нГн)\s*(\d+%)', r'\1 \2', desc_str, flags=re.IGNORECASE)
+        # Нормализуем пробелы вокруг дефисов (всегда " - ")
+        # Это решает проблему: "P1 - 12 - 0,125 - 1" vs "P1 - 12 - 0,125-1" -> "P1 - 12 - 0,125 - 1"
+        desc_str = re.sub(r'\s*-\s*', ' - ', desc_str)
         # Убираем множественные пробелы (в том числе там, где был ±)
         desc_str = re.sub(r'\s+', ' ', desc_str)
         # Убираем пробелы в начале и конце
@@ -1253,6 +1259,7 @@ def main():
     # Это критически важно для правильного объединения XLSX и DOCX файлов
     if desc_col in df.columns:
         from .formatters import clean_component_name, extract_tu_code
+        from .parsers import normalize_dashes
         
         if has_existing_category:
             # Если есть колонка category, очищаем ТОЛЬКО строки без категории (новые данные)
@@ -1276,6 +1283,32 @@ def main():
                 else:
                     cleaned_values.append(val)
             df[desc_col] = cleaned_values
+        
+        # Нормализовать тире в других критичных колонках для правильного объединения
+        # Конвертация .doc → .docx может заменять дефисы на типографские тире
+        print("[НОРМАЛИЗАЦИЯ] Приведение всех видов тире к единому формату...")
+        
+        # Нормализация в позиционных обозначениях (reference)
+        if ref_col and ref_col in df.columns:
+            for idx in df.index:
+                val = df.loc[idx, ref_col]
+                if pd.notna(val):
+                    df.loc[idx, ref_col] = normalize_dashes(str(val))
+        
+        # Нормализация в номиналах (value)
+        if value_col and value_col in df.columns:
+            for idx in df.index:
+                val = df.loc[idx, value_col]
+                if pd.notna(val):
+                    df.loc[idx, value_col] = normalize_dashes(str(val))
+        
+        # Нормализация в колонке ТУ (если есть)
+        for tu_col_name in ['ТУ', 'ту', 'TU', 'tu']:
+            if tu_col_name in df.columns:
+                for idx in df.index:
+                    val = df.loc[idx, tu_col_name]
+                    if pd.notna(val):
+                        df.loc[idx, tu_col_name] = normalize_dashes(str(val))
         
         # КРИТИЧЕСКИ ВАЖНО: Извлечь ТУ-коды из DOCX файлов ДО агрегации
         # Это приводит DOCX к тому же формату что и XLSX (с отдельной колонкой ТУ)
@@ -1327,14 +1360,16 @@ def main():
                             # Нет note - просто ТУ
                             df.loc[idx, 'note'] = tu_code
     
-    # Агрегировать одинаковые элементы из DOC/DOCX/TXT файлов (объединяем дубликаты)
+    # Агрегировать одинаковые элементы (объединяем дубликаты)
     # Проверяем, есть ли данные из DOC/DOCX (по наличию колонки 'zone' или большого количества reference)
     has_docx_data = 'zone' in df.columns or (
         find_column(["reference", "ref"], list(df.columns)) and 
         'source_file' in df.columns
     )
     
-    if has_docx_data:
+    # ВСЕГДА агрегируем если используется --combine (даже для XLSX файлов)
+    # ИЛИ если это DOC/DOCX/TXT данные
+    if has_docx_data or args.combine:
         print("[АГРЕГАЦИЯ] Объединение одинаковых элементов из документов...")
         initial_count = len(df)
         # Если используется --combine, объединяем элементы из разных файлов

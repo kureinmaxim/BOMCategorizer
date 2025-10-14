@@ -13,11 +13,14 @@ import re
 import math
 from typing import Optional, Tuple, Any
 
+from .parsers import normalize_dashes
+
 
 def clean_component_name(original_text: str, note: str = "") -> str:
     """
     Очищает наименование компонента от префиксов типа "РЕЗИСТОР", "КОНДЕНСАТОР" и т.д.
     Нормализует единицы измерения (ОМ -> Ом, КОМ -> кОм и т.д.)
+    Нормализует тире (конвертация .doc → .docx может заменять дефисы на типографские тире)
     Убирает $ и $$ в конце
     
     Args:
@@ -31,6 +34,10 @@ def clean_component_name(original_text: str, note: str = "") -> str:
         return ""
     
     text = str(original_text).strip()
+    
+    # Нормализуем все виды тире к обычному дефису
+    # Это критично для правильного объединения компонентов после конвертации .doc → .docx
+    text = normalize_dashes(text)
     
     # Нормализуем множественные пробелы (заменяем несколько пробелов на один)
     text = re.sub(r'\s+', ' ', text)

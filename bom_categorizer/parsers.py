@@ -21,9 +21,43 @@ except Exception:
     Document = None  # optional; raise if used without installed
 
 
+def normalize_dashes(text: str) -> str:
+    """
+    Нормализует различные виды тире и дефисов к обычному дефису
+    
+    При конвертации .doc → .docx Word может заменять дефисы на типографские тире.
+    Это функция приводит все варианты к единому формату для правильного объединения компонентов.
+    
+    Args:
+        text: Исходный текст
+        
+    Returns:
+        Текст с нормализованными дефисами
+    """
+    if not text:
+        return text
+    
+    # Заменяем все виды тире на обычный дефис
+    # U+2013: EN DASH (–)
+    # U+2014: EM DASH (—)
+    # U+2212: MINUS SIGN (−)
+    # U+2010: HYPHEN (‐)
+    # U+2011: NON-BREAKING HYPHEN (‑)
+    text = text.replace('\u2013', '-')  # EN DASH
+    text = text.replace('\u2014', '-')  # EM DASH
+    text = text.replace('\u2212', '-')  # MINUS SIGN
+    text = text.replace('\u2010', '-')  # HYPHEN
+    text = text.replace('\u2011', '-')  # NON-BREAKING HYPHEN
+    
+    return text
+
+
 def normalize_cell(s: Any) -> str:
     """Нормализует содержимое ячейки таблицы"""
-    return (str(s or "").strip())
+    text = str(s or "").strip()
+    # Нормализуем тире для корректного объединения компонентов
+    text = normalize_dashes(text)
+    return text
 
 
 def count_from_reference(ref: str) -> int:
