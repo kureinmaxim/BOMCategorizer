@@ -913,6 +913,36 @@ class BOMCategorizerApp(tk.Tk):
 
     def on_interactive_classify(self):
         """Обработчик кнопки интерактивной классификации"""
+        # СНАЧАЛА проверяем наличие существующего выходного файла с листом "Не распределено"
+        output_file = self.output_xlsx.get()
+        
+        if output_file and os.path.exists(output_file):
+            # Проверяем наличие листа "Не распределено" в существующем файле
+            try:
+                import pandas as pd
+                xls = pd.ExcelFile(output_file)
+                
+                if 'Не распределено' in xls.sheet_names:
+                    df_un = pd.read_excel(output_file, sheet_name='Не распределено')
+                    df_un_valid = df_un[df_un['Наименование ИВП'].notna()]
+                    
+                    if not df_un_valid.empty:
+                        # Используем существующий файл!
+                        self.txt.delete("1.0", tk.END)
+                        self.txt.insert(tk.END, f"📂 Используется существующий файл: {output_file}\n")
+                        self.txt.insert(tk.END, f"📊 Найдено {len(df_un_valid)} нераспределенных элементов\n\n")
+                        self.update_idletasks()
+                        
+                        self.open_classification_dialog(df_un_valid, output_file)
+                        return
+            except Exception as e:
+                # Если ошибка чтения существующего файла - продолжаем обработку заново
+                self.txt.delete("1.0", tk.END)
+                self.txt.insert(tk.END, f"⚠️ Не удалось использовать существующий файл: {e}\n")
+                self.txt.insert(tk.END, "Создаем новый файл...\n\n")
+                self.update_idletasks()
+        
+        # Если нет существующего файла с нераспределенными - создаем новый
         if not self.input_files:
             messagebox.showerror("Ошибка", "Добавьте хотя бы один входной файл")
             return
