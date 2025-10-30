@@ -57,6 +57,8 @@ def normalize_cell(s: Any) -> str:
     text = str(s or "").strip()
     # Нормализуем тире для корректного объединения компонентов
     text = normalize_dashes(text)
+    # Удаляем непечатные символы (включая �)
+    text = ''.join(char for char in text if char.isprintable() or char in '\n\r\t')
     return text
 
 
@@ -223,19 +225,35 @@ def parse_docx(path: str) -> pd.DataFrame:
             name = vals[idx_name] if idx_name is not None and idx_name < len(vals) else ""
             qty_raw = vals[idx_qty] if idx_qty is not None and idx_qty < len(vals) else ""
             note = vals[idx_note] if idx_note is not None and idx_note < len(vals) else ""
+            original_note = note  # Сохранить оригинальное примечание для извлечения подборов
             
             # Проверить, является ли это строкой-заголовком группы
-            section_headers = ['конденсаторы', 'резисторы', 'микросхемы', 'дроссели', 'индуктивности',
-                             'разъемы', 'диоды', 'транзисторы', 'кабели', 'модули', 
-                             'набор резисторов', 'набор конденсаторов', 'набор микросхем']
+            section_headers = [
+                'конденсаторы', 'резисторы', 'микросхемы', 'дроссели', 'индуктивности',
+                'разъемы', 'диоды', 'транзисторы', 'кабели', 'модули',
+                'набор резисторов', 'набор конденсаторов', 'набор микросхем',
+                'трансформаторы', 'датчики', 'реле', 'предохранители', 
+                'оптопары', 'оптроны', 'светодиоды', 'стабилитроны',
+                'вариаторы', 'переключатели', 'кнопки', 'тумблеры',
+                'фильтры', 'антенны', 'радиаторы', 'крепеж',
+                'провода', 'жгуты', 'шлейфы', 'платы',
+                'корпуса', 'панели', 'винты', 'гайки',
+                'изделия', 'детали', 'прочие элементы'
+            ]
             name_lower = name.strip().lower()
             
             is_group_header = False
-            has_tu_code = re.search(r'([А-ЯЁ]{2,}[\.\d]+ТУ)', name) or re.search(r'ТУ\s+[\d\-]+', name)
             
+            # Проверка группового заголовка: должно быть БЕЗ ref и qty И начинаться с типа компонента
             if not ref.strip() and not qty_raw.strip():
-                if any(name_lower.startswith(section) for section in section_headers) or has_tu_code:
+                # Проверяем только начало строки с типом компонента (не ТУ-коды!)
+                if any(name_lower.startswith(section) for section in section_headers):
                     is_group_header = True
+                # ИЛИ строка содержит ТОЛЬКО ТУ-код без детального наименования (короткая строка)
+                elif len(name.strip()) < 30:
+                    has_tu_code = re.search(r'([А-ЯЁ]{2,}[\.\d]+ТУ)', name) or re.search(r'ТУ\s+[\d\-]+', name)
+                    if has_tu_code:
+                        is_group_header = True
             
             if is_group_header:
                 # Извлекаем ТУ
@@ -342,13 +360,38 @@ def parse_docx(path: str) -> pd.DataFrame:
             # Если количество не указано явно, пытаемся посчитать из reference (например, FU1-FU6 = 6)
             if qty is None or qty == 0:
                 qty = count_from_reference(ref)
+            
+            # Определить нужно ли использовать group_type для этого элемента
+            # Сбрасываем group_type если элемент явно не принадлежит к текущей группе
+            use_group_type = current_group_type
+            if ref.strip():
+                # Проверяем префикс позиционного обозначения
+                ref_prefix = re.sub(r'\d.*$', '', ref.split()[0].upper()) if ref else ""
+                
+                # Если группа "Резисторы", но префикс НЕ R - сбрасываем
+                if current_group_type and 'резистор' in current_group_type.lower() and not ref_prefix.startswith('R'):
+                    use_group_type = ""
+                # Если группа "Конденсаторы", но префикс НЕ C - сбрасываем
+                elif current_group_type and 'конденсатор' in current_group_type.lower() and not ref_prefix.startswith('C'):
+                    use_group_type = ""
+                # Если группа "Микросхемы", но префикс НЕ DA/DD/U - сбрасываем
+                elif current_group_type and 'микросхем' in current_group_type.lower() and not ref_prefix.startswith(('DA', 'DD', 'U', 'IC')):
+                    use_group_type = ""
+                # Если группа "Индуктивности", но префикс НЕ L - сбрасываем
+                elif current_group_type and ('дроссел' in current_group_type.lower() or 'индуктивност' in current_group_type.lower()) and not ref_prefix.startswith('L'):
+                    use_group_type = ""
+                # Если группа "Разъемы", но префикс НЕ X/XS/J/P - сбрасываем
+                elif current_group_type and 'разъем' in current_group_type.lower() and not ref_prefix.startswith(('X', 'J', 'P')):
+                    use_group_type = ""
 
             row = {
                 "zone": zone,
                 "reference": ref,
                 "description": name if name else note,
                 "qty": qty,
-                "note": note,
+                "note": note,  # ТУ и производитель, НЕ тип компонента
+                "group_type": use_group_type,  # Тип компонента для классификации (может быть сброшен)
+                "original_note": original_note,  # Оригинальное примечание для подборов
             }
             extracted.append(row)
 

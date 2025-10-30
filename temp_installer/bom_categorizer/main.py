@@ -21,6 +21,7 @@ from .classifiers import classify_row
 from .excel_writer import write_categorized_excel, enrich_with_mr_and_total
 from .txt_writer import write_txt_reports
 from .utils import normalize_column_names, find_column
+from .podborka_extractor import extract_podbor_elements
 
 
 def add_excel_row_numbers(df: pd.DataFrame, header_offset: int = 2) -> pd.DataFrame:
@@ -164,6 +165,10 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
         elif ext in [".doc", ".docx"]:
             try:
                 df_docx = parse_docx(input_path)
+                
+                # Извлечь подборные элементы из примечаний
+                df_docx = extract_podbor_elements(df_docx)
+                
                 df_docx["source_file"] = os.path.basename(input_path)
                 df_docx["source_sheet"] = ""
                 df_docx = multiply_quantities(df_docx, multiplier)
@@ -527,7 +532,8 @@ def run_classification(df: pd.DataFrame, ref_col: str, desc_col: str, value_col:
         part = row.get(part_col) if part_col else None
         src_file = row.get('source_file') if 'source_file' in df.columns else None
         note_val = row.get('note') if 'note' in df.columns else None
-        categories.append(classify_row(ref, desc, val, part, strict=not loose, source_file=src_file, note=note_val))
+        group_type_val = row.get('group_type') if 'group_type' in df.columns else None
+        categories.append(classify_row(ref, desc, val, part, strict=not loose, source_file=src_file, note=note_val, group_type=group_type_val))
     
     df = df.copy()
     df["category"] = categories

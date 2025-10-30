@@ -16,6 +16,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import sys
 
+from .component_database import add_component_to_database
+
 # Исправление кодировки для корректного вывода русских символов
 if sys.stdout.encoding != 'utf-8':
     try:
@@ -1003,6 +1005,7 @@ class BOMCategorizerApp(tk.Tk):
             ("9", "Модули питания"),
             ("10", "Кабели"),
             ("11", "Другие"),
+            ("12", "Не ИВП"),
             ("0", "Пропустить"),
         ]
         
@@ -1119,7 +1122,8 @@ class BOMCategorizerApp(tk.Tk):
             "8": "optics",
             "9": "power_modules",
             "10": "cables",
-            "11": "others"
+            "11": "others",
+            "12": "non_bom"
         }
         
         # Загружаем существующие правила
@@ -1130,15 +1134,21 @@ class BOMCategorizerApp(tk.Tk):
         except:
             rules = []
         
-        # Добавляем новые правила
+        # Добавляем новые правила И сохраняем в базу данных
         added_count = 0
+        db_added_count = 0
         for cls in self.classifications:
             # Извлекаем первое слово из названия как ключевое
             name = cls['name']
+            category = cat_map.get(cls['category_num'], 'others')
+            
+            # Сохраняем полное наименование в базу данных (ПРИОРИТЕТ!)
+            add_component_to_database(name, category)
+            db_added_count += 1
+            
             words = name.split()
             if words:
                 keyword = words[0].lower().strip()
-                category = cat_map.get(cls['category_num'], 'others')
                 
                 # Проверяем, нет ли уже такого правила
                 if not any(r.get('contains') == keyword and r.get('category') == category for r in rules):
@@ -1153,7 +1163,8 @@ class BOMCategorizerApp(tk.Tk):
         with open(rules_file, "w", encoding="utf-8") as f:
             json.dump(rules, f, ensure_ascii=False, indent=2)
         
-        self.txt.insert(tk.END, f"\n\n✅ Сохранено {added_count} новых правил классификации в {rules_file}\n")
+        self.txt.insert(tk.END, f"\n\n✅ Сохранено {db_added_count} компонентов в базу данных (высший приоритет)\n")
+        self.txt.insert(tk.END, f"✅ Сохранено {added_count} новых правил классификации в {rules_file}\n")
         self.txt.insert(tk.END, "Повторная обработка с новыми правилами...\n\n")
         self.update_idletasks()
         

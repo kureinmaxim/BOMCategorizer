@@ -467,11 +467,14 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                       'первоначальная цена, тыс.руб.', 'первоначальная стоимость, тыс.руб.',
                       'источник',  # дубликат "Источник" (с маленькой буквы)
                       'категория',  # дубликат категории
+                      'category',  # техническая колонка категории
                       'общее количество',  # дубликат
                       'source_file', 'source_sheet',  # служебные колонки (уже в "Источник")
                       'note',  # служебная колонка
                       'zone',  # служебная колонка из DOC/DOCX (уже не нужна)
                       'reference',  # служебная колонка из DOC/DOCX (перенесена в Примечание)
+                      'group_type',  # служебная колонка типа из заголовка
+                      'original_note',  # оригинальное примечание (использовано для подборов)
                       '_extracted_tu_']  # техническая колонка для извлечения ТУ (не показываем пользователю)
     
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
@@ -494,16 +497,22 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     
     # Упорядочить колонки в правильном порядке
     # Код МР после ТУ, Примечание в конце
-    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Код МР', 'category', 'Источник', 'Кол-во']
+    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Код МР', 'Источник', 'Кол-во']
     
     ordered_cols = [col for col in desired_order if col in result_df.columns]
     remaining_cols = [col for col in result_df.columns 
                       if col not in ordered_cols and col not in cols_to_remove and col != 'Примечание']
     
-    # Примечание добавляем в конец
+    # Примечание добавляем в конец, затем пустые колонки № ТРУ и Стоимость
     final_cols = ordered_cols + remaining_cols
     if 'Примечание' in result_df.columns:
         final_cols.append('Примечание')
+    
+    # Добавить пустые колонки для заполнения пользователем
+    result_df['№ ТРУ'] = ''
+    result_df['Стоимость'] = ''
+    final_cols.extend(['№ ТРУ', 'Стоимость'])
+    
     result_df = result_df[final_cols]
     
     # Добавить знак ± перед процентами в Наименовании ИВП
