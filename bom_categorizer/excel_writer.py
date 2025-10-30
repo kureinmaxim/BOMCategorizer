@@ -68,21 +68,20 @@ def add_plus_minus_to_percentages(text: str) -> str:
 
 # Русские названия категорий для листов Excel
 RUS_SHEET_NAMES = {
-    "debug_modules": "Отладочные платы и модули",
     "ics": "Микросхемы",
     "resistors": "Резисторы",
     "capacitors": "Конденсаторы",
-    "inductors": "Индуктивности",  # Переименовано с "Дроссели"
+    "inductors": "Индуктивности",
     "semiconductors": "Полупроводники",
     "connectors": "Разъемы",
-    "optics": "Оптические компоненты",  # Переименовано с "Оптические компоненты модули"
+    "optics": "Оптические компоненты",
     "power_modules": "Модули питания",
     "cables": "Кабели",
-    "others": "Другие",
-    "unclassified": "Не распределено",
     "our_developments": "Наши разработки",
     "dev_boards": "Отладочные платы",
     "rf_modules": "СВЧ модули",
+    "others": "Другие",
+    "unclassified": "Не распределено",
 }
 
 

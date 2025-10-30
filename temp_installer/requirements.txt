@@ -2,4 +2,6 @@ pandas
 openpyxl
 python-docx
 pywin32
-
+pytest
+pytest-html
+pytest-cov

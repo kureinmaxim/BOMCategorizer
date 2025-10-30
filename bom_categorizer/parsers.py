@@ -249,6 +249,10 @@ def parse_docx(path: str) -> pd.DataFrame:
                 # Проверяем только начало строки с типом компонента (не ТУ-коды!)
                 if any(name_lower.startswith(section) for section in section_headers):
                     is_group_header = True
+                # ИЛИ строка содержит ТОЛЬКО обозначение типа (К10-, К53-, Р1-, и т.д.) + ТУ-код
+                # Паттерн: буквы+цифры (тип) + пробелы + ТУ-код, БЕЗ детального описания
+                elif re.match(r'^[А-ЯЁ]+[\d\-]+\s+[А-ЯЁ]{2,}[\.\d]+\s*ТУ\s*$', name.strip(), re.IGNORECASE):
+                    is_group_header = True
                 # ИЛИ строка содержит ТОЛЬКО ТУ-код без детального наименования (короткая строка)
                 elif len(name.strip()) < 30:
                     has_tu_code = re.search(r'([А-ЯЁ]{2,}[\.\d]+ТУ)', name) or re.search(r'ТУ\s+[\d\-]+', name)
@@ -283,6 +287,24 @@ def parse_docx(path: str) -> pd.DataFrame:
                 current_group_type = type_text.strip()
                 
                 continue  # Пропускаем строку-заголовок
+            
+            # ===================================================================
+            # ОБЪЕДИНЕНИЕ МНОГОСТРОЧНЫХ ПРИМЕЧАНИЙ
+            # Если строка БЕЗ reference, БЕЗ name, НО С note - это продолжение
+            # примечания для предыдущего компонента
+            # ===================================================================
+            if not ref.strip() and not name.strip() and note.strip() and extracted:
+                # Это продолжение примечания для последнего компонента
+                last_item = extracted[-1]
+                current_note = last_item.get('original_note', '')
+                if current_note:
+                    # Объединяем через пробел (запятая уже есть в конце предыдущей части)
+                    last_item['original_note'] = current_note.strip() + ' ' + note.strip()
+                    last_item['note'] = last_item['original_note']  # Обновляем note тоже
+                else:
+                    last_item['original_note'] = note.strip()
+                    last_item['note'] = note.strip()
+                continue  # Пропускаем эту строку, т.к. мы уже добавили примечание
 
             # If header wasn't detected, try fallback mapping
             if not any([ref, name, qty_raw]) and len(vals) >= 2:

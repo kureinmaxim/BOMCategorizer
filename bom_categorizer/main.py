@@ -152,8 +152,14 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
         if ext in [".txt"]:
             try:
                 df_txt = parse_txt_like(input_path)
+                
+                # Добавляем source_file ПЕРЕД извлечением подборов (нужно для пометки)
                 df_txt["source_file"] = os.path.basename(input_path)
                 df_txt["source_sheet"] = ""
+                
+                # Извлечь подборные элементы из примечаний (с пометкой source_file)
+                df_txt = extract_podbor_elements(df_txt)
+                
                 df_txt = multiply_quantities(df_txt, multiplier)
                 all_rows.append(df_txt)
                 if multiplier > 1:
@@ -166,11 +172,13 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
             try:
                 df_docx = parse_docx(input_path)
                 
-                # Извлечь подборные элементы из примечаний
-                df_docx = extract_podbor_elements(df_docx)
-                
+                # Добавляем source_file ПЕРЕД извлечением подборов (нужно для пометки)
                 df_docx["source_file"] = os.path.basename(input_path)
                 df_docx["source_sheet"] = ""
+                
+                # Извлечь подборные элементы из примечаний (с пометкой source_file)
+                df_docx = extract_podbor_elements(df_docx)
+                
                 df_docx = multiply_quantities(df_docx, multiplier)
                 all_rows.append(df_docx)
                 if multiplier > 1:
@@ -694,46 +702,6 @@ def interactive_classification(df: pd.DataFrame, desc_col: str, value_col: str, 
     return df
 
 
-def combine_debug_modules(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Объединяет категории для "Отладочные платы и модули"
-    
-    Returns:
-        DataFrame с объединенными категориями
-    """
-    debug_modules_parts = []
-    
-    # 1. Наши разработки
-    our_dev = df[df["category"] == "our_developments"]
-    if not our_dev.empty:
-        debug_modules_parts.append(our_dev)
-    
-    # 2. Пустая строка
-    if debug_modules_parts:
-        empty_row = pd.DataFrame([{col: '' for col in df.columns}])
-        debug_modules_parts.append(empty_row)
-    
-    # 3. Отладочные платы
-    dev_boards = df[df["category"] == "dev_boards"]
-    if not dev_boards.empty:
-        debug_modules_parts.append(dev_boards)
-    
-    # 4. Пустая строка
-    if len(debug_modules_parts) > 0 and not dev_boards.empty:
-        empty_row2 = pd.DataFrame([{col: '' for col in df.columns}])
-        debug_modules_parts.append(empty_row2)
-    
-    # 5. СВЧ модули
-    rf_mods = df[df["category"] == "rf_modules"]
-    if not rf_mods.empty:
-        debug_modules_parts.append(rf_mods)
-    
-    # Объединяем все части
-    debug_modules_combined = pd.concat(debug_modules_parts, ignore_index=True) if debug_modules_parts else pd.DataFrame()
-    
-    return debug_modules_combined
-
-
 def split_by_source_file(df: pd.DataFrame) -> pd.DataFrame:
     """
     Разделяет DataFrame на группы по source_file с пустыми строками между ними
@@ -779,10 +747,7 @@ def create_outputs_dict(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
     Returns:
         Словарь {category_key: DataFrame}
     """
-    debug_modules_combined = combine_debug_modules(df)
-    
     outputs = {
-        "debug_modules": debug_modules_combined,
         "ics": split_by_source_file(df[df["category"] == "ics"]),
         "resistors": split_by_source_file(df[df["category"] == "resistors"]),
         "capacitors": split_by_source_file(df[df["category"] == "capacitors"]),
@@ -792,6 +757,9 @@ def create_outputs_dict(df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         "optics": split_by_source_file(df[df["category"] == "optics"]),
         "power_modules": split_by_source_file(df[df["category"] == "power_modules"]),
         "cables": split_by_source_file(df[df["category"] == "cables"]),
+        "our_developments": split_by_source_file(df[df["category"] == "our_developments"]),
+        "dev_boards": split_by_source_file(df[df["category"] == "dev_boards"]),
+        "rf_modules": split_by_source_file(df[df["category"] == "rf_modules"]),
         "others": split_by_source_file(df[df["category"] == "others"]),
         "unclassified": split_by_source_file(df[df["category"] == "unclassified"]),
     }

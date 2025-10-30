@@ -73,10 +73,21 @@ def classify_row(
     # ===================================================================
     # САМЫЙ ВЫСШИЙ ПРИОРИТЕТ: Служебные записи (НЕ ИВП)
     # Ошибочные заголовки, текст из рамок документов, подписи, штампы и т.д.
+    # ИСКЛЮЧЕНИЕ: Замены и подборы (у них нет ref, но они - реальные компоненты!)
     # ===================================================================
     
+    # Проверяем, является ли это заменой или подбором (по source_file)
+    is_replacement_or_podbor = False
+    if src_file:
+        # Проверяем как полные, так и сокращенные формы
+        is_replacement_or_podbor = (
+            '(замена)' in src_file or '(подбор)' in src_file or
+            '(зам ' in src_file or '(п/б ' in src_file
+        )
+    
     # Проверяем отсутствие позиционного обозначения и наличие служебных слов
-    if not ref or not ref.strip():
+    # НО НЕ для замен и подборов!
+    if not is_replacement_or_podbor and (not ref or not ref.strip()):
         # Служебные записи из рамок документов
         service_patterns = [
             'изм.', 'изменен', 'заменен', 'аннулирован',
@@ -94,13 +105,14 @@ def classify_row(
         if any(pattern in text_blob_lower for pattern in service_patterns):
             return "non_bom"
     
-    # Очень короткие строки без позиционного обозначения - скорее всего мусор
-    if (not ref or not ref.strip()) and len(text_blob.strip()) < 10:
-        return "non_bom"
+        # Очень короткие строки без позиционного обозначения - скорее всего мусор
+        # НО НЕ для замен и подборов!
+        if len(text_blob.strip()) < 10:
+            return "non_bom"
     
-    # Строки, состоящие только из чисел или спецсимволов
-    if text_blob.strip() and re.fullmatch(r'[\d\s\-\.,:;/\\]+', text_blob.strip()):
-        return "non_bom"
+        # Строки, состоящие только из чисел или спецсимволов
+        if text_blob.strip() and re.fullmatch(r'[\d\s\-\.,:;/\\]+', text_blob.strip()):
+            return "non_bom"
 
     # ===================================================================
     # САМЫЙ ВЫСШИЙ ПРИОРИТЕТ: База данных компонентов
@@ -120,34 +132,26 @@ def classify_row(
             return db_category
 
     # ===================================================================
-    # ГРУППOВЫЕ ЗАГОЛОВКИ: Тип компонента из заголовка имеет ВЫСШИЙ приоритет
+    # НАИВЫСШИЙ ПРИОРИТЕТ: НАШИ РАЗРАБОТКИ
+    # Любой компонент с номерами 195-, АМФИ, ГВАТ - это наши разработки
+    # Это могут быть платы, блоки, модули и т.д.
+    # ВАЖНО: Проверяем ДО типов компонентов (резисторы с АМФИ - это покупные!)
     # ===================================================================
-    group_type_text = to_text(group_type)
-    if group_type_text:
-        group_lower = group_type_text.lower()
-        if 'микросхем' in group_lower:
-            return "ics"
-        elif 'резистор' in group_lower:
-            return "resistors"
-        elif 'конденсатор' in group_lower:
-            return "capacitors"
-        elif 'дроссел' in group_lower or 'индуктивност' in group_lower:
-            return "inductors"
-        elif 'разъем' in group_lower or 'разьем' in group_lower:
-            return "connectors"
-        elif 'диод' in group_lower and 'светодиод' not in group_lower:
-            return "semiconductors"
-        elif 'транзистор' in group_lower:
-            return "semiconductors"
-        elif 'стабилитрон' in group_lower:
-            return "semiconductors"
-        elif 'светодиод' in group_lower:
-            return "semiconductors"
-        elif 'кабел' in group_lower or 'провод' in group_lower:
-            return "cables"
-        elif 'трансформатор' in group_lower:
-            return "inductors"
-
+    if has_any(text_blob, [
+        "195-9530", "195-", "амфи.", "амфи ", "гват.", "гват ",
+        "шск-м", "плата контроллера шск", "плата преобразователя уровней",
+        "бз шск-м", "бф шск-м", "наша разработ", "собственной разработ"
+    ]):
+        # Исключаем:
+        # 1. Стандартные ЭРИ (резисторы, конденсаторы с кодом АМФИ - это покупные)
+        # 2. Вентили СВЧ с ГВАТ (они идут в rf_modules, хотя и наши разработки)
+        standard_components = ["резистор", "конденсатор", "дроссель", "индуктивност", "микродроссель"]
+        is_standard_component = any(comp in text_blob_lower for comp in standard_components)
+        is_rf_ventil = has_any(text_blob, ["вентиль"]) and has_any(text_blob, ["гват"])
+        
+        if not is_standard_component and not is_rf_ventil:
+            return "our_developments"
+    
     # ===================================================================
     # НАИВЫСШИЙ ПРИОРИТЕТ: Явные типы компонентов (ВАЖНЕЕ кода АМФИ!)
     # Если явно указан тип (резистор, конденсатор, микродроссель и т.д.),
@@ -170,14 +174,6 @@ def classify_row(
     if has_any(text_blob, ["предохранитель", "fuse", "fuzetec"]):
         return "others"
     
-    # ===================================================================
-    # ВТОРОЙ ПРИОРИТЕТ: Наши разработки (платы, модули и т.д.)
-    # Компоненты с кодами АМФИ, которые НЕ являются стандартными ЭРИ
-    # ===================================================================
-    if has_any(text_blob, ["амфи.", "амфи ", "мвок", "наша разработ", "собственной разработ", 
-                           "шск-м", "плата контроллера шск", "плата преобразователя уровней"]):
-        return "our_developments"
-
     # ===================================================================
     # ВЫСШИЙ ПРИОРИТЕТ: Явное указание типа компонента в описании
     # Если в описании есть явные слова-маркеры категории - это главное!
@@ -229,7 +225,7 @@ def classify_row(
         "оптический модуль", "optical module", "передающий оптический", "приемный оптический",
         "оптический аттенюатор", "аттенюатор оптический", "optical attenuator",
         "mp2320", "mp2220", "fc/apc", "fc/upc", "соединительный оптический",
-        "оптоволокон", "fiber optic", "мвол", "линия многоканальная задержки",
+        "оптоволокон", "fiber optic", "мвол", "мвок", "линия многоканальная задержки",
         "коммутатор оптический", "оптический коммутатор", "optical switch",
         "кабель оптический", "оптический кабель", "optical cable"
     ]):
@@ -241,7 +237,7 @@ def classify_row(
         return "optics"
     
     # Кабели (НЕ оптические - они уже обработаны выше!)
-    if has_any(text_blob, ["кабель", "cable", "провод ", "wire ", "патч-корд", "патч корд"]):
+    if has_any(text_blob, ["кабель", "cable", "провод", "wire", "патч-корд", "патч корд", "кабельн", "сборка кабельная", "шлейф"]):
         return "cables"
     
     # Модули питания
@@ -291,9 +287,13 @@ def classify_row(
     if has_any(text_blob, ["нагрузка согласованная", "согласованная нагрузка", "matched load"]):
         return "rf_modules"
     
-    # Вентили в индуктивности
-    if has_any(text_blob, ["вентиль свч", "вентиль вч", "circulator", "isolator", "ферритов", "прибор фвк", "прибор фквн", "фвк3-", "фквн3-"]):
-        return "inductors"
+    # Вентили СВЧ/ВЧ в "СВЧ модули" (circulator, isolator)
+    if has_any(text_blob, ["вентиль свч", "вентиль вч", "circulator", "isolator", "прибор фвк", "прибор фквн", "фвк3-", "фквн3-"]):
+        return "rf_modules"
+    
+    # Вентили с кодами ГВАТ (наши разработки СВЧ) в "СВЧ модули"
+    if has_any(text_blob, ["вентиль"]) and has_any(text_blob, ["гват"]):
+        return "rf_modules"
     
     # Dev boards / evaluation boards / коммутаторы / модули связи
     if has_any(text_blob, ["плата инструментальная", "evaluation board", "dev board", "отладочная плата", "плата 117212",
@@ -311,6 +311,39 @@ def classify_row(
         if has_any(text_blob, ["оптический", "optical", "передающий", "приемный"]):
             return "optics"
     
+    # ===================================================================
+    # ГРУППOВЫЕ ЗАГОЛОВКИ: Тип компонента из заголовка документа
+    # Этот приоритет ВЫШЕ чем определение по префиксу reference!
+    # Если в документе был явный заголовок "Микросхемы", то все элементы
+    # в этом разделе должны классифицироваться как микросхемы, даже если
+    # у них префикс D, V, или другой нестандартный префикс.
+    # ===================================================================
+    group_type_text = to_text(group_type)
+    if group_type_text:
+        group_lower = group_type_text.lower()
+        if 'микросхем' in group_lower:
+            return "ics"
+        elif 'резистор' in group_lower:
+            return "resistors"
+        elif 'конденсатор' in group_lower:
+            return "capacitors"
+        elif 'дроссел' in group_lower or 'индуктивност' in group_lower:
+            return "inductors"
+        elif 'разъем' in group_lower or 'разьем' in group_lower:
+            return "connectors"
+        elif 'диод' in group_lower and 'светодиод' not in group_lower:
+            return "semiconductors"
+        elif 'транзистор' in group_lower:
+            return "semiconductors"
+        elif 'стабилитрон' in group_lower:
+            return "semiconductors"
+        elif 'светодиод' in group_lower:
+            return "semiconductors"
+        elif 'кабел' in group_lower or 'провод' in group_lower:
+            return "cables"
+        elif 'трансформатор' in group_lower:
+            return "inductors"
+    
     # PRIORITY 2: Heuristics by ref (only if we have a real ref column)
     if ref:
         if ref_prefix.startswith("R"):
@@ -319,16 +352,72 @@ def classify_row(
             return "capacitors"
         if ref_prefix.startswith("L"):
             return "inductors"
-        if ref_prefix.startswith(("U", "DD", "DA", "IC")):
+        # Российские обозначения микросхем: DD, DA, D (цифровые и аналоговые)
+        # DD - цифровые микросхемы, DA - аналоговые, D - цифровые (старое обозначение)
+        # U - также микросхемы, НО проверяем оптические модули
+        if ref_prefix.startswith("U"):
+            # Проверяем оптические модули (передающие, приемные)
+            if has_any(text_blob, [
+                "оптический модуль", "optical module", 
+                "передающий оптический", "приемный оптический",
+                "mp2320", "mp2220", "sfp", "qsfp"
+            ]):
+                return "optics"
+            # Иначе это микросхема
             return "ics"
-        if ref_prefix.startswith(("J", "X", "P", "K", "XS", "XP", "JTAG")):
+        if ref_prefix.startswith(("DD", "DA", "IC")):
+            return "ics"
+        # Префикс "D" по умолчанию - микросхемы (в российской практике)
+        # Исключение: если явно указано что это диод, стабилитрон и т.д.
+        if ref_prefix.startswith("D") and not ref_prefix.startswith(("DD", "DA")):
+            # Проверяем, не является ли это явно диодом/стабилитроном
+            if has_any(text_blob, ["диод", "diode", "стабилитрон", "zener", "выпрямител", "светодиод", "led"]):
+                return "semiconductors"
+            # Если есть код ТУ с типичным форматом микросхемы или явные признаки микросхемы - это микросхема
+            if has_any(text_blob, ["ту", "tu", "аеяр", "аенв", "аляр", "sn74", "ad9", "lmk", "hmc", "ti", "texas instruments", "analog devices"]):
+                return "ics"
+            # По умолчанию D* считаем микросхемой
+            return "ics"
+        if ref_prefix.startswith(("J", "P", "K", "XT", "XS", "XP", "XW", "JTAG")):
             return "connectors"
-        # Prefix "A" or "А" (latin or cyrillic) -> отладочные платы
-        if ref_prefix in ("A", "А"):
-            return "dev_boards"
-        # Russian prefix "А" for attenuators
-        if ref_prefix.startswith(("А", "A")) and len(ref_prefix) > 2:
-            # ВАЖНО: Только ОПТИЧЕСКИЕ аттенюаторы идут в optics
+        # Prefix "X" - нужна проверка (может быть разъем или другое)
+        if ref_prefix.startswith("X"):
+            # Если это разъем, адаптер - в connectors
+            if has_any(text_blob, ["разъем", "connector", "адаптер", "adapter", "вилка", "розетка", "jack", "plug", "socket"]):
+                return "connectors"
+            # Иначе тоже в connectors (по умолчанию для X)
+            return "connectors"
+        # Prefix "G" for generators
+        if ref_prefix.startswith("G"):
+            # Если это модуль питания - в power_modules
+            if has_any(text_blob, ["модуль питания", "power module", "шск-м"]):
+                return "power_modules"
+            # Иначе в others (генераторы, кварцы и т.д.)
+            return "others"
+        # Prefix "F" or "FU" for fuses (предохранители)
+        if ref_prefix.startswith(("F", "FU")):
+            return "others"
+        # Prefix "A" or "А" (latin or cyrillic) - умная логика
+        # Проверяем наименование для точной классификации
+        if ref_prefix.startswith(("A", "А")):
+            # 1. Оптические компоненты (линии задержки, кабели, модули)
+            if has_any(text_blob, [
+                "мволз", "линия задержки", "оптический", "optical", 
+                "fc/apc", "fc/upc", "sc/apc", "lc/apc",
+                "кабель соединительный оптический", "патч-корд оптич"
+            ]):
+                return "optics"
+            # 2. Наши разработки (платы с нашими номерами или АМФИ/ГВАТ)
+            if has_any(text_blob, [
+                "195-9530", "195-", "гват", "амфи", 
+                "плата контроллера", "плата шск", "шск-м",
+                "наша разработка", "собственной разработ"
+            ]):
+                return "our_developments"
+            # 3. Коммутаторы оптические
+            if has_any(text_blob, ["коммутатор", "мвок"]):
+                return "optics"
+            # 4. Аттенюаторы (оптические или СВЧ)
             if has_any(text_blob, ["аттенюат", "ослабител", "attenuator"]):
                 # Проверяем, оптический ли это аттенюатор
                 if has_any(text_blob, ["оптич", "optical", "fc/apc", "fc/upc", "fiber"]):
@@ -336,29 +425,45 @@ def classify_row(
                 else:
                     # СВЧ/электрические аттенюаторы -> отладочные платы и модули
                     return "dev_boards"
-        # Prefix "W" often used for RF modules
-        if ref_prefix.startswith("W"):
-            if has_any(text_blob, ["свч", "rf", "линия задержек", "delay line", "усилитель", "делитель", "сумматор", "splitter", "combiner", "amplifier"]):
-                return "rf_modules"
+            # 5. По умолчанию для A* без явных признаков → dev_boards
+            return "dev_boards"
+        # Prefix "WS" and "WU" - specific RF module prefixes (check BEFORE "W")
         if ref_prefix.startswith("WS"):
             return "rf_modules"
         if ref_prefix.startswith("WU"):
             return "rf_modules"
+        # Prefix "W" often used for RF modules (check AFTER WS/WU)
+        if ref_prefix.startswith("W"):
+            # Всегда в rf_modules для W-префиксов (корректоры, усилители, вентили, аттенюаторы и т.д.)
+            # Типичные СВЧ компоненты с префиксом W
+            if has_any(text_blob, [
+                "свч", "вч", "rf", "вентиль", "circulator", "isolator",
+                "линия задержек", "delay line", "усилитель", "amplifier", "lna",
+                "делитель", "сумматор", "splitter", "combiner", "divider",
+                "корректор ачх", "equalizer", "аттенюат", "attenuator",
+                "фазовращатель", "phase shifter", "детектор", "detector",
+                "ограничитель", "limiter", "смеситель", "mixer"
+            ]):
+                return "rf_modules"
+            # Если нет явных маркеров, но префикс W - всё равно в rf_modules (по умолчанию)
+            return "rf_modules"
         # Prefix "H" for indicators/LEDs
         if ref_prefix.startswith("H"):
+            return "semiconductors"
+        # Prefix "VD" for diodes and zener diodes (Russian standard)
+        if ref_prefix.startswith("VD"):
             return "semiconductors"
         # Prefix "V", "VT", "Q" for transistors
         if ref_prefix.startswith(("V", "VT", "Q")):
             if has_any(text_blob, ["микросхем", "микросхема"]):
                 return "ics"
             return "semiconductors"
-        # Prefix "D" for diodes
-        if ref_prefix.startswith("D"):
-            if has_any(text_blob, ["микросхем", "микросхема"]):
-                return "ics"
-            return "semiconductors"
-        # Prefix "S" for switches/buttons
+        # Prefix "S" for switches/buttons/optical switches
         if ref_prefix.startswith("S"):
+            # Проверяем, не оптический ли это коммутатор
+            if has_any(text_blob, ["коммутатор", "мвок", "optical switch"]):
+                return "optics"
+            # Обычные переключатели, кнопки
             if has_any(text_blob, ["переключ", "тумблер", "кнопка", "switch", "button", "toggle"]):
                 return "others"
 
@@ -371,7 +476,7 @@ def classify_row(
         if not has_any(text_blob, ["делитель мощности", "делитель  мощности", "power divider"]):
             return "capacitors"
 
-    if IND_VALUE_RE.search(text_blob) or has_any(text_blob, ["дросс", "индукт", "inductor", "ferrite", "феррит", "катушка", "choke", "вентиль"]):
+    if IND_VALUE_RE.search(text_blob) or has_any(text_blob, ["дросс", "индукт", "inductor", "ferrite", "феррит", "катушка", "choke"]):
         return "inductors"
     
     # Предохранители - check BEFORE semiconductors and ICs
@@ -425,7 +530,8 @@ def classify_row(
         return "rf_modules"
 
     if has_any(text_blob, [
-        "кабель", "cable", "шлейф", "провод", "wire", "patch cord", "jumper"
+        "кабель", "cable", "шлейф", "провод", "wire", "patch cord", "патч-корд", "патч корд", 
+        "jumper", "кабельн", "сборка кабельная"
     ]):
         return "cables"
 
