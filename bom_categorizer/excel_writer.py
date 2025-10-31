@@ -474,6 +474,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                       'reference',  # служебная колонка из DOC/DOCX (перенесена в Примечание)
                       'group_type',  # служебная колонка типа из заголовка
                       'original_note',  # оригинальное примечание (использовано для подборов)
+                      'has_explicit_qty',  # техническая колонка для определения явного количества
                       '_extracted_tu_']  # техническая колонка для извлечения ТУ (не показываем пользователю)
     
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
@@ -549,7 +550,7 @@ def apply_excel_styles(writer: pd.ExcelWriter):
                 kod_mr_col_idx = idx
             elif 'примечание' in cell_val:
                 note_col_idx = idx
-            elif 'источник' in cell_val:
+            elif 'источник' in cell_val or cell_val == 'source_file':
                 source_col_idx = idx
         
         # Установить текстовый формат для колонки "Код МР" (чтобы избежать научной нотации)

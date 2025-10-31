@@ -69,5 +69,10 @@
     "contains": "прибор",
     "category": "inductors",
     "comment": "Добавлено пользователем для 'Прибор ФВК3-28'"
+  },
+  {
+    "contains": "0603hp",
+    "category": "inductors",
+    "comment": "Добавлено пользователем для '0603HP - 15NXJ.'"
   }
 ]

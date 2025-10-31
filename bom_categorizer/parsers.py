@@ -214,6 +214,9 @@ def parse_docx(path: str) -> pd.DataFrame:
         # Переменные для хранения текущего ТУ и типа компонента из заголовка группы
         current_group_tu = ""
         current_group_type = ""
+        # Словарь для хранения ТУ для разных типов компонентов (например, К10, К53, GRM)
+        # Это нужно для конденсаторов/резисторов с несколькими групповыми заголовками
+        component_type_tu_map = {}
 
         for tr in table.rows[header_idx + 1:]:
             vals = [normalize_cell(c.text) for c in tr.cells]
@@ -224,37 +227,55 @@ def parse_docx(path: str) -> pd.DataFrame:
             ref = vals[idx_ref] if idx_ref is not None and idx_ref < len(vals) else ""
             name = vals[idx_name] if idx_name is not None and idx_name < len(vals) else ""
             qty_raw = vals[idx_qty] if idx_qty is not None and idx_qty < len(vals) else ""
-            note = vals[idx_note] if idx_note is not None and idx_note < len(vals) else ""
-            original_note = note  # Сохранить оригинальное примечание для извлечения подборов
+            cell_note = vals[idx_note] if idx_note is not None and idx_note < len(vals) else ""
+            original_note = cell_note  # Сохранить оригинальное примечание для извлечения подборов
+            note = cell_note  # Инициализируем note содержимым ячейки
             
             # Проверить, является ли это строкой-заголовком группы
             section_headers = [
-                'конденсаторы', 'резисторы', 'микросхемы', 'дроссели', 'индуктивности',
-                'разъемы', 'диоды', 'транзисторы', 'кабели', 'модули',
+                'конденсаторы', 'конденсаторов', 'резисторы', 'резисторов', 
+                'микросхемы', 'микросхем', 'дроссели', 'дросселей', 
+                'индуктивности', 'индуктивностей',
+                'разъемы', 'разъемов', 'диоды', 'диодов', 
+                'транзисторы', 'транзисторов', 'кабели', 'кабелей', 
+                'модули', 'модулей',
                 'набор резисторов', 'набор конденсаторов', 'набор микросхем',
-                'трансформаторы', 'датчики', 'реле', 'предохранители', 
-                'оптопары', 'оптроны', 'светодиоды', 'стабилитроны',
-                'вариаторы', 'переключатели', 'кнопки', 'тумблеры',
-                'фильтры', 'антенны', 'радиаторы', 'крепеж',
-                'провода', 'жгуты', 'шлейфы', 'платы',
-                'корпуса', 'панели', 'винты', 'гайки',
-                'изделия', 'детали', 'прочие элементы'
+                'трансформаторы', 'трансформаторов', 'датчики', 'датчиков', 
+                'реле', 'предохранители', 'предохранителей',
+                'оптопары', 'оптопар', 'оптроны', 'оптронов', 
+                'светодиоды', 'светодиодов', 'стабилитроны', 'стабилитронов',
+                'вариаторы', 'вариаторов', 'переключатели', 'переключателей', 
+                'кнопки', 'кнопок', 'тумблеры', 'тумблеров',
+                'фильтры', 'фильтров', 'антенны', 'антенн', 
+                'радиаторы', 'радиаторов', 'крепеж', 'крепежа',
+                'провода', 'проводов', 'жгуты', 'жгутов', 
+                'шлейфы', 'шлейфов', 'платы', 'плат',
+                'корпуса', 'корпусов', 'панели', 'панелей', 
+                'винты', 'винтов', 'гайки', 'гаек',
+                'изделия', 'изделий', 'детали', 'деталей', 'прочие элементы'
             ]
             name_lower = name.strip().lower()
             
             is_group_header = False
             
-            # Проверка группового заголовка: должно быть БЕЗ ref и qty И начинаться с типа компонента
-            if not ref.strip() and not qty_raw.strip():
-                # Проверяем только начало строки с типом компонента (не ТУ-коды!)
-                if any(name_lower.startswith(section) for section in section_headers):
-                    is_group_header = True
+            # Проверка группового заголовка: должно быть БЕЗ ref И содержать тип компонента
+            # qty может быть любым (иногда в docx заголовки имеют qty=1)
+            if not ref.strip():
+                # Проверяем наличие типа компонента В ЛЮБОЙ ЧАСТИ строки (не только в начале!)
+                # Это важно для заголовков типа "Чип катушки индуктивности", "Набор резисторов"
+                if any(section in name_lower for section in section_headers):
+                    # Дополнительная проверка: если есть ТУ-код, это точно заголовок
+                    # Если нет ТУ и есть qty, это может быть компонент
+                    # ВАЖНО: между номером и "ТУ" может быть пробел (например, "ШКАБ.434110.018 ТУ")
+                    has_tu_in_name = bool(re.search(r'[А-ЯЁ]{2,}[\.\d]+\s*ТУ', name) or re.search(r'ТУ\s+[\d\-]+', name))
+                    if has_tu_in_name or not qty_raw.strip():
+                        is_group_header = True
                 # ИЛИ строка содержит ТОЛЬКО обозначение типа (К10-, К53-, Р1-, и т.д.) + ТУ-код
                 # Паттерн: буквы+цифры (тип) + пробелы + ТУ-код, БЕЗ детального описания
                 elif re.match(r'^[А-ЯЁ]+[\d\-]+\s+[А-ЯЁ]{2,}[\.\d]+\s*ТУ\s*$', name.strip(), re.IGNORECASE):
                     is_group_header = True
                 # ИЛИ строка содержит ТОЛЬКО ТУ-код без детального наименования (короткая строка)
-                elif len(name.strip()) < 30:
+                elif len(name.strip()) < 30 and not qty_raw.strip():
                     has_tu_code = re.search(r'([А-ЯЁ]{2,}[\.\d]+ТУ)', name) or re.search(r'ТУ\s+[\d\-]+', name)
                     if has_tu_code:
                         is_group_header = True
@@ -276,7 +297,14 @@ def parse_docx(path: str) -> pd.DataFrame:
                         if tu_match3:
                             current_group_tu = 'ТУ ' + tu_match3.group(1)
                         else:
-                            current_group_tu = ""
+                            # Если нет ТУ-кода, проверяем производителя
+                            mfr_pattern_header = r'ф\.\s*([A-Za-z][A-Za-z0-9\s\-]+)'
+                            mfr_match_header = re.search(mfr_pattern_header, name)
+                            if mfr_match_header:
+                                # Используем производителя как current_group_tu
+                                current_group_tu = mfr_match_header.group(1).strip()
+                            else:
+                                current_group_tu = ""
                 
                 # Извлекаем тип компонента
                 type_text = name
@@ -286,13 +314,34 @@ def parse_docx(path: str) -> pd.DataFrame:
                 type_text = re.sub(r'\s+[А-ЯЁ]+\.\d+[\d\.]*', '', type_text)
                 current_group_type = type_text.strip()
                 
+                # Извлекаем префикс типа компонента для маппинга (К10, К53, GRM, НР1 и т.д.)
+                # Паттерн: буквы + цифры + необязательный дефис и еще буквы/цифры
+                component_type_pattern = r'([А-ЯЁ]+[\d\-]+[А-ЯЁ]*|[A-Z]+[\d]*)'
+                component_type_match = re.search(component_type_pattern, name)
+                if component_type_match and current_group_tu:
+                    component_type_prefix = component_type_match.group(1).strip()
+                    # Нормализуем: К53 – 65 → К53-65
+                    component_type_prefix = component_type_prefix.replace(' ', '').replace('–', '-').replace('—', '-')
+                    component_type_tu_map[component_type_prefix] = current_group_tu
+                # Также извлекаем производителя из заголовка (например, "GRM ф. Murata")
+                mfr_in_header = ""
+                mfr_pattern_header = r'ф\.\s*([A-Za-z][A-Za-z0-9\s\-]+)'
+                mfr_match_header = re.search(mfr_pattern_header, name)
+                if mfr_match_header:
+                    mfr_in_header = mfr_match_header.group(1).strip()
+                    # Для производителя тоже создаем маппинг
+                    component_type_match2 = re.search(r'([A-Z]+)', name, re.IGNORECASE)
+                    if component_type_match2:
+                        component_type_prefix2 = component_type_match2.group(1).upper()
+                        component_type_tu_map[component_type_prefix2] = mfr_in_header
+                
                 continue  # Пропускаем строку-заголовок
             
             # ===================================================================
-            # ОБЪЕДИНЕНИЕ МНОГОСТРОЧНЫХ ПРИМЕЧАНИЙ
-            # Если строка БЕЗ reference, БЕЗ name, НО С note - это продолжение
-            # примечания для предыдущего компонента
+            # ОБЪЕДИНЕНИЕ МНОГОСТРОЧНЫХ ЗАПИСЕЙ
             # ===================================================================
+            
+            # СЛУЧАЙ 1: Строка БЕЗ reference, БЕЗ name, НО С note - это продолжение примечания
             if not ref.strip() and not name.strip() and note.strip() and extracted:
                 # Это продолжение примечания для последнего компонента
                 last_item = extracted[-1]
@@ -300,11 +349,63 @@ def parse_docx(path: str) -> pd.DataFrame:
                 if current_note:
                     # Объединяем через пробел (запятая уже есть в конце предыдущей части)
                     last_item['original_note'] = current_note.strip() + ' ' + note.strip()
-                    last_item['note'] = last_item['original_note']  # Обновляем note тоже
+                    # ВАЖНО: НЕ обновляем note, если там уже установлен ТУ из заголовка группы!
+                    # Также НЕ обновляем note если там производитель (для замен/подборов)
+                    # Проверяем, содержит ли current note ТУ-код (паттерн: АЛЯР.434110.005ТУ)
+                    last_note = last_item.get('note', '')
+                    orig_note_val = last_item.get('original_note', '')
+                    # Проверяем что original_note содержит замену - тогда в note производитель
+                    is_replacement_continuation = bool(orig_note_val and 'замена' in orig_note_val.lower())
+                    
+                    # Проверяем: не перезаписываем note если там ТУ, производитель или замена
+                    has_tu_in_last_note = bool(last_note and ('ТУ' in last_note or re.search(r'[А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ', last_note)))
+                    looks_like_manufacturer = bool(last_note and len(last_note) < 50 and ',' not in last_note)
+                    
+                    if not has_tu_in_last_note and not is_replacement_continuation and not looks_like_manufacturer:
+                        # В note нет ТУ/производителя и это не замена - можно обновить из original_note
+                        last_item['note'] = last_item['original_note']
                 else:
                     last_item['original_note'] = note.strip()
-                    last_item['note'] = note.strip()
+                    # Не перезаписываем note если там уже есть ТУ или производитель
+                    last_note = last_item.get('note', '')
+                    has_tu = bool(last_note and ('ТУ' in last_note or re.search(r'[А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ', last_note)))
+                    looks_like_mfr = bool(last_note and len(last_note) < 50 and ',' not in last_note)
+                    is_replacement = bool('замена' in note.lower())
+                    
+                    if not has_tu and not looks_like_mfr and not is_replacement:
+                        last_item['note'] = note.strip()
                 continue  # Пропускаем эту строку, т.к. мы уже добавили примечание
+            
+            # СЛУЧАЙ 2: Строка БЕЗ reference, но С name/note И с qty - продолжение компонента
+            # Это случай когда:
+            # - Первая строка: L1 | Дроссель высокочастотный ДМ – 3 – 10 ± 5% – В | (пусто) | (пусто)
+            # - Вторая строка:    | «Н» ЦКСН.671342.001ТУ                        | 1      | (пусто)
+            if not ref.strip() and (name.strip() or note.strip()) and qty_raw.strip() and extracted:
+                last_item = extracted[-1]
+                # Проверяем, что предыдущая строка имела reference но НЕ имела явного qty
+                if last_item.get('reference', '').strip() and not last_item.get('has_explicit_qty', False):
+                    # Объединяем description
+                    current_desc = last_item.get('description', '').strip()
+                    additional_desc = name.strip() if name.strip() else note.strip()
+                    if current_desc and additional_desc:
+                        last_item['description'] = current_desc + ' ' + additional_desc
+                    elif additional_desc:
+                        last_item['description'] = additional_desc
+                    
+                    # Устанавливаем количество
+                    try:
+                        qty_val = int(re.sub(r'\D', '', qty_raw))
+                        last_item['qty'] = qty_val if qty_val > 0 else 1
+                        last_item['has_explicit_qty'] = True
+                    except (ValueError, AttributeError):
+                        last_item['qty'] = 1
+                    
+                    # Обновляем note/original_note если они были во второй строке
+                    if note.strip():
+                        last_item['note'] = note.strip()
+                        last_item['original_note'] = note.strip()
+                    
+                    continue  # Пропускаем эту строку, т.к. мы уже объединили с предыдущей
 
             # If header wasn't detected, try fallback mapping
             if not any([ref, name, qty_raw]) and len(vals) >= 2:
@@ -313,12 +414,15 @@ def parse_docx(path: str) -> pd.DataFrame:
 
             # parse qty
             qty = None
+            has_explicit_qty = False  # Флаг: была ли qty ячейка НЕ пустой
             m = re.search(r"(\d+)", str(qty_raw))
             if m:
                 try:
                     qty = int(m.group(1))
+                    has_explicit_qty = True
                 except Exception:
                     qty = 1
+                    has_explicit_qty = False
 
             # Проверить, есть ли в наименовании информация о производителе (формат "ф. Производитель")
             manufacturer_in_name = ""
@@ -328,20 +432,100 @@ def parse_docx(path: str) -> pd.DataFrame:
                 mfr_match = re.search(mfr_pattern, name)
                 if mfr_match:
                     manufacturer_in_name = mfr_match.group(1).strip()
-                    # Удаляем информацию о производителе из наименования
-                    name = re.sub(mfr_pattern, '', name).strip()
+                    # ВАЖНО: НЕ удаляем производителя из description, если в примечании есть ПОДБОРЫ номиналов
+                    # (но НЕ замены! Замены - это другое)
+                    # Подборные элементы должны наследовать производителя из оригинального description
+                    # Удаляем производителя только если нет подборов номиналов
+                    has_podbor_preview = bool(cell_note and ref.strip() and (',' in cell_note or ';' in cell_note) 
+                                             and 'замена' not in cell_note.lower())
+                    if not has_podbor_preview:
+                        # Удаляем информацию о производителе из наименования
+                        name = re.sub(mfr_pattern, '', name).strip()
+            
+            # Проверяем, содержит ли ячейка примечания подборы (номиналы с запятыми/точками с запятой)
+            # Подборы - это список номиналов или артикулов, разделенных запятыми
+            has_podbor_in_note = bool(cell_note and ref.strip() and (',' in cell_note or ';' in cell_note))
+            
+            # Ищем подходящую ТУ в словаре component_type_tu_map по описанию компонента
+            # Например, для "К53-65-..." ищем "К53-65" или "К53" в словаре
+            # ВАЖНО: Делаем это ПЕРЕД проверкой should_use_group_tu
+            matched_tu_from_map = ""
+            if component_type_tu_map and name:
+                # Нормализуем описание для поиска
+                name_normalized = name.replace(' ', '').replace('–', '-').replace('—', '-')
+                # Ищем совпадения по убыванию длины (сначала точные, потом короткие)
+                for comp_type in sorted(component_type_tu_map.keys(), key=len, reverse=True):
+                    if comp_type in name_normalized:
+                        matched_tu_from_map = component_type_tu_map[comp_type]
+                        break
+            
+            # Используем matched_tu_from_map если найдено, иначе current_group_tu
+            effective_group_tu = matched_tu_from_map if matched_tu_from_map else current_group_tu
+            
+            # Проверяем, принадлежит ли текущий компонент к текущей группе
+            # Если префикс позиционного обозначения не соответствует типу группы - сбрасываем ТУ группы
+            ref_prefix = re.sub(r'\d.*$', '', ref.split()[0].upper()) if ref else ""
+            should_use_group_tu = True
+            
+            if effective_group_tu and ref_prefix:
+                # Проверяем соответствие префикса типу группы
+                group_type_lower = current_group_type.lower() if current_group_type else ""
+                
+                # Резисторы (R) - ТУ резисторов не применяется к PAT, D, C и т.д.
+                if 'резистор' in group_type_lower and not ref_prefix.startswith('R'):
+                    should_use_group_tu = False
+                # Конденсаторы (C) - ТУ конденсаторов не применяется к R, D и т.д.
+                elif 'конденсатор' in group_type_lower and not ref_prefix.startswith('C'):
+                    should_use_group_tu = False
+                # Микросхемы (DA, DD, U, IC) - ТУ микросхем не применяется к R, C, D и т.д.
+                elif 'микросхем' in group_type_lower and not ref_prefix.startswith(('DA', 'DD', 'U', 'IC')):
+                    should_use_group_tu = False
+                # Индуктивности (L) - ТУ индуктивностей не применяется к R, C, D и т.д.
+                elif ('дроссел' in group_type_lower or 'индуктивност' in group_type_lower) and not ref_prefix.startswith('L'):
+                    should_use_group_tu = False
+            
+            # Фильтруем служебные фразы из cell_note
+            # "допускается отсутствие", "справ." и т.д. - не являются ТУ
+            service_phrases = ['допускается отсутствие', 'справ.', 'см. примечание']
+            is_service_note = any(phrase in cell_note.lower() for phrase in service_phrases) if cell_note else False
+            
+            # Проверяем, является ли примечание заменой (содержит "замена")
+            is_replacement_note = bool(cell_note and 'замена' in cell_note.lower())
             
             # Добавить ТОЛЬКО ТУ из заголовка группы в note (НЕ тип компонента!)
             # Тип компонента из заголовка может быть неточным и перевесить правильную классификацию
-            if current_group_tu and manufacturer_in_name:
+            if has_podbor_in_note and effective_group_tu and should_use_group_tu and not is_replacement_note:
+                # Ячейка примечания содержит подборы - используем ТУ из заголовка для note
+                # Подборы остаются в original_note для последующего извлечения
+                note = effective_group_tu
+                if manufacturer_in_name:
+                    note = note + ' | ' + manufacturer_in_name
+            elif has_podbor_in_note and manufacturer_in_name and not is_replacement_note:
+                # Ячейка примечания содержит подборы, но нет ТУ из заголовка
+                # (например, для PAT компонентов нет группового заголовка)
+                # Используем производитель из наименования
+                note = manufacturer_in_name
+            elif is_replacement_note and manufacturer_in_name:
+                # Ячейка примечания содержит замены - используем производитель из наименования для note
+                # Примечание о замене остается в original_note для последующего извлечения
+                note = manufacturer_in_name
+            elif effective_group_tu and manufacturer_in_name and should_use_group_tu:
                 # Есть и ТУ из заголовка, и производитель из наименования
-                note = current_group_tu + ' | ' + manufacturer_in_name
-            elif current_group_tu:
-                # Только ТУ из заголовка
-                note = current_group_tu
+                note = effective_group_tu + ' | ' + manufacturer_in_name
+            elif effective_group_tu and not cell_note and should_use_group_tu:
+                # Только ТУ из заголовка (и ячейка примечания пустая)
+                note = effective_group_tu
             elif manufacturer_in_name:
                 # Только производитель из наименования
                 note = manufacturer_in_name
+            elif is_service_note:
+                # Ячейка содержит служебную фразу (например, "допускается отсутствие")
+                # Для основного компонента используем ТУ из заголовка (если есть)
+                if effective_group_tu and should_use_group_tu:
+                    note = effective_group_tu
+                else:
+                    note = ""
+            # Если cell_note не содержит подборы и нет ТУ из заголовка - оставляем note=cell_note (уже установлено)
 
             # Не добавлять строку без данных
             if not ref.strip() and not name.strip():
@@ -414,6 +598,7 @@ def parse_docx(path: str) -> pd.DataFrame:
                 "note": note,  # ТУ и производитель, НЕ тип компонента
                 "group_type": use_group_type,  # Тип компонента для классификации (может быть сброшен)
                 "original_note": original_note,  # Оригинальное примечание для подборов
+                "has_explicit_qty": has_explicit_qty,  # Флаг для отслеживания многострочных элементов
             }
             extracted.append(row)
 

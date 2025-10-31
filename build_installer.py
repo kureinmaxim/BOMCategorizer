@@ -25,13 +25,17 @@ FILES_TO_COPY = [
     "app.py",
     "split_bom.py",
     "config.json",
-    "requirements.txt",
+    "component_database.json",  # База данных компонентов (обновляется автоматически)
+    "merge_component_database.py",  # Скрипт слияния баз данных при обновлении
+    "requirements_install.txt",  # Используем облегченную версию без тестовых зависимостей
     "rules.json",
     "interactive_classify.py",
     "interactive_classify_improved.py",
     "preview_unclassified.py",
     "installer_clean.iss",
     "post_install.ps1",
+    "repair_install.ps1",
+    "repair_install.bat",
     "run_app.bat",
     "split_bom.bat",
     "start_gui.bat",
@@ -74,6 +78,13 @@ def copy_files():
             print(f"  [OK] {file}")
         else:
             print(f"  [SKIP] {file} (не найден)")
+    
+    # Переименовываем requirements_install.txt в requirements.txt для инсталлятора
+    req_install = os.path.join(TEMP_DIR, "requirements_install.txt")
+    req_final = os.path.join(TEMP_DIR, "requirements.txt")
+    if os.path.exists(req_install):
+        shutil.move(req_install, req_final)
+        print(f"  [OK] requirements_install.txt -> requirements.txt")
     
     for directory in DIRECTORIES_TO_COPY:
         if os.path.exists(directory):

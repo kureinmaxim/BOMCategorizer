@@ -213,6 +213,7 @@ python app.py
 - 📦 [OFFLINE_INSTALLER.md](docs/OFFLINE_INSTALLER.md) - Офлайн инсталлятор (v1.1.0+)
 - 📁 [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) - Структура проекта
 - 🔍 [INSTALL_FIX_SUMMARY.md](docs/INSTALL_FIX_SUMMARY.md) - Решённые проблемы установки
+- 🔧 [REPAIR_INSTALLATION.md](docs/REPAIR_INSTALLATION.md) - Восстановление после установки (работает БЕЗ интернета)
 
 ### История изменений:
 - 🐛 [FIX_SUMMARY.md](docs/FIX_SUMMARY.md) - Исправленные баги

@@ -1,10 +1,10 @@
 {
   "app_info": {
-  "version": "2.0.26",
-  "release_date": "30.10.2025",
+    "version": "2.0.35",
+    "release_date": "31.10.2025",
     "developer": "Куреин М.Н.",
     "description": "Категоризатор BOM файлов",
-    "last_updated": "2025-10-30"
+    "last_updated": "2025-10-31"
   },
   "security": {
     "pin": "5421",

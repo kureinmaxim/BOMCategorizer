@@ -33,15 +33,8 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
     new_rows = []
     
     for idx, row in df.iterrows():
-        # Добавляем основную строку
-        new_rows.append(row.to_dict())
-        
         # Проверяем наличие позиционного обозначения (основной элемент)
         ref = str(row.get('reference', '')).strip() if pd.notna(row.get('reference')) else ''
-        
-        # Только для строк с позиционным обозначением ищем подборы/замены
-        if not ref:
-            continue
         
         # Получаем примечание (приоритет: original_note → note → Примечание)
         note = ''
@@ -56,7 +49,63 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
         # if 'C21' in ref or 'C22' in ref:
         #     print(f"  [DEBUG-C] {ref} - note: '{note[:60] if note else '(пусто)'}', len: {len(note)}")
         
-        if not note:
+        # Проверяем, содержит ли примечание служебную фразу (не подборы!)
+        is_service_note = bool(note and ('допускается отсутствие' in note.lower() or 'справ.' in note.lower()))
+        
+        # Проверяем есть ли подборы/замены в примечании
+        # НЕ извлекаем подборы из служебных фраз типа "допускается отсутствие"
+        has_podbor = bool(note and ref and (',' in note or ';' in note or 'замена' in note.lower()) and not is_service_note)
+        
+        # Если есть подборы - нужно обработать note у оригинального компонента
+        # (чтобы список подборов не попал в ТУ/Примечание оригинала)
+        if has_podbor:
+            row_dict = row.to_dict()
+            
+            # ВАЖНО: Если в note есть ТУ-код или производитель, сохраняем его!
+            # Проверяем паттерн ТУ: "АЛЯР.434110.005ТУ" или "ОЖ0.460.107ТУ"
+            # Или производитель: Mini-Circuits, Hittite и т.д.
+            current_note = row_dict.get('note', '')
+            
+            # Проверяем есть ли это замена (содержит "замена" в original_note)
+            orig_note_val = row_dict.get('original_note', '')
+            is_replacement = bool(orig_note_val and 'замена' in orig_note_val.lower())
+            
+            # Определяем, что в note: ТУ, производитель или список подборов
+            has_tu_in_note = bool(current_note and ('ТУ' in current_note or re.search(r'[А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ', current_note)))
+            has_commas_in_note = bool(current_note and (',' in current_note or ';' in current_note))
+            is_short_note = bool(current_note and len(current_note) < 50)
+            
+            # Если в note есть список артикулов (запятые + длина > 30), это подборы - очищаем
+            looks_like_podbor_list = has_commas_in_note and len(current_note) > 30
+            
+            if has_tu_in_note:
+                # В note есть ТУ-код - сохраняем его
+                pass
+            elif is_replacement and current_note:
+                # Это замена и в note есть производитель - сохраняем
+                pass
+            elif is_short_note and not has_commas_in_note:
+                # В note производитель (короткая строка без разделителей) - сохраняем
+                pass
+            elif looks_like_podbor_list:
+                # В note список подборов - очищаем!
+                row_dict['note'] = ''
+            else:
+                # Другие случаи - очищаем для безопасности
+                row_dict['note'] = ''
+            
+            # original_note и Примечание всегда очищаем (там подборы/замены)
+            if 'original_note' in row_dict:
+                row_dict['original_note'] = ''
+            if 'Примечание' in row_dict:
+                row_dict['Примечание'] = ''
+            new_rows.append(row_dict)
+        else:
+            # Нет подборов - добавляем как есть
+            new_rows.append(row.to_dict())
+        
+        # Только для строк с позиционным обозначением ищем подборы/замены
+        if not ref or not note:
             continue
         
         # Определяем тип: ЗАМЕНА или ПОДБОР
@@ -90,29 +139,104 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
             for item_desc in extracted_items:
                 print(f"    -> {item_desc}")
                 new_row = row.to_dict().copy()
-                new_row['description'] = item_desc
+                
+                # Удаляем производителя из description подборного элемента (если есть)
+                # Производитель будет в note, не нужно дублировать
+                # Стратегия: оставляем только артикул (все до первых двух+ пробелов или до "ф.")
+                # Примеры:
+                #   "PAT-0+           ф. Mini-Circuits" → "PAT-0+"
+                #   "PAT-10+. Mini-Circuits" → "PAT-10+"
+                #   "GRM1555C1H1R0B" → "GRM1555C1H1R0B"
+                
+                # 1. Если есть "ф." - отрезаем все до него
+                if ' ф.' in item_desc or '\tф.' in item_desc:
+                    item_desc_clean = re.split(r'\s+ф\.', item_desc)[0].strip()
+                # 2. Если есть 2+ пробела подряд - отрезаем все после них
+                elif re.search(r'\s{2,}', item_desc):
+                    item_desc_clean = re.split(r'\s{2,}', item_desc)[0].strip()
+                # 3. Если есть точка с пробелом или точка в конце - удаляем производителя после точки
+                elif '. ' in item_desc or item_desc.endswith('.'):
+                    # Удаляем "точка + пробел + слова" в конце
+                    item_desc_clean = re.sub(r'\.\s+[A-Z][A-Za-z\-\s]+$', '', item_desc, flags=re.IGNORECASE).strip()
+                else:
+                    item_desc_clean = item_desc.strip()
+                
+                # Удаляем точку в конце (после всех обработок)
+                item_desc_clean = item_desc_clean.rstrip('.')
+                
+                new_row['description'] = item_desc_clean
                 new_row['reference'] = ''  # Подборы/замены не имеют позиционного обозначения
                 
-                # Копируем ТУ из оригинального компонента (если есть)
-                # ТУ может быть в разных местах:
+                # ВАЖНО: Сначала очищаем все поля с примечаниями и ТУ
+                # Потом копируем только реальный ТУ (если он есть)
+                new_row['note'] = ''
+                new_row['original_note'] = ''
+                if 'Примечание' in new_row:
+                    new_row['Примечание'] = ''
+                if 'ТУ' in new_row:
+                    new_row['ТУ'] = ''
+                if 'tu' in new_row:
+                    new_row['tu'] = ''
+                
+                # Копируем ТУ/производителя из оригинального компонента (если есть)
+                # ТУ/производитель может быть в разных местах:
                 # 1. В колонке 'tu' или 'ТУ' (для XLSX файлов)
-                # 2. В поле 'note' (для DOCX файлов, где ТУ в примечании)
+                # 2. В поле 'note' или 'original_note' (для DOCX файлов, где ТУ в примечании)
+                # 3. В самом description оригинального компонента (например, "PAT-1+ ф. Mini-Circuits")
+                
+                # Сначала пытаемся извлечь производителя из description оригинального компонента
+                orig_desc = str(row.get('description', '')).strip() if pd.notna(row.get('description')) else ''
+                manufacturer_from_desc = ''
+                if orig_desc:
+                    # Ищем паттерн "ф. Производитель" в описании оригинального компонента
+                    mfr_match = re.search(r'ф\.\s*([A-Za-zА-ЯЁа-яё0-9\s\-]+)', orig_desc)
+                    if mfr_match:
+                        manufacturer_from_desc = mfr_match.group(1).strip()
+                
                 if 'tu' in row.index and pd.notna(row.get('tu')):
-                    new_row['tu'] = row.get('tu')
+                    tu_val = str(row.get('tu')).strip()
+                    # Проверяем что это реальный ТУ, а не подборы
+                    if 'ту' in tu_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', tu_val):
+                        new_row['tu'] = tu_val
                 elif 'ТУ' in row.index and pd.notna(row.get('ТУ')):
-                    new_row['ТУ'] = row.get('ТУ')
+                    tu_val = str(row.get('ТУ')).strip()
+                    # Проверяем что это реальный ТУ, а не подборы
+                    if 'ту' in tu_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', tu_val):
+                        new_row['ТУ'] = tu_val
                 elif 'note' in row.index and pd.notna(row.get('note')):
-                    # Проверяем, что note содержит ТУ (а не подборы/замены)
+                    # Проверяем, что note содержит ТУ или производителя (а не подборы/замены)
                     note_val = str(row.get('note')).strip()
                     # Паттерн ТУ: АЛЯР.434110.005 ТУ или АЛЯР.431320.420ТУ
+                    # Или производитель: Mini-Circuits, Hittite, и т.д.
                     if 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
                         # Это ТУ - копируем его
                         new_row['note'] = note_val
+                    elif 'замена' in note_val.lower():
+                        # В note текст замены - используем производителя из description
+                        if manufacturer_from_desc:
+                            new_row['note'] = manufacturer_from_desc
+                    elif manufacturer_from_desc:
+                        # В note нет ТУ, но есть производитель в description - копируем его
+                        new_row['note'] = manufacturer_from_desc
+                    elif len(note_val) > 0 and len(note_val) < 100 and not (',' in note_val or ';' in note_val):
+                        # Возможно это производитель (короткая строка без разделителей)
+                        new_row['note'] = note_val
+                elif 'original_note' in row.index and pd.notna(row.get('original_note')):
+                    # Проверяем original_note на наличие ТУ
+                    note_val = str(row.get('original_note')).strip()
+                    if 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
+                        new_row['note'] = note_val
+                    elif manufacturer_from_desc:
+                        # В original_note нет ТУ, но есть производитель в description
+                        new_row['note'] = manufacturer_from_desc
+                elif manufacturer_from_desc:
+                    # Нет note/original_note, но есть производитель в description - используем его
+                    new_row['note'] = manufacturer_from_desc
                 
                 # Помечаем источник КОМПАКТНО
                 # Вместо: "Plata_preobrz.docx (подбор) для R48*"
-                # Делаем: "Plata_preobrz.docx, (п/б R48*)"
-                # При агрегации получится: "Plata_preobrz.docx, (п/б R48*), (п/б R49*)"
+                # Делаем: "Plata_preobrz.docx (п/б R48*)"
+                # При агрегации получится: "Plata_preobrz.docx (п/б R48*), (п/б R49*)"
                 if 'source_file' in new_row and pd.notna(new_row['source_file']):
                     source = str(new_row['source_file'])
                     # Убираем старые пометки, если есть
@@ -121,23 +245,11 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
                     # Сокращаем тег: "(подбор)" → "(п/б)", "(замена)" → "(зам)"
                     short_tag = "(п/б" if tag == "(подбор)" else "(зам"
                     
-                    # Добавляем компактную пометку
-                    new_row['source_file'] = f"{source}, {short_tag} {ref})"
+                    # Добавляем компактную пометку (без запятой перед первой пометкой)
+                    new_row['source_file'] = f"{source} {short_tag} {ref})"
                 
-                # Очищаем примечания (чтобы не было рекурсии)
-                # Но сохраняем note, если там ТУ (мы его скопировали выше)
-                if 'original_note' in new_row:
-                    new_row['original_note'] = ''  # Всегда очищаем (там подборы)
-                
-                # note очищаем ТОЛЬКО если там НЕ ТУ
-                if 'note' in new_row:
-                    note_val = str(new_row.get('note', '')).strip()
-                    # Если note НЕ содержит ТУ - очищаем
-                    if not note_val or not ('ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val)):
-                        new_row['note'] = ''
-                
-                if 'Примечание' in new_row:
-                    new_row['Примечание'] = ''
+                # Примечания уже очищены выше (строки 98-105)
+                # ТУ скопирован только если он действительно есть
                 
                 new_rows.append(new_row)
     
@@ -151,8 +263,8 @@ def _extract_replacements(note: str, row: dict) -> list:
     """
     Извлекает замены из примечания
     
-    Пример: "Допуск. замена на AD9221AR, ф.Analog Devices"
-    Результат: ["AD9221AR"]
+    Пример: "допускается замена на PAT-15+, PAT-30+, ГВАТ.467716.009"
+    Результат: ["PAT-15+", "PAT-30+", "ГВАТ.467716.009"]
     
     Args:
         note: Текст примечания
@@ -163,38 +275,34 @@ def _extract_replacements(note: str, row: dict) -> list:
     """
     replacements = []
     
-    # Ищем паттерн "замена на [наименование]"
-    # Паттерны для поиска замен:
-    # 1. "замена на XXXXX"
-    # 2. "допуск. замена на XXXXX"
-    # 3. "допускается замена на XXXXX"
+    # Ищем текст после "замена на" или "допускается замена на"
+    # Паттерн: захватываем весь текст после "замена на" до конца строки или точки с пробелом
+    # ВАЖНО: не останавливаемся на точках внутри артикулов (ГВАТ.467716.009)
+    pattern = r'(?:замена\s+на|допуск\.\s*замена\s+на|допускается\s+замена\s+на)\s+(.+?)(?:\.\s|$)'
+    match = re.search(pattern, note, re.IGNORECASE | re.DOTALL)
     
-    # Паттерн для извлечения наименования после "замена на"
-    patterns = [
-        r'(?:замена\s+на|допуск\.\s*замена\s+на|допускается\s+замена\s+на)\s+([A-Za-zА-ЯЁа-яё0-9\-\+]+)',
-        r'(?:допуск\.\s+|допускается\s+)([A-Za-zА-ЯЁа-яё0-9\-\+]+)',
-    ]
-    
-    for pattern in patterns:
-        matches = re.finditer(pattern, note, re.IGNORECASE)
-        for match in matches:
-            component_name = match.group(1).strip()
+    if match:
+        # Извлекли текст после "замена на": "PAT-15+, PAT-30+, ГВАТ.467716.009, ГВАТ.467716.008"
+        replacements_text = match.group(1).strip()
+        
+        # Разделяем по запятым
+        parts = [p.strip() for p in replacements_text.split(',')]
+        
+        main_desc = str(row.get('description', '')).strip()
+        
+        for part in parts:
+            # Убираем точки в конце
+            part = part.rstrip('.')
             
-            # Убираем производителя, если он есть (после запятой или "ф.")
-            # Пример: "AD9221AR, ф.Analog Devices" → "AD9221AR"
-            component_name = re.split(r',\s*ф\.|,\s*производитель', component_name, flags=re.IGNORECASE)[0].strip()
-            
-            # Проверяем что это не служебное слово
-            skip_words = ['замена', 'допуск', 'допускается', 'на', 'или', 'и']
-            if component_name.lower() in skip_words:
+            # Проверяем что это не пустая строка
+            if not part:
                 continue
             
-            # Проверяем что это не то же самое наименование
-            main_desc = str(row.get('description', '')).strip()
-            if component_name.lower() not in main_desc.lower() and len(component_name) > 3:
-                # Проверяем что содержит хотя бы одну цифру (типичный признак партномера)
-                if re.search(r'\d', component_name):
-                    replacements.append(component_name)
+            # Проверяем что это похоже на компонент (содержит буквы и цифры)
+            if len(part) > 2 and re.search(r'[A-Za-zА-ЯЁа-яё]', part) and re.search(r'\d', part):
+                # Проверяем что это не то же самое наименование
+                if part.lower() != main_desc.lower():
+                    replacements.append(part)
     
     return replacements
 
@@ -218,22 +326,49 @@ def _extract_podbors(note: str, row: dict) -> list:
     # Получаем основное описание
     main_desc = str(row.get('description', '')).strip()
     
+    # ВАЖНО: Для некоторых компонентов (PAT, оптика, специфичные модули)
+    # производитель может быть в note, а не в description
+    # Для стандартных резисторов/конденсаторов производитель обычно НЕ указывается!
+    note_val = str(row.get('note', '')).strip() if pd.notna(row.get('note')) else ''
+    
+    # Если note содержит разделитель | - берем последнюю часть (там может быть производитель)
+    if '|' in note_val:
+        parts = note_val.split('|')
+        mfr_candidate = parts[-1].strip()
+    else:
+        mfr_candidate = note_val
+    
+    # Проверяем типичные паттерны производителей (ТОЛЬКО для специфичных компонентов!)
+    # Для стандартных резисторов/конденсаторов с ТУ - производитель НЕ нужен
+    mfr_patterns = ['mini-circuit', 'murata', 'coilcraft', 'tdk', 'yageo', 'vishay', 'kemet', 
+                    'panasonic', 'analog devices', 'hittite', 'api technologies']
+    
+    if mfr_candidate and len(mfr_candidate) < 100:
+        # Проверяем что это известный производитель
+        if any(mfr in mfr_candidate.lower() for mfr in mfr_patterns):
+            # Проверяем что это НЕ подбор (нет запятых/точек с запятой)
+            if not any(sep in mfr_candidate for sep in [',', ';']):
+                # Это производитель - добавляем к описанию
+                main_desc = f"{main_desc} ф. {mfr_candidate}"
+    
     # Паттерны номиналов (с единицами измерения)
     # Резисторы: Ом, кОм, МОм
     # Конденсаторы: пФ, нФ, мкФ
     # Индуктивности: Гн, мГн, мкГн, нГн
-    # ВАЖНО: Требуем ПРОБЕЛ перед единицей, чтобы не ловить артикулы типа GRM1555C1H1R0B
+    # ВАЖНО: Пробел между числом и единицей ОПЦИОНАЛЬНЫЙ (\s*) для поддержки "6,8Ом" и "6,8 Ом"
+    # Паттерн для чисел: \d+(?:[,.]\d+)? - поддерживает "6,8" и "6.8" и "10"
+    # Word boundary (\b) в начале, чтобы не ловить артикулы типа "GRM1555C1H100G"
     nominal_patterns = [
-        r'(\d+[,.]?\d*)\s+(МОм|мом|мом|MΩ|MΩ)',
-        r'(\d+[,.]?\d*)\s+(кОм|ком|кОм|kΩ|kΩ)',
-        r'(\d+[,.]?\d*)\s+(Ом|ом|Ω|Ω)',
-        r'(\d+[,.]?\d*)\s+(мкФ|мкф|μF|uF)',
-        r'(\d+[,.]?\d*)\s+(нФ|нф|nF)',
-        r'(\d+[,.]?\d*)\s+(пФ|пф|pF)',
-        r'(\d+[,.]?\d*)\s+(мГн|мгн|mH)',
-        r'(\d+[,.]?\d*)\s+(мкГн|мкгн|μH|uH)',
-        r'(\d+[,.]?\d*)\s+(нГн|нгн|nH)',
-        r'(\d+[,.]?\d*)\s+(Гн|гн|H)',
+        r'\b(\d+(?:[,.]\d+)?)\s*(МОм|мом|мом|MΩ|MΩ)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(кОм|ком|кОм|kΩ|kΩ)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(Ом|ом|Ω|Ω)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(мкФ|мкф|μF|uF)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(нФ|нф|nF)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(пФ|пф|pF)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(мГн|мгн|mH)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(мкГн|мкгн|μH|uH)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(нГн|нгн|nH)\b',
+        r'\b(\d+(?:[,.]\d+)?)\s*(Гн|гн|H)\b',
     ]
     
     # Убираем служебные фразы ИЗ ВСЕГО примечания (ДО разбиения)
@@ -249,11 +384,52 @@ def _extract_podbors(note: str, row: dict) -> list:
     for phrase in cleanup_phrases:
         note_cleaned = re.sub(phrase, '', note_cleaned, flags=re.IGNORECASE)
     
-    # Разбиваем примечание на части (по запятым и точкам с запятой)
+    # СНАЧАЛА извлекаем все номиналы из примечания
+    # Это важно, чтобы запятая в "6,8Ом" не воспринималась как разделитель
+    extracted_nominals = []
+    for pattern in nominal_patterns:
+        matches = re.finditer(pattern, note_cleaned, re.IGNORECASE)
+        for match in matches:
+            value = match.group(1).replace(',', '.')
+            unit = match.group(2)
+            unit_normalized = _normalize_unit(unit)
+            found_nominal = f"{value} {unit_normalized}"
+            extracted_nominals.append((match.start(), match.end(), found_nominal))
+    
+    # Если нашли номиналы, обрабатываем их
+    if extracted_nominals:
+        for start, end, nominal in extracted_nominals:
+            new_desc = _replace_nominal_in_description(main_desc, nominal)
+            if new_desc and new_desc != main_desc:
+                podbors.append(new_desc)
+        
+        # Ранний выход - номиналы обработаны
+        return podbors
+    
+    # Если номиналов нет, разбиваем примечание на части (по запятым и точкам с запятой)
+    # для поиска артикулов
     note_parts = re.split(r'[,;]', note_cleaned)
     
+    # Дополнительное разбиение: если в части есть несколько артикулов через пробел
+    # Например: "PAT-3+ PAT-4+" → ["PAT-3+", "PAT-4+"]
+    expanded_parts = []
     for part in note_parts:
         part = part.strip()
+        if not part:
+            continue
+        
+        # Паттерн для артикулов с + в конце (Mini-Circuits стиль)
+        # Пример: PAT-1+, ZX60-P103LN+
+        if re.search(r'[A-Z0-9\-]+\+\s+[A-Z0-9\-]+\+', part, re.IGNORECASE):
+            # Разбиваем по пробелам между артикулами
+            sub_parts = re.findall(r'[A-Z0-9А-ЯЁ\-]+\+', part, re.IGNORECASE)
+            expanded_parts.extend(sub_parts)
+        else:
+            expanded_parts.append(part)
+    
+    # Обрабатываем артикулы (если номиналов не было найдено ранее)
+    for part in expanded_parts:
+        part = part.strip().rstrip('.')  # Удаляем точку в конце
         if not part:
             continue
         
@@ -263,41 +439,88 @@ def _extract_podbors(note: str, row: dict) -> list:
         if any(kw in part_lower for kw in skip_keywords):
             continue
         
-        # Проверяем, содержит ли часть номинал
-        found_nominal = None
-        for pattern in nominal_patterns:
-            match = re.search(pattern, part, re.IGNORECASE)
-            if match:
-                # Нормализуем номинал (заменяем запятую на точку для чисел)
-                value = match.group(1).replace(',', '.')
-                unit = match.group(2)
+        # Проверяем, является ли часть артикулом компонента
+        # Паттерн артикула: буквы+цифры (например, GRM1555C1H1R0B, К53-65А, PAT-2+)
+        # Должен содержать хотя бы одну букву и одну цифру, длина > 3
+        if len(part) > 3 and re.search(r'[A-Za-zА-ЯЁа-яё]', part) and re.search(r'\d', part):
+            # Проверяем, что это не то же самое наименование
+            main_desc_normalized = main_desc.replace(' ', '').replace('-', '').lower()
+            part_normalized = part.replace(' ', '').replace('-', '').lower()
+            
+            if part_normalized not in main_desc_normalized:
+                # Это артикул - заменяем его в оригинальном описании
+                # чтобы сохранить контекст (производителя, модель и т.д.)
+                new_desc = _replace_artikul_in_description(main_desc, part)
                 
-                # Приводим единицу к стандартному виду
-                unit_normalized = _normalize_unit(unit)
-                
-                found_nominal = f"{value} {unit_normalized}"
-                break
-        
-        if found_nominal:
-            # Создаем полное описание с новым номиналом
-            # Заменяем старый номинал на новый в описании
-            new_desc = _replace_nominal_in_description(main_desc, found_nominal)
-            if new_desc and new_desc != main_desc:
-                podbors.append(new_desc)
-        else:
-            # Если номинал не найден, проверяем, является ли часть артикулом компонента
-            # Паттерн артикула: буквы+цифры (например, GRM1555C1H1R0B, К53-65А)
-            # Должен содержать хотя бы одну букву и одну цифру, длина > 5
-            if len(part) > 5 and re.search(r'[A-Za-zА-ЯЁа-яё]', part) and re.search(r'\d', part):
-                # Проверяем, что это не то же самое наименование
-                main_desc_normalized = main_desc.replace(' ', '').replace('-', '').lower()
-                part_normalized = part.replace(' ', '').replace('-', '').lower()
-                
-                if part_normalized not in main_desc_normalized:
-                    # Это артикул - добавляем как есть
+                if new_desc and new_desc != main_desc:
+                    podbors.append(new_desc)
+                else:
+                    # Если не удалось заменить - добавляем как есть
+                    # (для случаев когда описание не содержит артикул)
                     podbors.append(part)
     
     return podbors
+
+
+def _replace_artikul_in_description(description: str, new_artikul: str) -> str:
+    """
+    Заменяет артикул в описании на новый, сохраняя остальной контекст
+    
+    Примеры:
+        "PAT-0+ ф. Mini-Circuits" + "PAT-1+" → "PAT-1+ ф. Mini-Circuits"
+        "GRM1885C2A100J, ф. Murata" + "GRM1885C2A150J" → "GRM1885C2A150J, ф. Murata"
+        "Конденсатор К53-65 100 мкФ" + "К53-65А" → "Конденсатор К53-65А 100 мкФ"
+    
+    Args:
+        description: Оригинальное описание компонента
+        new_artikul: Новый артикул из подбора
+        
+    Returns:
+        Описание с замененным артикулом
+    """
+    # Удаляем точку в конце артикула (если есть)
+    new_artikul = new_artikul.rstrip('.')
+    
+    # Паттерн для поиска артикула в описании
+    # Артикул: буквы/цифры/дефис/плюс, длина >= 3
+    # Должен быть до запятой, "ф.", или в начале строки
+    
+    # Попытка 1: Артикул в начале строки до первой запятой или "ф."
+    match = re.search(r'^([A-Z0-9А-ЯЁ\-\+]+(?:\s*[A-Z0-9А-ЯЁ\-\+]+)*?)(?:\s*[,.]|\s+ф\.)', 
+                     description, re.IGNORECASE)
+    if match:
+        old_artikul = match.group(1).strip()
+        # Проверяем что найденный артикул содержит и буквы и цифры
+        if re.search(r'[A-Za-zА-ЯЁа-яё]', old_artikul) and re.search(r'\d', old_artikul):
+            # Заменяем старый артикул на новый
+            new_desc = description.replace(old_artikul, new_artikul, 1)
+            return new_desc
+    
+    # Попытка 2: Артикул в начале строки (если нет запятой/ф.)
+    match = re.search(r'^([A-Z0-9А-ЯЁ\-\+]+)', description, re.IGNORECASE)
+    if match:
+        old_artikul = match.group(1).strip()
+        if len(old_artikul) >= 3:
+            if re.search(r'[A-Za-zА-ЯЁа-яё]', old_artikul) and re.search(r'\d', old_artikul):
+                new_desc = description.replace(old_artikul, new_artikul, 1)
+                return new_desc
+    
+    # Попытка 3: Если в description есть производитель (ф. ...) - добавляем его к новому артикулу
+    # Это для случаев когда подборный артикул не похож на оригинальный
+    # Пример: "PAT-0+ ф. Mini-Circuits" + "PAT-2+" → "PAT-2+ ф. Mini-Circuits"
+    # ВАЖНО: Делаем это ТОЛЬКО для специфичных производителей (не для стандартных ТУ!)
+    mfr_match = re.search(r'ф\.\s*(.+?)(?:\s*,|$)', description, re.IGNORECASE)
+    if mfr_match:
+        mfr = mfr_match.group(1).strip()
+        # Проверяем что это известный производитель (не просто ТУ или случайный текст)
+        known_mfrs = ['mini-circuit', 'murata', 'coilcraft', 'tdk', 'yageo', 'vishay', 
+                      'kemet', 'panasonic', 'analog', 'hittite', 'api', 'qualwave']
+        if any(known in mfr.lower() for known in known_mfrs):
+            return f"{new_artikul} ф. {mfr}"
+    
+    # Если не удалось найти артикул для замены - возвращаем новый артикул
+    # (для случаев типа "Аттенюатор" → нужно вернуть "PAT-1+")
+    return new_artikul
 
 
 def _normalize_unit(unit: str) -> str:
@@ -344,7 +567,9 @@ def _replace_nominal_in_description(desc: str, new_nominal: str) -> str:
     """
     # Паттерн для поиска номинала в описании
     # Ищем число + единица измерения (Ом, кОм, пФ, мкФ и т.д.)
-    nominal_in_desc_pattern = r'(\d+[,.]?\d*)\s*(МОм|мом|кОм|ком|Ом|ом|мкФ|мкф|нФ|нф|пФ|пф|мГн|мгн|мкГн|мкгн|нГн|нгн|Гн|гн)'
+    # Паттерн для чисел: \d+(?:[,.]\d+)? - поддерживает "6,8" и "6.8" и "10"
+    # Word boundary (\b) для предотвращения ложных срабатываний
+    nominal_in_desc_pattern = r'\b(\d+(?:[,.]\d+)?)\s*(МОм|мом|кОм|ком|Ом|ом|мкФ|мкф|нФ|нф|пФ|пф|мГн|мгн|мкГн|мкгн|нГн|нгн|Гн|гн)\b'
     
     # Заменяем найденный номинал на новый
     result = re.sub(nominal_in_desc_pattern, new_nominal, desc, count=1, flags=re.IGNORECASE)

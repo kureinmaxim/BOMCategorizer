@@ -61,9 +61,11 @@ def classify_row(
     part = to_text(partname)
     src_file = to_text(source_file)
     note_text = to_text(note)
+    group_type_text = to_text(group_type)  # Тип из заголовка группы (DOCX)
 
-    # Create text blob early for use in reference-based checks (теперь включая note!)
-    text_blob = " ".join([desc, val, part, note_text])
+    # Create text blob early for use in reference-based checks (теперь включая note и group_type!)
+    # ВАЖНО: group_type помогает определить категорию по заголовку (например, "Чип катушки индуктивности")
+    text_blob = " ".join([desc, val, part, note_text, group_type_text])
     text_blob_lower = text_blob.lower()
 
     # Refdes first where reliable
@@ -134,22 +136,29 @@ def classify_row(
     # ===================================================================
     # НАИВЫСШИЙ ПРИОРИТЕТ: НАШИ РАЗРАБОТКИ
     # Любой компонент с номерами 195-, АМФИ, ГВАТ - это наши разработки
-    # Это могут быть платы, блоки, модули и т.д.
+    # Это могут быть платы, блоки, модули, вентили СВЧ и т.д.
     # ВАЖНО: Проверяем ДО типов компонентов (резисторы с АМФИ - это покупные!)
     # ===================================================================
+    
+    # КРИТИЧЕСКИ ВАЖНО: Если наименование НАЧИНАЕТСЯ с "ГВАТ" или "ГВАТ." - это ВСЕГДА наши разработки!
+    # Независимо от типа компонента (даже если это резистор, конденсатор и т.д.)
+    # Это относится к оригинальным, подборным и заменяемым компонентам
+    desc_upper = to_text(description).upper().strip()
+    if desc_upper.startswith("ГВАТ") or desc_upper.startswith("ГВАТ."):
+        return "our_developments"
+    
     if has_any(text_blob, [
         "195-9530", "195-", "амфи.", "амфи ", "гват.", "гват ",
         "шск-м", "плата контроллера шск", "плата преобразователя уровней",
         "бз шск-м", "бф шск-м", "наша разработ", "собственной разработ"
     ]):
-        # Исключаем:
-        # 1. Стандартные ЭРИ (резисторы, конденсаторы с кодом АМФИ - это покупные)
-        # 2. Вентили СВЧ с ГВАТ (они идут в rf_modules, хотя и наши разработки)
+        # Исключаем ТОЛЬКО стандартные ЭРИ (резисторы, конденсаторы с кодом АМФИ - это покупные)
+        # ВСЕ остальное с АМФИ, 195- → наши разработки (включая вентили СВЧ!)
+        # ГВАТ уже обработан выше - всегда идёт в наши разработки
         standard_components = ["резистор", "конденсатор", "дроссель", "индуктивност", "микродроссель"]
         is_standard_component = any(comp in text_blob_lower for comp in standard_components)
-        is_rf_ventil = has_any(text_blob, ["вентиль"]) and has_any(text_blob, ["гват"])
         
-        if not is_standard_component and not is_rf_ventil:
+        if not is_standard_component:
             return "our_developments"
     
     # ===================================================================
@@ -179,9 +188,11 @@ def classify_row(
     # Если в описании есть явные слова-маркеры категории - это главное!
     # ===================================================================
     
-    # Резисторы
+    # Резисторы (НО НЕ с кодом ГВАТ - это наши разработки!)
     if has_any(text_blob, ["резистор", "resistor", "сопротивлен"]):
-        return "resistors"
+        # Исключаем ГВАТ - это наши разработки!
+        if not has_any(text_blob, ["гват.", "гват "]):
+            return "resistors"
     
     # Конденсаторы (но НЕ делители мощности!)
     if has_any(text_blob, ["конденсатор", "capacitor"]):
@@ -195,7 +206,8 @@ def classify_row(
     if has_any(text_blob, ["микросхем", "интегральная схема", "аттенюатор", "attenuator"]):
         return "ics"
     # Производители микросхем: Analog Devices (HMC), Mini-Circuits (РАТ, PE)
-    if has_any(text_blob, ["hmc", "рат-", "pat-", "pe43", "pe44"]):
+    # ВАЖНО: "pat - " с пробелом для нормализованных названий типа "PAT - 15+"
+    if has_any(text_blob, ["hmc", "рат-", "pat-", "pat - ", "рат - ", "pe43", "pe44"]):
         return "ics"
     # Проверяем "ic" только если НЕТ оптических маркеров или модулей связи
     if has_any(text_blob, ["ic ", " ic", "chip ", " chip"]):

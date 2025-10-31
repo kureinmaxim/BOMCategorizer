@@ -396,8 +396,8 @@ class BOMCategorizerApp(tk.Tk):
         files = filedialog.askopenfilenames(
             title="Выберите файлы",
             filetypes=[
-                ("Excel", "*.xlsx"),
                 ("Документы Word", "*.docx *.doc"),
+                ("Excel", "*.xlsx"),
                 ("Текст", "*.txt"),
             ],
         )

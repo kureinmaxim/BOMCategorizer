@@ -105,35 +105,84 @@ if ($null -eq $PipExecutable) {
 
 Write-Host "Installing application dependencies from offline packages..."
 $OfflinePackagesDir = Join-Path $PSScriptRoot "offline_packages"
+$RequirementsFile = Join-Path $PSScriptRoot "requirements.txt"
+
+# Verify requirements.txt exists
+if (!(Test-Path $RequirementsFile)) {
+    Write-Host "ERROR: requirements.txt not found at: $RequirementsFile"
+    Exit 1
+}
+
+Write-Host "Requirements file: $RequirementsFile"
+Write-Host "Requirements content:"
+Get-Content $RequirementsFile | ForEach-Object { Write-Host "  - $_" }
 
 if (Test-Path $OfflinePackagesDir) {
     Write-Host "Found offline packages directory. Installing from local files (no internet required)..."
+    Write-Host "Offline packages directory: $OfflinePackagesDir"
     
+    # List available packages
+    Write-Host "Available offline packages:"
+    Get-ChildItem $OfflinePackagesDir -Filter "*.whl" | ForEach-Object { Write-Host "  - $($_.Name)" }
+    
+    Write-Host "Running pip install command..."
     if ($UsePythonModule) {
-        & $VenvPython -m pip install --no-index --find-links="$OfflinePackagesDir" -r requirements.txt
+        Write-Host "Command: $VenvPython -m pip install --no-index --find-links=$OfflinePackagesDir -r $RequirementsFile"
+        & $VenvPython -m pip install --no-index --find-links="$OfflinePackagesDir" -r $RequirementsFile
     } else {
-        & $PipExecutable install --no-index --find-links="$OfflinePackagesDir" -r requirements.txt
+        Write-Host "Command: $PipExecutable install --no-index --find-links=$OfflinePackagesDir -r $RequirementsFile"
+        & $PipExecutable install --no-index --find-links="$OfflinePackagesDir" -r $RequirementsFile
     }
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "All dependencies installed successfully from offline packages."
+        Write-Host ""
+        Write-Host "Verifying installed packages:"
+        if ($UsePythonModule) {
+            & $VenvPython -m pip list
+        } else {
+            & $PipExecutable list
+        }
     } else {
         Write-Host "ERROR: Failed to install dependencies from offline packages."
+        Write-Host "Exit code: $LASTEXITCODE"
+        Write-Host ""
+        Write-Host "You can try to repair the installation by running repair_install.bat"
+        Write-Host "from the installation directory: $PSScriptRoot"
         Exit 1
     }
 } else {
-    Write-Host "WARNING: offline_packages directory not found. This installation requires internet connection."
+    Write-Host "WARNING: offline_packages directory not found at: $OfflinePackagesDir"
+    Write-Host "This installation requires internet connection."
     Write-Host "Installing from PyPI..."
     
     if ($UsePythonModule) {
         & $VenvPython -m pip install --upgrade pip
-        & $VenvPython -m pip install -r requirements.txt
+        & $VenvPython -m pip install -r $RequirementsFile
     } else {
         & $PipExecutable install --upgrade pip
-        & $PipExecutable install -r requirements.txt
+        & $PipExecutable install -r $RequirementsFile
+    }
+    
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "ERROR: Failed to install dependencies from PyPI."
+        Exit 1
     }
 }
 
+Write-Host "Merging component database..."
+if (Test-Path "merge_component_database.py") {
+    & $VenvPython merge_component_database.py
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "Component database merged successfully."
+    } else {
+        Write-Host "Warning: Component database merge had issues (this is not critical)."
+    }
+} else {
+    Write-Host "merge_component_database.py not found, skipping database merge."
+}
+
+Write-Host ""
 Write-Host "Installation script finished successfully."
 Write-Host "You can launch the app from the Start Menu shortcut."
 

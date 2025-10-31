@@ -141,7 +141,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                         input_path = parts[0]
                         multiplier = potential_multiplier
                     elif potential_multiplier <= 0:
-                        print(f"⚠️ Множитель должен быть положительным числом: {input_spec}", file=sys.stderr)
+                        print(f" Множитель должен быть положительным числом: {input_spec}", file=sys.stderr)
                         # Оставляем multiplier = 1 и input_path = input_spec
                 except ValueError:
                     # Последняя часть не число - это просто часть пути (например, C:\path)
@@ -165,7 +165,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 if multiplier > 1:
                     print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             except Exception as exc:
-                print(f"⚠️ Не удалось прочитать TXT '{input_path}': {exc}", file=sys.stderr)
+                print(f" Не удалось прочитать TXT '{input_path}': {exc}", file=sys.stderr)
         
         # DOCX parsing
         elif ext in [".doc", ".docx"]:
@@ -184,7 +184,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 if multiplier > 1:
                     print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             except Exception as exc:
-                print(f"⚠️ Не удалось прочитать DOCX '{input_path}': {exc}", file=sys.stderr)
+                print(f" Не удалось прочитать DOCX '{input_path}': {exc}", file=sys.stderr)
         
         # Excel parsing
         elif ext in [".xlsx", ".xls"]:
@@ -248,7 +248,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                             dfi = multiply_quantities(dfi, multiplier)
                             all_rows.append(dfi)
                         except Exception as exc:
-                            print(f"⚠️ Не удалось прочитать лист '{sh}' из '{input_path}': {exc}", file=sys.stderr)
+                            print(f" Не удалось прочитать лист '{sh}' из '{input_path}': {exc}", file=sys.stderr)
                 
                 elif sheet is not None:
                     # Пользователь указал конкретный лист через --sheet
@@ -317,7 +317,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                     print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             
             except Exception as exc:
-                print(f"⚠️ Не удалось прочитать Excel '{input_path}': {exc}", file=sys.stderr)
+                print(f" Не удалось прочитать Excel '{input_path}': {exc}", file=sys.stderr)
                 raise SystemExit(f"Failed to read Excel '{input_path}': {exc}")
     
     if not all_rows:
@@ -346,74 +346,12 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
     return df
 
 
-def merge_podbors_with_same_description(df: pd.DataFrame, desc_col: str, ref_col: str, qty_col: str) -> pd.DataFrame:
-    """
-    Объединяет подборы/замены с одинаковым описанием но разными source_file
-    
-    Пример:
-        Вход:
-            Р1-12-0,1-1 кОм | 1 | Plata_preobrz.docx, (п/б R48*)
-            Р1-12-0,1-1 кОм | 1 | Plata_preobrz.docx, (п/б R49*)
-        Выход:
-            Р1-12-0,1-1 кОм | 2 | Plata_preobrz.docx, (п/б R48*), (п/б R49*)
-    
-    Args:
-        df: DataFrame после агрегации
-        desc_col: Колонка с описанием
-        ref_col: Колонка с reference
-        qty_col: Колонка с количеством
-        
-    Returns:
-        DataFrame с объединенными подборами
-    """
-    if df.empty or 'source_file' not in df.columns or desc_col not in df.columns:
-        return df
-    
-    # Находим строки с пометками (п/б ...) или (зам ...)
-    podbor_mask = df['source_file'].astype(str).str.contains(r'\((п/б|зам)\s+[^)]+\)', regex=True, na=False)
-    
-    if not podbor_mask.any():
-        return df  # Нет подборов
-    
-    # Разделяем на подборы и обычные строки
-    df_podbors = df[podbor_mask].copy()
-    df_regular = df[~podbor_mask].copy()
-    
-    # Группируем подборы по описанию
-    group_cols = [desc_col]
-    agg_dict = {}
-    
-    # Суммируем количество
-    if qty_col and qty_col in df_podbors.columns:
-        agg_dict[qty_col] = 'sum'
-    
-    # Объединяем source_file с использованием smart_aggregate_source_file
-    agg_dict['source_file'] = lambda x: smart_aggregate_source_file(x)
-    
-    # Объединяем reference (если есть)
-    if ref_col and ref_col in df_podbors.columns:
-        agg_dict[ref_col] = lambda x: ', '.join(str(v) for v in x if pd.notna(v) and str(v).strip())
-    
-    # Берем первое значение для остальных колонок
-    for col in df_podbors.columns:
-        if col not in group_cols and col not in agg_dict:
-            agg_dict[col] = 'first'
-    
-    # Агрегируем подборы
-    df_podbors_merged = df_podbors.groupby(group_cols, as_index=False, dropna=False).agg(agg_dict)
-    
-    # Объединяем обратно
-    result = pd.concat([df_regular, df_podbors_merged], ignore_index=True)
-    
-    return result
-
-
 def smart_aggregate_source_file(source_files) -> str:
     """
     Умная агрегация source_file для компактного отображения подборов/замен
     
-    Входные данные: ['Plata_preobrz.docx, (п/б R48*)', 'Plata_preobrz.docx, (п/б R49*)']
-    Результат: 'Plata_preobrz.docx, (п/б R48*), (п/б R49*)'
+    Входные данные: ['Plata_preobrz.docx', 'Plata_preobrz.docx (п/б R48*)', 'Plata_preobrz.docx (п/б R49*)']
+    Результат: 'Plata_preobrz.docx (п/б R48*), (п/б R49*)'
     
     Args:
         source_files: Серия значений source_file для агрегации
@@ -433,18 +371,18 @@ def smart_aggregate_source_file(source_files) -> str:
     
     for source in sources:
         # Паттерн для извлечения базового файла и пометок
-        # Формат: "filename.ext, (п/б R48*)" или "filename.ext"
-        match = re.match(r'^([^,]+?)(?:,\s*(.+))?$', source)
-        if match:
-            base_file = match.group(1).strip()
-            tag = match.group(2)
-            
+        # Формат: "filename.ext (п/б R48*)" или "filename.ext"
+        # Ищем все пометки типа (п/б ...) или (зам ...)
+        tag_matches = re.findall(r'\((?:п/б|зам)\s+[^)]+\)', source)
+        
+        # Базовый файл - это всё до первой пометки
+        if tag_matches:
+            base_file = source[:source.index(tag_matches[0])].strip()
             base_files.add(base_file)
-            if tag:
-                # Извлекаем все пометки типа (п/б ...) или (зам ...)
-                # Используем (?:...) для non-capturing group, чтобы получить всю строку
-                tag_matches = re.findall(r'\((?:п/б|зам)\s+[^)]+\)', tag)
-                tags.extend(tag_matches)
+            tags.extend(tag_matches)
+        else:
+            # Нет пометок - просто базовый файл
+            base_files.add(source.strip())
     
     # Если только один базовый файл и есть пометки - компактный формат
     if len(base_files) == 1 and tags:
@@ -455,7 +393,7 @@ def smart_aggregate_source_file(source_files) -> str:
             if tag not in seen:
                 unique_tags.append(tag)
                 seen.add(tag)
-        return f"{base_file}, {', '.join(unique_tags)}"
+        return f"{base_file} {', '.join(unique_tags)}"
     
     # Иначе просто объединяем через запятую (стандартная логика)
     return ', '.join(sorted(set(sources)))
@@ -493,6 +431,10 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
         desc_str = re.sub(r'\s*-\s*', ' - ', desc_str)
         # Убираем множественные пробелы (в том числе там, где был ±)
         desc_str = re.sub(r'\s+', ' ', desc_str)
+        # ОСТОРОЖНО! Удаляем производителя ТОЛЬКО если он в конце строки после "ф."
+        # Это решает проблему: "PAT-0+ ф. Mini-Circuits" vs "PAT-0+" -> "PAT-0+"
+        # НО НЕ ТРОГАЕМ другие части описания типа "К10-17в-М1500-100 пФ"
+        desc_str = re.sub(r'\s+ф\.\s*[A-Za-zА-ЯЁа-яё0-9\s\-]+$', '', desc_str)
         # Убираем пробелы в начале и конце
         return desc_str.strip()
     
@@ -538,9 +480,9 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
     if ref_col:
         agg_dict[ref_col] = lambda x: ', '.join(str(v) for v in x if pd.notna(v) and str(v).strip())
     
-    # Если combine_across_files=True, объединяем source_file через ", "
+    # Если combine_across_files=True, объединяем source_file через умную агрегацию
     if combine_across_files and 'source_file' in df.columns:
-        agg_dict['source_file'] = lambda x: smart_aggregate_source_file(x)
+        agg_dict['source_file'] = smart_aggregate_source_file
     
     # Берем первое значение для остальных колонок
     for col in df.columns:
@@ -551,11 +493,6 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
     try:
         df_agg = df.groupby(group_cols, as_index=False, dropna=False).agg(agg_dict)
         
-        # ПОСТОБРАБОТКА: Объединяем подборы/замены с одинаковым описанием
-        # (у них разные source_file с пометками (п/б R48*), (п/б R49*) и т.д.)
-        if 'source_file' in df_agg.columns and desc_col in df_agg.columns:
-            df_agg = merge_podbors_with_same_description(df_agg, desc_col, ref_col, qty_col)
-        
         # Обновляем исходную колонку description нормализованным значением
         if '_normalized_desc_' in df_agg.columns and desc_col in df_agg.columns:
             df_agg[desc_col] = df_agg['_normalized_desc_']
@@ -563,7 +500,7 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
         
         return df_agg
     except Exception as e:
-        print(f"⚠️ Предупреждение: не удалось агрегировать дубликаты: {e}")
+        print(f" Предупреждение: не удалось агрегировать дубликаты: {e}")
         # Удаляем временную колонку даже в случае ошибки
         if '_normalized_desc_' in df.columns:
             df = df.drop(columns=['_normalized_desc_'])
@@ -772,7 +709,7 @@ def interactive_classification(df: pd.DataFrame, desc_col: str, value_col: str, 
     
     skip_interactive = False
     if auto_prompted:
-        print(f"\n⚠️  ВНИМАНИЕ: Обнаружено {len(uncls)} нераспределённых элементов!")
+        print(f"\nВНИМАНИЕ: Обнаружено {len(uncls)} нераспределённых элементов!")
         print(f"Для повышения точности рекомендуется интерактивная классификация.")
         response = input(f"\nЗапустить интерактивный режим для классификации? (y/n, Enter=y): ").strip().lower()
         if response and response not in ['y', 'yes', 'д', 'да', '']:
@@ -914,7 +851,7 @@ def parse_exclude_items(exclude_file_path: str) -> list:
     exclude_items = []
     
     if not os.path.exists(exclude_file_path):
-        print(f"⚠️ Файл исключений не найден: {exclude_file_path}")
+        print(f" Файл исключений не найден: {exclude_file_path}")
         return exclude_items
     
     try:
@@ -933,13 +870,13 @@ def parse_exclude_items(exclude_file_path: str) -> list:
                             qty = int(parts[1].strip())
                             exclude_items.append((name, qty))
                         except ValueError:
-                            print(f"⚠️ Ошибка в строке {line_num}: неверное количество '{parts[1].strip()}'")
+                            print(f" Ошибка в строке {line_num}: неверное количество '{parts[1].strip()}'")
                     else:
-                        print(f"⚠️ Ошибка в строке {line_num}: неверный формат")
+                        print(f" Ошибка в строке {line_num}: неверный формат")
                 else:
-                    print(f"⚠️ Ошибка в строке {line_num}: отсутствует запятая")
+                    print(f" Ошибка в строке {line_num}: отсутствует запятая")
     except Exception as e:
-        print(f"⚠️ Ошибка при чтении файла исключений: {e}")
+        print(f" Ошибка при чтении файла исключений: {e}")
     
     return exclude_items
 
@@ -960,13 +897,13 @@ def apply_exclusions(df: pd.DataFrame, exclude_items: list, desc_col: str) -> pd
         return df
     
     if desc_col not in df.columns:
-        print(f"⚠️ Колонка '{desc_col}' не найдена, исключения не применены")
+        print(f" Колонка '{desc_col}' не найдена, исключения не применены")
         return df
     
     # Найти колонку количества
     qty_col = find_column(df, ['qty', '_merged_qty_', 'Количество', 'количество', 'Кол-во', 'кол-во'])
     if not qty_col or qty_col not in df.columns:
-        print("⚠️ Колонка количества не найдена, исключения не могут быть применены")
+        print(" Колонка количества не найдена, исключения не могут быть применены")
         return df
     
     excluded_count = 0
@@ -978,7 +915,7 @@ def apply_exclusions(df: pd.DataFrame, exclude_items: list, desc_col: str) -> pd
         matching_indices = df[mask].index.tolist()
         
         if not matching_indices:
-            print(f"⚠️ Элемент '{exclude_name}' не найден в BOM")
+            print(f" Элемент '{exclude_name}' не найден в BOM")
             continue
         
         remaining_exclude_qty = exclude_qty
