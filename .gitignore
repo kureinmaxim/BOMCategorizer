@@ -48,6 +48,9 @@ component_database.json
 component_database.xlsx
 *.backup
 
+# Keep template database for GitHub
+!component_database_template.json
+
 # Temporary files
 temp_installer/
 temp_for_classification.xlsx

@@ -25,7 +25,7 @@ FILES_TO_COPY = [
     "app.py",
     "split_bom.py",
     "config.json",
-    "component_database.json",  # База данных компонентов (обновляется автоматически)
+    "component_database_template.json",  # Шаблон БД (пустая база для новых установок)
     "merge_component_database.py",  # Скрипт слияния баз данных при обновлении
     "requirements_install.txt",  # Используем облегченную версию без тестовых зависимостей
     "rules.json",
@@ -85,6 +85,13 @@ def copy_files():
     if os.path.exists(req_install):
         shutil.move(req_install, req_final)
         print(f"  [OK] requirements_install.txt -> requirements.txt")
+    
+    # Переименовываем шаблон БД в component_database.json для инсталлятора
+    db_template = os.path.join(TEMP_DIR, "component_database_template.json")
+    db_final = os.path.join(TEMP_DIR, "component_database.json")
+    if os.path.exists(db_template):
+        shutil.copy2(db_template, db_final)
+        print(f"  [OK] component_database_template.json -> component_database.json (пустая БД)")
     
     for directory in DIRECTORIES_TO_COPY:
         if os.path.exists(directory):

@@ -1,0 +1,28 @@
+{
+  "metadata": {
+    "version": "1.0.0",
+    "created": "2025-11-07",
+    "last_updated": "2025-11-07",
+    "total_components": 0,
+    "description": "Template database for BOM Categorizer - empty database for new installations"
+  },
+  "categories": {
+    "resistors": "Резисторы",
+    "capacitors": "Конденсаторы",
+    "inductors": "Дроссели/Катушки индуктивности",
+    "ics": "Микросхемы",
+    "semiconductors": "Полупроводники (диоды, транзисторы)",
+    "connectors": "Разъемы",
+    "dev_boards": "Отладочные платы и модули",
+    "optics": "Оптические компоненты",
+    "rf_modules": "СВЧ модули",
+    "cables": "Кабели и провода",
+    "power_modules": "Модули питания",
+    "our_developments": "Наши разработки",
+    "others": "Другие компоненты",
+    "unclassified": "Неклассифицированные",
+    "non_bom": "Не ИВП (служебная информация)"
+  },
+  "components": {}
+}
+
