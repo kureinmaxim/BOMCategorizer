@@ -22,7 +22,9 @@ from .component_database import (
     get_database_stats,
     export_database_to_excel,
     import_database_from_excel,
-    backup_database
+    backup_database,
+    is_first_run,
+    initialize_database_from_template
 )
 
 # Исправление кодировки для корректного вывода русских символов
@@ -127,6 +129,9 @@ class BOMCategorizerApp(tk.Tk):
         # Блокируем интерфейс если требуется PIN
         if self.require_pin:
             self.lock_interface()
+        
+        # Проверяем первый запуск и предлагаем импорт БД
+        self.after(500, self.check_first_run_and_offer_import)
 
     def create_widgets(self):
         """Создает все виджеты интерфейса"""
@@ -1986,6 +1991,131 @@ class BOMCategorizerApp(tk.Tk):
         # Обработка Enter и Escape
         pin_entry.bind("<Return>", lambda e: check_pin())
         dialog.bind("<Escape>", lambda e: dialog.destroy())
+    
+    def check_first_run_and_offer_import(self):
+        """
+        Проверяет первый запуск и предлагает импортировать существующую БД
+        """
+        # Инициализируем БД из шаблона если её еще нет
+        initialize_database_from_template()
+        
+        # Проверяем, является ли это первым запуском
+        if not is_first_run():
+            return  # Не первый запуск, ничего не делаем
+        
+        # Показываем диалог импорта
+        dialog = tk.Toplevel(self)
+        dialog.title("База данных компонентов")
+        dialog.geometry("500x350")
+        dialog.resizable(False, False)
+        dialog.grab_set()
+        
+        # Центрируем окно
+        dialog.transient(self)
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Основной фрейм с отступами
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Заголовок
+        title_label = ttk.Label(main_frame, 
+                                text="🗄️ База данных компонентов", 
+                                font=("Arial", 14, "bold"))
+        title_label.pack(pady=(0, 15))
+        
+        # Разделитель
+        ttk.Separator(main_frame, orient='horizontal').pack(fill=tk.X, pady=(0, 15))
+        
+        # Основной текст
+        info_text = """У вас уже есть база данных компонентов?
+
+Вы можете импортировать её для автоматической
+классификации компонентов.
+
+Поддерживаемые форматы:
+  • JSON (component_database.json)
+  • Excel (component_database.xlsx)
+
+Если базы нет - вы можете начать с нуля.
+База будет пополняться автоматически по мере работы."""
+        
+        info_label = ttk.Label(main_frame, text=info_text, 
+                              font=("Arial", 10), justify=tk.LEFT)
+        info_label.pack(pady=(0, 20))
+        
+        # Фрейм для кнопок
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=(10, 0))
+        
+        def on_import():
+            """Обработчик импорта БД"""
+            dialog.destroy()
+            
+            # Выбираем файл для импорта
+            filetypes = [
+                ("Все поддерживаемые", "*.json;*.xlsx"),
+                ("JSON файлы", "*.json"),
+                ("Excel файлы", "*.xlsx"),
+                ("Все файлы", "*.*")
+            ]
+            
+            file_path = filedialog.askopenfilename(
+                title="Выберите файл базы данных",
+                filetypes=filetypes
+            )
+            
+            if not file_path:
+                return
+            
+            try:
+                # Импортируем БД
+                if file_path.endswith('.json'):
+                    # Импорт JSON
+                    import shutil
+                    db_path = get_database_path()
+                    shutil.copy2(file_path, db_path)
+                    stats = get_database_stats()
+                    imported_count = stats.get('total_components', 0)
+                elif file_path.endswith('.xlsx'):
+                    # Импорт Excel
+                    imported_count = import_database_from_excel(file_path, replace=True)
+                else:
+                    messagebox.showerror("Ошибка", "Неподдерживаемый формат файла")
+                    return
+                
+                # Показываем результат
+                messagebox.showinfo(
+                    "Импорт завершен",
+                    f"✅ Успешно импортировано компонентов: {imported_count}\n\n"
+                    f"База данных: {get_database_path()}"
+                )
+            except Exception as e:
+                messagebox.showerror(
+                    "Ошибка импорта",
+                    f"Не удалось импортировать базу данных:\n{str(e)}"
+                )
+        
+        def on_start_fresh():
+            """Обработчик начала с нуля"""
+            dialog.destroy()
+            # БД уже инициализирована из шаблона, ничего делать не нужно
+        
+        # Кнопка импорта
+        import_btn = ttk.Button(button_frame, text="📁 Импортировать", 
+                               command=on_import, width=20)
+        import_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Кнопка "Начать с нуля"
+        fresh_btn = ttk.Button(button_frame, text="✨ Начать с нуля", 
+                              command=on_start_fresh, width=20)
+        fresh_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Обработка Escape
+        dialog.bind("<Escape>", lambda e: on_start_fresh())
 
 
 def launch_gui():

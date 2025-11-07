@@ -483,3 +483,64 @@ def import_database_from_excel(input_path: str, replace: bool = False) -> int:
     save_component_database(current_db)
     
     return imported_count
+
+
+def is_first_run() -> bool:
+    """
+    Проверяет, является ли это первым запуском (пустая или почти пустая БД)
+    
+    Returns:
+        True если это первый запуск (БД пустая или содержит <= 10 компонентов)
+    """
+    db_path = get_database_path()
+    
+    # Если файла БД нет - это первый запуск
+    if not os.path.exists(db_path):
+        return True
+    
+    # Загружаем БД и проверяем количество компонентов
+    try:
+        components = load_component_database()
+        # Считаем первым запуском если компонентов 10 или меньше
+        return len(components) <= 10
+    except Exception:
+        return True
+
+
+def initialize_database_from_template():
+    """
+    Инициализирует БД из шаблона при первом запуске
+    Копирует component_database_template.json в рабочую БД
+    """
+    db_path = get_database_path()
+    
+    # Если БД уже есть - ничего не делаем
+    if os.path.exists(db_path):
+        return
+    
+    # Ищем шаблон БД
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    parent_dir = os.path.dirname(base_dir)
+    template_path = os.path.join(parent_dir, "component_database_template.json")
+    
+    if os.path.exists(template_path):
+        # Копируем шаблон
+        import shutil
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        shutil.copy2(template_path, db_path)
+        print(f"✅ Инициализирована БД из шаблона: {db_path}")
+    else:
+        # Если шаблона нет - создаем пустую БД
+        structured_db = {
+            "metadata": {
+                "version": "1.0.0",
+                "created": datetime.now().strftime("%Y-%m-%d"),
+                "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                "total_components": 0,
+                "description": "База данных компонентов для BOM классификатора"
+            },
+            "categories": CATEGORY_NAMES,
+            "components": {}
+        }
+        _save_structured_database(structured_db)
+        print(f"✅ Создана пустая БД: {db_path}")
