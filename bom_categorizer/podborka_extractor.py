@@ -74,21 +74,23 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
             has_tu_in_note = bool(current_note and ('ТУ' in current_note or re.search(r'[А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ', current_note)))
             has_commas_in_note = bool(current_note and (',' in current_note or ';' in current_note))
             is_short_note = bool(current_note and len(current_note) < 50)
+            # Проверяем есть ли в note номиналы (Ом, кОм, мкФ и т.д.) - признак подбора, а не производителя
+            has_nominal_in_note = bool(current_note and re.search(r'\d+\s*(?:Ом|ком|кОм|мком|мкОм|мкФ|пФ|нФ|мГн|мкГн)', current_note, re.IGNORECASE))
             
-            # Если в note есть список артикулов (запятые + длина > 30), это подборы - очищаем
-            looks_like_podbor_list = has_commas_in_note and len(current_note) > 30
+            # Если в note есть список артикулов (запятые + длина > 30) или номиналы, это подборы - очищаем
+            looks_like_podbor_list = (has_commas_in_note and len(current_note) > 30) or has_nominal_in_note
             
             if has_tu_in_note:
                 # В note есть ТУ-код - сохраняем его
                 pass
-            elif is_replacement and current_note:
-                # Это замена и в note есть производитель - сохраняем
+            elif is_replacement and current_note and not has_nominal_in_note:
+                # Это замена и в note есть производитель (НЕ номинал!) - сохраняем
                 pass
-            elif is_short_note and not has_commas_in_note:
-                # В note производитель (короткая строка без разделителей) - сохраняем
+            elif is_short_note and not has_commas_in_note and not has_nominal_in_note:
+                # В note производитель (короткая строка без разделителей и номиналов) - сохраняем
                 pass
             elif looks_like_podbor_list:
-                # В note список подборов - очищаем!
+                # В note список подборов или номиналы - очищаем!
                 row_dict['note'] = ''
             else:
                 # Другие случаи - очищаем для безопасности
@@ -126,7 +128,34 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
         
         if is_replacement:
             # Обрабатываем ЗАМЕНЫ (альтернативные компоненты)
-            extracted_items = _extract_replacements(note, row)
+            # ВАЖНО: Сначала ищем подборы номиналов ДО текста замены
+            # Пример: "845 Ом, допускается замена перемычкой"
+            # Результат: [("845 Ом", подбор), ("Перемычка", замена)]
+            podbor_items = _extract_podbors_before_replacement(note, row)
+            replacement_items = _extract_replacements(note, row)
+            
+            # Добавляем подборы с тегом (подбор)
+            if podbor_items:
+                print(f"  [ПОДБОРЫ] {ref}: найдено {len(podbor_items)} номиналов (подбор)")
+                for item in podbor_items:
+                    print(f"    -> {item}")
+                    new_row = row.to_dict().copy()
+                    new_row['description'] = item
+                    new_row['reference'] = f"{ref} (п/б)"
+                    
+                    # Копируем ТУ/производителя
+                    _copy_tu_and_manufacturer(new_row, row)
+                    
+                    # Помечаем источник
+                    if 'source_file' in new_row and pd.notna(new_row['source_file']):
+                        source = str(new_row['source_file'])
+                        source = re.sub(r'\s*,?\s*\((замена|п/б|подбор).*?\)', '', source).strip()
+                        new_row['source_file'] = f"{source} (п/б {ref})"
+                    
+                    new_rows.append(new_row)
+            
+            # Теперь обрабатываем замены
+            extracted_items = replacement_items
             tag = '(замена)'
         else:
             # Обрабатываем ПОДБОРЫ (номиналы)
@@ -172,7 +201,9 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
                 item_desc_clean = item_desc_clean.rstrip('.')
                 
                 new_row['description'] = item_desc_clean
-                new_row['reference'] = ''  # Подборы/замены не имеют позиционного обозначения
+                # Устанавливаем reference с правильным тегом: (зам) для замен, (п/б) для подборов
+                ref_tag = '(зам)' if is_replacement else '(п/б)'
+                new_row['reference'] = f"{ref} {ref_tag}"
                 
                 # ВАЖНО: Сначала очищаем все поля с примечаниями и ТУ
                 # Потом копируем только реальный ТУ (если он есть)
@@ -270,6 +301,96 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
     return result_df
 
 
+def _extract_podbors_before_replacement(note: str, row: dict) -> list:
+    """
+    Извлекает подборы номиналов ДО текста замены
+    
+    Пример: "845 Ом, допускается замена перемычкой"
+    Результат: ["Р1-12-0,1-845 Ом ±2%-Т"]
+    
+    Args:
+        note: Текст примечания
+        row: Строка данных компонента
+        
+    Returns:
+        Список полных описаний с новыми номиналами
+    """
+    podbors = []
+    
+    # Ищем текст ДО слова "замена"
+    # Паттерн: все что до "замена", "допуск", "допускается"
+    before_replacement_pattern = r'^(.+?)(?:,?\s*допуск|,?\s*замена)'
+    match = re.search(before_replacement_pattern, note, re.IGNORECASE)
+    
+    if not match:
+        return podbors
+    
+    text_before_replacement = match.group(1).strip()
+    
+    # Если это пустая строка или слишком короткая - пропускаем
+    if not text_before_replacement or len(text_before_replacement) < 3:
+        return podbors
+    
+    # Используем основную функцию извлечения подборов для этого текста
+    # Передаем только часть примечания ДО замены
+    podbors = _extract_podbors(text_before_replacement, row)
+    
+    return podbors
+
+
+def _copy_tu_and_manufacturer(new_row: dict, original_row: dict):
+    """
+    Копирует ТУ и производителя из оригинальной строки в новую
+    
+    Args:
+        new_row: Новая строка (для подбора/замены)
+        original_row: Оригинальная строка
+    """
+    # Очищаем все поля с примечаниями
+    new_row['note'] = ''
+    new_row['original_note'] = ''
+    if 'Примечание' in new_row:
+        new_row['Примечание'] = ''
+    if 'ТУ' in new_row:
+        new_row['ТУ'] = ''
+    if 'tu' in new_row:
+        new_row['tu'] = ''
+    
+    # Извлекаем производителя из description оригинала
+    orig_desc = str(original_row.get('description', '')).strip() if pd.notna(original_row.get('description')) else ''
+    manufacturer_from_desc = ''
+    if orig_desc:
+        mfr_match = re.search(r'ф\.\s*([A-Za-zА-ЯЁа-яё0-9\s\-]+)', orig_desc)
+        if mfr_match:
+            manufacturer_from_desc = mfr_match.group(1).strip()
+    
+    # Копируем ТУ/производителя из оригинала
+    if 'tu' in original_row.index and pd.notna(original_row.get('tu')):
+        tu_val = str(original_row.get('tu')).strip()
+        if 'ту' in tu_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', tu_val):
+            new_row['tu'] = tu_val
+    elif 'ТУ' in original_row.index and pd.notna(original_row.get('ТУ')):
+        tu_val = str(original_row.get('ТУ')).strip()
+        if 'ту' in tu_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', tu_val):
+            new_row['ТУ'] = tu_val
+    elif 'note' in original_row.index and pd.notna(original_row.get('note')):
+        note_val = str(original_row.get('note')).strip()
+        if 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
+            new_row['note'] = note_val
+        elif manufacturer_from_desc:
+            new_row['note'] = manufacturer_from_desc
+        elif len(note_val) > 0 and len(note_val) < 100 and not (',' in note_val or ';' in note_val):
+            new_row['note'] = note_val
+    elif 'original_note' in original_row.index and pd.notna(original_row.get('original_note')):
+        note_val = str(original_row.get('original_note')).strip()
+        if 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
+            new_row['note'] = note_val
+        elif manufacturer_from_desc:
+            new_row['note'] = manufacturer_from_desc
+    elif manufacturer_from_desc:
+        new_row['note'] = manufacturer_from_desc
+
+
 def _extract_replacements(note: str, row: dict) -> list:
     """
     Извлекает замены из примечания с производителями
@@ -289,8 +410,8 @@ def _extract_replacements(note: str, row: dict) -> list:
     replacements = []
     
     # Ищем текст после различных вариантов "замена"
-    # Варианты: "замена на", "допускается замена на", "Доп. замена:"
-    pattern = r'(?:замена\s+на|допуск\.\s*замена\s+на|допускается\s+замена\s+на|доп\.\s*замена:)\s+(.+?)(?:\.\s*$|$)'
+    # Варианты: "замена на", "допускается замена", "замена перемычкой", "Доп. замена:"
+    pattern = r'(?:замена\s+на|допуск\.\s*замена\s+на|допускается\s+замена\s+(?:на\s+)?|замена\s+|доп\.\s*замена:)\s*(.+?)(?:\.\s*$|$)'
     match = re.search(pattern, note, re.IGNORECASE | re.DOTALL)
     
     if not match:
@@ -298,6 +419,12 @@ def _extract_replacements(note: str, row: dict) -> list:
     
     replacements_text = match.group(1).strip()
     main_desc = str(row.get('description', '')).strip()
+    
+    # Специальная обработка для перемычки (простой проводник)
+    # "перемычкой" → "Перемычка"
+    if re.match(r'^перемычк[ао][йюми]?\s*$', replacements_text, re.IGNORECASE):
+        replacements.append(("Перемычка", ""))
+        return replacements
     
     # Нормализуем переносы строк: объединяем многострочные описания
     # "Розетка D-SUB\np/n: 09 67 025 4715, ф. Harting" → "Розетка D-SUB p/n: 09 67 025 4715, ф. Harting"

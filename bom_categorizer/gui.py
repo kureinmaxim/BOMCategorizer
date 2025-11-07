@@ -117,7 +117,7 @@ class BOMCategorizerApp(tk.Tk):
         # PIN protection
         self.unlocked = False
         self.require_pin = self.cfg.get("security", {}).get("require_pin", False)
-        self.correct_pin = self.cfg.get("security", {}).get("pin", "5421")
+        self.correct_pin = self.cfg.get("security", {}).get("pin", "1234")
         
         # Список виджетов для блокировки/разблокировки
         self.lockable_widgets = []

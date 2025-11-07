@@ -494,7 +494,14 @@ def parse_docx(path: str) -> pd.DataFrame:
             
             # Добавить ТОЛЬКО ТУ из заголовка группы в note (НЕ тип компонента!)
             # Тип компонента из заголовка может быть неточным и перевесить правильную классификацию
-            if has_podbor_in_note and effective_group_tu and should_use_group_tu and not is_replacement_note:
+            # ПРИОРИТЕТ 1: Смешанные подборы+замены (например, "845 Ом, допускается замена перемычкой")
+            if has_podbor_in_note and is_replacement_note and effective_group_tu and should_use_group_tu:
+                # Ячейка примечания содержит И подборы И замены - используем групповой ТУ
+                # Примечание остается в original_note для последующего извлечения подборов и замен
+                note = effective_group_tu
+                if manufacturer_in_name:
+                    note = note + ' | ' + manufacturer_in_name
+            elif has_podbor_in_note and effective_group_tu and should_use_group_tu and not is_replacement_note:
                 # Ячейка примечания содержит подборы - используем ТУ из заголовка для note
                 # Подборы остаются в original_note для последующего извлечения
                 note = effective_group_tu
@@ -505,9 +512,14 @@ def parse_docx(path: str) -> pd.DataFrame:
                 # (например, для PAT компонентов нет группового заголовка)
                 # Используем производитель из наименования
                 note = manufacturer_in_name
-            elif is_replacement_note and manufacturer_in_name:
-                # Ячейка примечания содержит замены - используем производитель из наименования для note
+            elif is_replacement_note and effective_group_tu and should_use_group_tu:
+                # Ячейка примечания содержит замены - используем групповой ТУ для note
                 # Примечание о замене остается в original_note для последующего извлечения
+                note = effective_group_tu
+                if manufacturer_in_name:
+                    note = note + ' | ' + manufacturer_in_name
+            elif is_replacement_note and manufacturer_in_name:
+                # Ячейка примечания содержит замены, но нет ТУ - используем производитель из наименования
                 note = manufacturer_in_name
             elif effective_group_tu and manufacturer_in_name and should_use_group_tu:
                 # Есть и ТУ из заголовка, и производитель из наименования
