@@ -183,8 +183,58 @@ if (Test-Path "merge_component_database.py") {
 }
 
 Write-Host ""
-Write-Host "Installation script finished successfully."
+Write-Host "Creating installation marker..."
+# Создаем маркерный файл для определения установленной версии
+$MarkerFile = Join-Path $PSScriptRoot ".installed"
+"This file indicates that the application is installed" | Out-File -FilePath $MarkerFile -Encoding UTF8
+Write-Host "Installation marker created: $MarkerFile"
+
+Write-Host ""
+Write-Host "Migrating user data to persistent location..."
+# Определяем папку пользовательских данных
+$UserDataDir = Join-Path $env:APPDATA "BOMCategorizer\Data"
+if (!(Test-Path $UserDataDir)) {
+    New-Item -ItemType Directory -Path $UserDataDir -Force | Out-Null
+    Write-Host "Created user data directory: $UserDataDir"
+}
+
+# Мигрируем базу данных если она есть в старом расположении
+$OldDatabase = Join-Path $PSScriptRoot "component_database.json"
+$NewDatabase = Join-Path $UserDataDir "component_database.json"
+
+if ((Test-Path $OldDatabase) -and !(Test-Path $NewDatabase)) {
+    Write-Host "Migrating component database to user data directory..."
+    Copy-Item $OldDatabase $NewDatabase -Force
+    Write-Host "Database migrated to: $NewDatabase"
+} elseif (Test-Path $OldDatabase) {
+    Write-Host "Component database already exists in user data directory."
+}
+
+# Создаем папку для резервных копий
+$BackupDir = Join-Path $UserDataDir "database_backups"
+if (!(Test-Path $BackupDir)) {
+    New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+    Write-Host "Created backup directory: $BackupDir"
+}
+
+Write-Host ""
+Write-Host "============================================================================"
+Write-Host "Installation script finished successfully!"
+Write-Host "============================================================================"
+Write-Host ""
+Write-Host "Important information:"
+Write-Host "  - Application installed in: $PSScriptRoot"
+Write-Host "  - User data stored in:      $UserDataDir"
+Write-Host "  - Database location:        $NewDatabase"
+Write-Host "  - Backups location:         $BackupDir"
+Write-Host ""
+Write-Host "Your component database and settings will be preserved when:"
+Write-Host "  - Updating the application"
+Write-Host "  - Uninstalling and reinstalling"
+Write-Host ""
 Write-Host "You can launch the app from the Start Menu shortcut."
+Write-Host "============================================================================"
+Write-Host ""
 
 Stop-Transcript
 

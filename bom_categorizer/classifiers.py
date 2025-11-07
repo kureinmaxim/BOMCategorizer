@@ -202,8 +202,8 @@ def classify_row(
             return "capacitors"
     
     # Микросхемы (но НЕ оптические модули и модули связи с "ic" в названии производителя!)
-    # Аттенюаторы - это микросхемы!
-    if has_any(text_blob, ["микросхем", "интегральная схема", "аттенюатор", "attenuator"]):
+    # ВАЖНО: Аттенюаторы теперь НЕ классифицируются как микросхемы - они идут в СВЧ модули!
+    if has_any(text_blob, ["микросхем", "интегральная схема"]):
         return "ics"
     # Производители микросхем: Analog Devices (HMC), Mini-Circuits (РАТ, PE)
     # ВАЖНО: "pat - " с пробелом для нормализованных названий типа "PAT - 15+"
@@ -278,17 +278,20 @@ def classify_row(
         if not has_any(text_blob, ["fc/", "sc/", "lc/", "оптическ", "optical", "fiber"]):
             return "connectors"
     
-    # СВЧ компоненты (аттенюаторы, делители, ответвители) от специфичных производителей
-    if has_any(text_blob, ["аттенюатор", "attenuator", "делитель мощности", "делитель  мощности", "power divider", 
+    # СВЧ компоненты (аттенюаторы, делители, ответвители)
+    # ВАЖНО: ВСЕ аттенюаторы (не оптические) попадают в СВЧ модули!
+    if has_any(text_blob, ["аттенюатор", "attenuator"]):
+        # ВАЖНО: Только НЕ-оптические компоненты!
+        if not has_any(text_blob, ["оптич", "optical", "fc/apc", "fc/upc", "fiber"]):
+            return "rf_modules"
+    
+    # Другие СВЧ компоненты от специфичных производителей
+    if has_any(text_blob, ["делитель мощности", "делитель  мощности", "power divider", 
                            "ответвитель направленный", "ограничитель", "линия задержек"]):
         # ВАЖНО: Только НЕ-оптические компоненты!
         if not has_any(text_blob, ["оптич", "optical", "fc/apc", "fc/upc", "fiber"]):
             if has_any(text_blob, ["qualwave", "mini-circuits", "api technologies", "weinschel", "a-info", "gigabaudics", 
                                    "quantic pmi", "quantic", "pmi", "jfw", "umcc"]):
-                return "rf_modules"
-            # Аттенюаторы без явного производителя также идут в rf_modules (СВЧ компоненты)
-            # НО! Только если есть явные маркеры СВЧ (BW, VAT, ZX76 и т.д.)
-            if has_any(text_blob, ["bw - ", "bw-", " vat - ", "vat-", "zx76", "zx60"]):
                 return "rf_modules"
     
     # Оборудование RITTAL всегда в "Другие"
@@ -435,8 +438,8 @@ def classify_row(
                 if has_any(text_blob, ["оптич", "optical", "fc/apc", "fc/upc", "fiber"]):
                     return "optics"
                 else:
-                    # СВЧ/электрические аттенюаторы -> отладочные платы и модули
-                    return "dev_boards"
+                    # СВЧ/электрические аттенюаторы -> СВЧ модули
+                    return "rf_modules"
             # 5. По умолчанию для A* без явных признаков → dev_boards
             return "dev_boards"
         # Prefix "WS" and "WU" - specific RF module prefixes (check BEFORE "W")

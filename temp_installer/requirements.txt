@@ -1,5 +1,0 @@
-pandas
-openpyxl
-python-docx
-pywin32
-

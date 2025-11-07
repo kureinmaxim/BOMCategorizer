@@ -291,6 +291,10 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                 tu_code = note_tu
             # Если note_tu пустой, но у нас уже есть tu_code из текста - оставляем его
             
+            # ВАЖНО: Для категории "Наши разработки" очищаем ТУ (там не нужны производители)
+            if sheet_name == "Наши разработки":
+                tu_code = ""
+            
             # Определить тип компонента
             comp_type = note_type if note_type else ""
             
@@ -652,8 +656,31 @@ def write_categorized_excel(
             sheets_written += 1
         
         # SOURCES sheet (записываем до SUMMARY)
+        # Очищаем source_file от тегов замен/подборов: (зам D4), (п/б C21*) и т.д.
+        unique_sources = set()
+        for _, r in df.iterrows():
+            source_file = r.get("source_file", "")
+            source_sheet = r.get("source_sheet", "")
+            
+            # Очищаем source_file от тегов в скобках: (зам ...), (п/б ...), (подбор ...)
+            if source_file:
+                # Убираем ВСЕ теги в скобках (может быть несколько: (п/б D3*), (п/б D5*), ...)
+                import re
+                clean_source = source_file
+                # Повторяем пока есть скобки (убираем все теги, даже если их несколько)
+                while '(' in clean_source:
+                    prev = clean_source
+                    clean_source = re.sub(r'\s*\([^)]*\)', '', clean_source)
+                    # Если ничего не изменилось - выходим (защита от бесконечного цикла)
+                    if prev == clean_source:
+                        break
+                clean_source = clean_source.strip().rstrip(',').strip()
+                unique_sources.add((clean_source, source_sheet))
+            else:
+                unique_sources.add((source_file, source_sheet))
+        
         sources = pd.DataFrame(
-            sorted({(r.get("source_file", ""), r.get("source_sheet", "")) for _, r in df.iterrows()}), 
+            sorted(unique_sources), 
             columns=["source_file", "source_sheet"]
         )
         if not sources.empty:

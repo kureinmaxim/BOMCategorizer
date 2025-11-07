@@ -16,7 +16,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import sys
 
-from .component_database import add_component_to_database
+from .component_database import (
+    add_component_to_database, 
+    get_database_path, 
+    get_database_stats,
+    export_database_to_excel,
+    import_database_from_excel,
+    backup_database
+)
 
 # Исправление кодировки для корректного вывода русских символов
 if sys.stdout.encoding != 'utf-8':
@@ -298,29 +305,6 @@ class BOMCategorizerApp(tk.Tk):
         btn_compare.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
         self.lockable_widgets.append(btn_compare)
 
-        # Секция для исключения элементов из BOM
-        row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
-        
-        row += 1
-        ttk.Label(frm, text="Исключение элементов из BOM:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        help_text_exclude = "Элементы будут удалены из входных данных в процессе обработки. Входной файл не изменяется, выходной файл создается уже без исключенных элементов."
-        ttk.Label(frm, text=help_text_exclude, wraplength=700, justify='left').grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="Формат: Название ИВП, количество (по одному на строку). Пример: AD9221AR, 2").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="После ввода элементов нажмите кнопку 'Запустить обработку' выше").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        self.exclude_items_text = tk.Text(frm, height=4, wrap=tk.WORD)
-        self.exclude_items_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
-        self.lockable_widgets.append(self.exclude_items_text)
-        frm.grid_rowconfigure(row, weight=1)
-
         # Секция Лог
         row += 1
         ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
@@ -332,8 +316,64 @@ class BOMCategorizerApp(tk.Tk):
         self.lockable_widgets.append(self.txt)
         frm.grid_rowconfigure(row+1, weight=2)
         
-        # Секция для переноса компонентов в "Не распределено" (внизу)
         row += 2
+        # Секция управления базой данных
+        db_frame = ttk.LabelFrame(frm, text=" 🗄️ Управление базой данных ", padding=10, style='Bold.TLabelframe')
+        db_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+        
+        # Описание секции
+        db_info_text = ("Управляйте базой данных компонентов: просматривайте статистику, создавайте резервные "
+                      "копии, экспортируйте для переноса на другой ПК.")
+        ttk.Label(db_frame, text=db_info_text, wraplength=700, justify='left').pack(fill=tk.X, pady=(0, 10))
+        
+        # Фрейм для кнопок в 3 ряда
+        db_buttons_frame = ttk.Frame(db_frame)
+        db_buttons_frame.pack(fill=tk.X)
+        
+        # Первый ряд кнопок
+        db_row1 = ttk.Frame(db_buttons_frame)
+        db_row1.pack(fill=tk.X, pady=(0, 5))
+        
+        btn_db_stats = ttk.Button(db_row1, text="📊 Статистика", command=self.on_show_db_stats, width=22)
+        btn_db_stats.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
+        self.lockable_widgets.append(btn_db_stats)
+        
+        btn_db_export = ttk.Button(db_row1, text="📤 Экспорт в Excel", command=self.on_export_database, width=22)
+        btn_db_export.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.lockable_widgets.append(btn_db_export)
+        
+        btn_db_backup = ttk.Button(db_row1, text="💾 Резервная копия", command=self.on_backup_database, width=22)
+        btn_db_backup.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
+        self.lockable_widgets.append(btn_db_backup)
+        
+        # Второй ряд кнопок
+        db_row2 = ttk.Frame(db_buttons_frame)
+        db_row2.pack(fill=tk.X, pady=(0, 5))
+        
+        btn_db_import = ttk.Button(db_row2, text="📥 Импорт из Excel", command=self.on_import_database, width=22)
+        btn_db_import.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
+        self.lockable_widgets.append(btn_db_import)
+        
+        btn_db_folder = ttk.Button(db_row2, text="📁 Открыть папку", command=self.on_open_db_folder, width=22)
+        btn_db_folder.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        self.lockable_widgets.append(btn_db_folder)
+        
+        btn_db_replace = ttk.Button(db_row2, text="🔄 Заменить базу данных", command=self.on_replace_database, width=22)
+        btn_db_replace.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
+        self.lockable_widgets.append(btn_db_replace)
+        
+        # Третий ряд - кнопка импорта из выходного файла (НОВОЕ!)
+        db_row3 = ttk.Frame(db_buttons_frame)
+        db_row3.pack(fill=tk.X)
+        
+        btn_db_import_output = ttk.Button(db_row3, text="⬇️ Добавить все из выходного файла", 
+                                          command=self.on_import_from_output, 
+                                          style='Accent.TButton')
+        btn_db_import_output.pack(fill=tk.X, padx=0)
+        self.lockable_widgets.append(btn_db_import_output)
+        
+        # ====== Секция для переноса компонентов в "Не распределено" ======
+        row += 1
         ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
         
         row += 1
@@ -360,16 +400,40 @@ class BOMCategorizerApp(tk.Tk):
         btn7.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
         self.lockable_widgets.append(btn7)
         
+        # ====== Секция для исключения элементов из BOM (ВНИЗУ ИНТЕРФЕЙСА) ======
+        row += 1
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
+        
+        row += 1
+        ttk.Label(frm, text="Исключение элементов из BOM:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        help_text_exclude = "Элементы будут удалены из входных данных в процессе обработки. Входной файл не изменяется, выходной файл создается уже без исключенных элементов."
+        ttk.Label(frm, text=help_text_exclude, wraplength=700, justify='left').grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="Формат: Название ИВП, количество (по одному на строку). Пример: AD9221AR, 2").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        ttk.Label(frm, text="После ввода элементов нажмите кнопку 'Запустить обработку' выше").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
+        
+        row += 1
+        self.exclude_items_text = tk.Text(frm, height=4, wrap=tk.WORD)
+        self.exclude_items_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+        self.lockable_widgets.append(self.exclude_items_text)
+        frm.grid_rowconfigure(row, weight=1)
+        
         # Футер с информацией о разработчике
         self._create_footer()
 
     def _create_footer(self):
-        """Создает футер с информацией о разработчике"""
+        """Создает футер с информацией о разработчике и базе данных"""
         footer = ttk.Frame(self)
         footer.pack(fill=tk.X, side=tk.BOTTOM, padx=10, pady=5)
         
         ttk.Separator(footer, orient='horizontal').pack(fill=tk.X, pady=(0, 5))
         
+        # Первая строка: Разработчик и дата выпуска
         footer_text = ttk.Frame(footer)
         footer_text.pack()
         
@@ -390,6 +454,59 @@ class BOMCategorizerApp(tk.Tk):
         ttk.Label(footer_text, 
                  text=f"Дата выпуска: {self.cfg.get('app_info', {}).get('release_date', 'N/A')}", 
                  font=("Arial", 9)).pack(side=tk.LEFT)
+        
+        # Вторая строка: Информация о базе данных
+        db_info_frame = ttk.Frame(footer)
+        db_info_frame.pack(pady=(3, 0))
+        
+        # Получаем информацию о базе данных
+        try:
+            db_path = get_database_path()
+            db_stats = get_database_stats()
+            
+            # Определяем, откуда загружена БД
+            if "AppData" in db_path or "Roaming" in db_path:
+                location = "Установка (%APPDATA%)"
+                location_color = "#1565C0"  # Синий
+            else:
+                location = "Проект (разработка)"
+                location_color = "#F57C00"  # Оранжевый
+            
+            # Версия БД
+            db_version = db_stats.get("metadata", {}).get("version", "N/A")
+            total_components = db_stats.get("metadata", {}).get("total_components", 0)
+            
+            ttk.Label(db_info_frame, text="🗄️ БД: ", 
+                     font=("Arial", 9)).pack(side=tk.LEFT)
+            
+            ttk.Label(db_info_frame, 
+                     text=f"v{db_version} ({total_components} компонентов)", 
+                     font=("Arial", 9, "bold"),
+                     foreground="#424242").pack(side=tk.LEFT)
+            
+            ttk.Label(db_info_frame, text=" | ", 
+                     font=("Arial", 9)).pack(side=tk.LEFT)
+            
+            ttk.Label(db_info_frame, text="📁 ", 
+                     font=("Arial", 9)).pack(side=tk.LEFT)
+            
+            # Кликабельная метка для открытия папки
+            location_label = tk.Label(db_info_frame, 
+                    text=location, 
+                    font=("Arial", 9, "bold"),
+                    fg=location_color,
+                    cursor="hand2")
+            location_label.pack(side=tk.LEFT)
+            
+            # Привязываем клик к открытию папки
+            location_label.bind("<Button-1>", lambda e: self.on_open_db_folder_from_footer())
+            
+        except Exception as e:
+            # Если не удалось загрузить информацию о БД
+            ttk.Label(db_info_frame, 
+                     text="🗄️ БД: информация недоступна", 
+                     font=("Arial", 9),
+                     foreground="#757575").pack(side=tk.LEFT)
 
     def on_add_files(self):
         """Обработчик кнопки добавления файлов"""
@@ -407,6 +524,7 @@ class BOMCategorizerApp(tk.Tk):
             if f not in self.input_files:
                 self.input_files[f] = 1  # По умолчанию 1 экземпляр
         self.update_listbox()
+        self.update_output_filename()  # Обновляем имя выходного файла
 
     def on_clear_files(self):
         """Обработчик кнопки очистки списка файлов"""
@@ -414,6 +532,7 @@ class BOMCategorizerApp(tk.Tk):
         self.listbox.delete(0, tk.END)
         self.current_file_multiplier.set(1)
         self.selected_file_index = None
+        self.output_xlsx.set("categorized.xlsx")  # Возврат к имени по умолчанию
     
     def update_listbox(self):
         """Обновляет отображение файлов в списке с указанием количества"""
@@ -439,6 +558,35 @@ class BOMCategorizerApp(tk.Tk):
             self.sheet_entry.config(state='disabled')
             self.sheet_spec.set("")
             self.sheets_warning_label.config(foreground='gray')
+    
+    def update_output_filename(self):
+        """
+        Автоматически формирует имя выходного файла на основе входных файлов
+        
+        Логика:
+        - Если один файл: имя_файла_out.xlsx в папке входного файла
+        - Если несколько файлов: out.xlsx в папке первого файла
+        - Если нет файлов: categorized.xlsx (по умолчанию)
+        """
+        if not self.input_files:
+            self.output_xlsx.set("categorized.xlsx")
+            return
+        
+        # Получаем первый файл (по порядку добавления)
+        first_file = list(self.input_files.keys())[0]
+        file_dir = os.path.dirname(first_file)
+        
+        if len(self.input_files) == 1:
+            # Один файл: имя_файла_out.xlsx
+            base_name = os.path.basename(first_file)
+            name_without_ext = os.path.splitext(base_name)[0]
+            output_name = f"{name_without_ext}_out.xlsx"
+            output_path = os.path.join(file_dir, output_name)
+        else:
+            # Несколько файлов: out.xlsx
+            output_path = os.path.join(file_dir, "out.xlsx")
+        
+        self.output_xlsx.set(output_path)
     
     def on_file_selected(self, event):
         """Обработчик выбора файла в списке"""
@@ -812,6 +960,7 @@ class BOMCategorizerApp(tk.Tk):
                     self.input_files[new_file] = count
             
             self.update_listbox()
+            self.update_output_filename()  # Обновляем имя выходного файла после конвертации
             progress_text.insert(tk.END, "\n✓ Список файлов обновлен\n")
         
         ttk.Button(progress_dialog, text="Закрыть", command=progress_dialog.destroy).pack(pady=10)
@@ -1325,6 +1474,462 @@ class BOMCategorizerApp(tk.Tk):
                               f"Разработчик: {self.cfg.get('app_info', {}).get('developer', 'N/A')}")
         else:
             self.show_pin_dialog()
+    
+    # ========== Обработчики управления базой данных ==========
+    
+    def on_show_db_stats(self):
+        """Показать статистику базы данных"""
+        try:
+            stats = get_database_stats()
+            db_path = get_database_path()
+            
+            # Формируем текст статистики
+            metadata = stats.get("metadata", {})
+            categories = stats.get("categories", {})
+            
+            stats_text = f"""📊 СТАТИСТИКА БАЗЫ ДАННЫХ
+
+📁 Расположение:
+{db_path}
+
+ℹ️ Общая информация:
+• Версия БД: {metadata.get('version', 'N/A')}
+• Создана: {metadata.get('created', 'N/A')}
+• Обновлена: {metadata.get('last_updated', 'N/A')}
+• Всего компонентов: {metadata.get('total_components', 0)}
+
+📦 Распределение по категориям:
+"""
+            
+            # Добавляем статистику по категориям
+            if categories:
+                for cat_id, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+                    cat_name = stats.get("category_names", {}).get(cat_id, cat_id)
+                    stats_text += f"• {cat_name}: {count}\n"
+            else:
+                stats_text += "• Нет данных\n"
+            
+            # Создаем диалог
+            dialog = tk.Toplevel(self)
+            dialog.title("Статистика базы данных")
+            dialog.geometry("600x500")
+            dialog.transient(self)
+            dialog.grab_set()
+            
+            # Текстовое поле с прокруткой
+            text_frame = ttk.Frame(dialog)
+            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=("Consolas", 9))
+            scrollbar = ttk.Scrollbar(text_frame, command=text_widget.yview)
+            text_widget.configure(yscrollcommand=scrollbar.set)
+            
+            text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            text_widget.insert("1.0", stats_text)
+            text_widget.configure(state="disabled")
+            
+            # Кнопка закрытия
+            ttk.Button(dialog, text="Закрыть", command=dialog.destroy).pack(pady=(0, 10))
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось загрузить статистику:\n{str(e)}")
+    
+    def on_export_database(self):
+        """Экспорт базы данных в Excel"""
+        try:
+            # Выбор файла для сохранения
+            from datetime import datetime
+            default_name = f"component_database_{datetime.now().strftime('%Y%m%d')}.xlsx"
+            
+            file_path = filedialog.asksaveasfilename(
+                title="Экспорт базы данных",
+                defaultextension=".xlsx",
+                initialfile=default_name,
+                filetypes=[("Excel файлы", "*.xlsx")]
+            )
+            
+            if not file_path:
+                return
+            
+            # Экспортируем
+            export_database_to_excel(file_path)
+            
+            messagebox.showinfo("Успех", 
+                              f"База данных успешно экспортирована!\n\n"
+                              f"Файл: {os.path.basename(file_path)}\n\n"
+                              f"Теперь вы можете:\n"
+                              f"• Отредактировать компоненты в Excel\n"
+                              f"• Перенести на другой ПК\n"
+                              f"• Сохранить как резервную копию")
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось экспортировать базу данных:\n{str(e)}")
+    
+    def on_backup_database(self):
+        """Создать резервную копию базы данных"""
+        try:
+            backup_file = backup_database()
+            
+            messagebox.showinfo("Успех", 
+                              f"Резервная копия создана!\n\n"
+                              f"Файл: {os.path.basename(backup_file)}\n\n"
+                              f"Резервные копии хранятся в папке 'database_backups' "
+                              f"рядом с базой данных.")
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось создать резервную копию:\n{str(e)}")
+    
+    def on_import_database(self):
+        """Импорт базы данных из Excel"""
+        try:
+            # Выбор файла для импорта
+            file_path = filedialog.askopenfilename(
+                title="Импорт базы данных",
+                filetypes=[("Excel файлы", "*.xlsx"), ("Все файлы", "*.*")]
+            )
+            
+            if not file_path:
+                return
+            
+            # Спрашиваем о режиме импорта
+            result = messagebox.askyesnocancel(
+                "Режим импорта",
+                "Выберите режим импорта:\n\n"
+                "• ДА - Объединить с существующей базой (добавить новые)\n"
+                "• НЕТ - Заменить всю базу данных (старые данные удалятся)\n"
+                "• ОТМЕНА - Отменить импорт"
+            )
+            
+            if result is None:  # Отмена
+                return
+            
+            replace_mode = not result  # True если выбрали НЕТ
+            
+            # Автоматическое резервное копирование перед импортом
+            backup_file = backup_database()
+            
+            # Импортируем
+            added_count = import_database_from_excel(file_path, replace=replace_mode)
+            
+            mode_text = "заменена" if replace_mode else "обновлена"
+            messagebox.showinfo("Успех", 
+                              f"База данных успешно {mode_text}!\n\n"
+                              f"Импортировано компонентов: {added_count}\n\n"
+                              f"Резервная копия создана автоматически:\n"
+                              f"{os.path.basename(backup_file)}\n\n"
+                              f"Перезапустите приложение чтобы увидеть\n"
+                              f"актуальные данные в футере.")
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось импортировать базу данных:\n{str(e)}")
+    
+    def on_open_db_folder(self):
+        """Открыть папку с базой данных в проводнике"""
+        try:
+            db_path = get_database_path()
+            folder_path = os.path.dirname(db_path)
+            
+            # Открываем в проводнике Windows
+            if sys.platform == "win32":
+                os.startfile(folder_path)
+            elif sys.platform == "darwin":  # macOS
+                os.system(f'open "{folder_path}"')
+            else:  # Linux
+                os.system(f'xdg-open "{folder_path}"')
+                
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть папку:\n{str(e)}")
+    
+    def on_open_db_folder_from_footer(self):
+        """Открыть папку с базой данных из футера (без сообщений об успехе)"""
+        try:
+            db_path = get_database_path()
+            folder_path = os.path.dirname(db_path)
+            
+            # Открываем в проводнике Windows
+            if sys.platform == "win32":
+                os.startfile(folder_path)
+            elif sys.platform == "darwin":  # macOS
+                os.system(f'open "{folder_path}"')
+            else:  # Linux
+                os.system(f'xdg-open "{folder_path}"')
+                
+        except Exception as e:
+            # Тихо игнорируем ошибки при клике из футера
+            pass
+    
+    def on_replace_database(self):
+        """Заменить текущую базу данных на другую из JSON файла"""
+        try:
+            # Выбор файла базы данных
+            file_path = filedialog.askopenfilename(
+                title="Выберите файл базы данных (component_database.json)",
+                filetypes=[("JSON файлы", "*.json"), ("Все файлы", "*.*")]
+            )
+            
+            if not file_path:
+                return
+            
+            # Проверяем что файл существует и валиден
+            if not os.path.exists(file_path):
+                messagebox.showerror("Ошибка", f"Файл не найден:\n{file_path}")
+                return
+            
+            # Проверяем формат файла
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                # Проверяем что это база данных компонентов
+                if not isinstance(data, dict):
+                    messagebox.showerror("Ошибка", "Неверный формат файла!\n\nОжидается JSON с данными компонентов.")
+                    return
+                
+                # Определяем количество компонентов
+                if "components" in data:
+                    component_count = len(data["components"])
+                elif "metadata" in data or "categories" in data:
+                    messagebox.showerror("Ошибка", "Файл не содержит компонентов!")
+                    return
+                else:
+                    # Старый формат - прямой словарь
+                    component_count = len(data)
+                
+                if component_count == 0:
+                    result = messagebox.askyesno(
+                        "Предупреждение",
+                        "⚠️ Выбранная база данных пустая (0 компонентов)!\n\n"
+                        "Это удалит все компоненты из текущей базы.\n\n"
+                        "Продолжить?",
+                        icon='warning'
+                    )
+                    if not result:
+                        return
+                
+            except json.JSONDecodeError:
+                messagebox.showerror("Ошибка", "Файл поврежден или имеет неверный формат JSON!")
+                return
+            except Exception as e:
+                messagebox.showerror("Ошибка", f"Не удалось прочитать файл:\n{str(e)}")
+                return
+            
+            # Получаем информацию о текущей базе
+            current_db_path = get_database_path()
+            current_stats = get_database_stats()
+            current_count = current_stats.get('total', 0)
+            
+            # Подтверждение замены
+            result = messagebox.askyesno(
+                "Подтверждение замены",
+                f"🔄 ЗАМЕНА БАЗЫ ДАННЫХ\n\n"
+                f"Текущая база данных:\n"
+                f"  📊 Компонентов: {current_count}\n"
+                f"  📁 Расположение: ...{current_db_path[-50:]}\n\n"
+                f"Новая база данных:\n"
+                f"  📊 Компонентов: {component_count}\n"
+                f"  📁 Файл: {os.path.basename(file_path)}\n\n"
+                f"⚠️ Текущая база будет заменена!\n"
+                f"Резервная копия будет создана автоматически.\n\n"
+                f"Продолжить?",
+                icon='warning'
+            )
+            
+            if not result:
+                return
+            
+            # Создаем резервную копию текущей базы
+            try:
+                backup_file = backup_database()
+                self.txt.insert(tk.END, f"\n💾 Резервная копия создана:\n")
+                self.txt.insert(tk.END, f"   {os.path.basename(backup_file)}\n")
+            except Exception as e:
+                result = messagebox.askyesno(
+                    "Ошибка резервного копирования",
+                    f"Не удалось создать резервную копию:\n{str(e)}\n\n"
+                    f"Продолжить без резервной копии?",
+                    icon='error'
+                )
+                if not result:
+                    return
+            
+            # Копируем новую базу данных
+            import shutil
+            shutil.copy2(file_path, current_db_path)
+            
+            # Проверяем что копирование прошло успешно
+            new_stats = get_database_stats()
+            new_count = new_stats.get('total', 0)
+            
+            self.txt.insert(tk.END, f"\n✅ База данных успешно заменена!\n")
+            self.txt.insert(tk.END, f"   Новое количество компонентов: {new_count}\n")
+            self.txt.insert(tk.END, f"   Расположение: {current_db_path}\n\n")
+            self.txt.see(tk.END)
+            self.update_idletasks()
+            
+            messagebox.showinfo(
+                "Успех", 
+                f"✅ База данных успешно заменена!\n\n"
+                f"Компонентов в новой базе: {new_count}\n\n"
+                f"Резервная копия старой базы сохранена.\n\n"
+                f"Перезапустите приложение чтобы увидеть\n"
+                f"актуальные данные в футере."
+            )
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось заменить базу данных:\n{str(e)}")
+            import traceback
+            self.txt.insert(tk.END, f"\n❌ Ошибка замены базы данных: {e}\n")
+            self.txt.insert(tk.END, f"{traceback.format_exc()}\n")
+    
+    def on_import_from_output(self):
+        """Импорт всех компонентов из выходного файла в базу данных"""
+        try:
+            # Проверяем есть ли выходной файл
+            output_file = self.output_xlsx.get()
+            
+            if not output_file or not os.path.exists(output_file):
+                messagebox.showerror("Ошибка", 
+                                   "Выходной файл не найден!\n\n"
+                                   "Сначала обработайте входные файлы, "
+                                   "проверьте результат, а затем импортируйте компоненты в базу данных.")
+                return
+            
+            # Подтверждение
+            result = messagebox.askyesno(
+                "Импорт из выходного файла",
+                f"Вы хотите добавить ВСЕ компоненты из файла:\n\n"
+                f"{os.path.basename(output_file)}\n\n"
+                f"в базу данных?\n\n"
+                f"Это позволит автоматически классифицировать эти компоненты "
+                f"в будущем при обработке других файлов.\n\n"
+                f"Продолжить?",
+                icon='question'
+            )
+            
+            if not result:
+                return
+            
+            # Создаем диалог прогресса
+            progress_dialog = tk.Toplevel(self)
+            progress_dialog.title("Импорт из выходного файла")
+            progress_dialog.geometry("600x400")
+            progress_dialog.transient(self)
+            progress_dialog.grab_set()
+            
+            # Текстовое поле для вывода прогресса
+            text_frame = ttk.Frame(progress_dialog)
+            text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+            
+            progress_text = tk.Text(text_frame, wrap=tk.WORD, font=("Consolas", 9))
+            scrollbar = ttk.Scrollbar(text_frame, command=progress_text.yview)
+            progress_text.configure(yscrollcommand=scrollbar.set)
+            
+            progress_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            
+            progress_text.insert(tk.END, "📥 Импорт компонентов из выходного файла...\n")
+            progress_text.insert(tk.END, f"Файл: {output_file}\n\n")
+            self.update_idletasks()
+            
+            # Импортируем компоненты
+            import pandas as pd
+            
+            # Маппинг русских названий листов на ключи категорий
+            SHEET_TO_CATEGORY = {
+                'Резисторы': 'resistors',
+                'Конденсаторы': 'capacitors',
+                'Индуктивности': 'inductors',
+                'Полупроводники': 'semiconductors',
+                'Микросхемы': 'ics',
+                'Разъемы': 'connectors',
+                'Оптика': 'optics',
+                'СВЧ модули': 'rf_modules',
+                'Кабели': 'cables',
+                'Модули питания': 'power_modules',
+                'Отладочные платы': 'dev_boards',
+                'Наши разработки': 'our_developments',
+                'Другие': 'others',
+            }
+            
+            # Читаем файл Excel
+            xl_file = pd.ExcelFile(output_file, engine='openpyxl')
+            
+            added_count = 0
+            skipped_count = 0
+            total_sheets = 0
+            
+            progress_text.insert(tk.END, "📊 Обработка листов:\n\n")
+            self.update_idletasks()
+            
+            # Обрабатываем каждый лист
+            for sheet_name in xl_file.sheet_names:
+                # Пропускаем служебные листы
+                if sheet_name in ['SOURCES', 'SUMMARY', 'Не распределено', 'INFO']:
+                    continue
+                
+                # Проверяем что это лист категории
+                if sheet_name not in SHEET_TO_CATEGORY:
+                    continue
+                
+                category_key = SHEET_TO_CATEGORY[sheet_name]
+                total_sheets += 1
+                
+                # Читаем данные
+                df = pd.read_excel(output_file, sheet_name=sheet_name, engine='openpyxl')
+                
+                if df.empty:
+                    continue
+                
+                # Ищем колонку с наименованием
+                name_col = None
+                for col in ['Наименование ИВП', 'Наименование', 'наименование ивп', 'наименование']:
+                    if col in df.columns:
+                        name_col = col
+                        break
+                
+                if not name_col:
+                    progress_text.insert(tk.END, f"⚠️  {sheet_name}: не найдена колонка с наименованием\n")
+                    continue
+                
+                sheet_added = 0
+                
+                # Добавляем каждый компонент в базу данных
+                for idx, row in df.iterrows():
+                    name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
+                    
+                    # Пропускаем пустые названия
+                    if not name or name == 'nan':
+                        skipped_count += 1
+                        continue
+                    
+                    # Добавляем в базу данных
+                    add_component_to_database(name, category_key)
+                    added_count += 1
+                    sheet_added += 1
+                
+                progress_text.insert(tk.END, f"✅ {sheet_name}: добавлено {sheet_added} компонентов\n")
+                self.update_idletasks()
+            
+            progress_text.insert(tk.END, f"\n✅ Импорт завершен!\n\n")
+            progress_text.insert(tk.END, f"📈 Статистика:\n")
+            progress_text.insert(tk.END, f"   Обработано листов: {total_sheets}\n")
+            progress_text.insert(tk.END, f"   Добавлено компонентов: {added_count}\n")
+            progress_text.insert(tk.END, f"   Пропущено (пустые): {skipped_count}\n\n")
+            
+            # Показываем обновленную статистику базы данных
+            stats = get_database_stats()
+            progress_text.insert(tk.END, f"📊 База данных после импорта:\n")
+            progress_text.insert(tk.END, f"   Всего компонентов: {stats['total']}\n")
+            
+            # Кнопка закрытия
+            ttk.Button(progress_dialog, text="Закрыть", command=progress_dialog.destroy).pack(pady=10)
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось импортировать компоненты:\n{str(e)}")
+    
+    # ========== Конец обработчиков управления БД ==========
     
     def show_pin_dialog(self):
         """Показывает диалог ввода PIN-кода"""

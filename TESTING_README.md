@@ -12,15 +12,18 @@ run_tests.bat quick
 
 ### 2. Запуск тестов на реальных файлах
 
+**⚠️ Примечание:** Папка `example/` исключена из Git (содержит конфиденциальные данные).  
+Для тестирования добавьте свои BOM файлы в папку `example/` локально.
+
 ```cmd
-# Протестировать все файлы из example/
+# Протестировать все файлы из example/ (если папка создана локально)
 test_examples.bat
 
 # Протестировать конкретный файл
-test_examples.bat plata_MKVH.doc
+test_examples.bat plata.doc
 
 # Протестировать несколько файлов
-test_examples.bat plata_MKVH.doc Plata_Preobrz.xlsx
+test_examples.bat plata.doc Plata_Pr.xlsx
 ```
 
 ### 3. Полное тестирование (включая интеграционные тесты)
@@ -91,18 +94,24 @@ run_tests.bat integration
 
 ### Тесты на примерах (реальные файлы)
 
-Тестирование на всех файлах из папки `example/` с созданием выходных файлов.
+Тестирование на файлах из папки `example/` с созданием выходных файлов.
+
+**⚠️ Важно:** Папка `example/` не включена в Git репозиторий (`.gitignore`).  
+**Для тестирования:**
+1. Создайте папку `example/` в корне проекта
+2. Добавьте туда свои BOM файлы (.doc, .docx, .xlsx, .txt)
+3. Запустите тесты
 
 **Команды:**
 ```cmd
-# Все файлы
+# Все файлы из example/
 test_examples.bat
 
 # Конкретный файл
-test_examples.bat plata_MKVH.doc
+test_examples.bat plata.doc
 
 # С детальным выводом
-python test_on_examples.py plata_MKVH.doc -v
+python test_on_examples.py plata.doc -v
 ```
 
 **Что создается:**
@@ -145,10 +154,15 @@ run_tests.bat
 
 ### 4. Тестирование на реальных данных
 
-Периодически проверяйте на реальных файлах:
+Периодически проверяйте на реальных файлах (добавьте их в `example/` локально):
 
 ```cmd
-test_examples.bat plata_MKVH.doc
+# Создайте папку example/ если её нет
+mkdir example
+
+# Добавьте туда свои BOM файлы
+# Затем запустите тесты
+test_examples.bat your_file.doc
 ```
 
 Проверьте что выходной файл корректен.
@@ -262,12 +276,23 @@ pip install -r requirements.txt
 
 **Решение:**
 ```cmd
-# Проверьте что файлы есть
-dir example\plata_MKVH.doc
-dir example\*.xlsx
+# Создайте папку example/ (она исключена из Git)
+mkdir example
 
-# Если нет - скопируйте примеры в example/
+# Добавьте свои BOM файлы для тестирования
+# Пример структуры:
+# example/
+#   ├── plata.doc
+#   ├── Plata_P.xlsx
+#   └── Б.doc
+
+# Проверьте что файлы есть
+dir example\*.doc
+dir example\*.xlsx
 ```
+
+**Почему example/ не в Git:**  
+Папка исключена через `.gitignore` для защиты конфиденциальных данных проектов.
 
 ### ❌ База данных конфликтует
 
@@ -303,15 +328,20 @@ pytest -k resistor -v
 
 ### Тестирование примеров
 
+**Требование:** Создайте папку `example/` и добавьте туда BOM файлы локально.
+
 ```cmd
 # Все файлы с подробным выводом
 python test_on_examples.py -v
 
-# Только .doc файлы
+# Только .doc файлы (если они есть в example/)
 python test_on_examples.py example/*.doc -v
 
 # Указать другую папку для результатов
 python test_on_examples.py --output my_test_results -v
+
+# Тестировать файлы из другой папки
+python test_on_examples.py C:\MyBOMFiles\*.xlsx -v
 ```
 
 ## Continuous Integration (CI/CD)
@@ -411,6 +441,38 @@ pytest tests/test_multiline_parsing.py -v
 
 ---
 
-**Версия:** 1.2  
-**Обновлено:** 31.10.2025  
-**Автор:** Куреин М.Н.
+---
+
+## ⚠️ Важные изменения v3.1.3
+
+### Папка example/ исключена из Git
+
+**Причина:** Защита конфиденциальных данных проектов
+
+**Для тестирования локально:**
+1. Создайте папку `example/` в корне проекта:
+   ```cmd
+   mkdir example
+   ```
+
+2. Добавьте свои BOM файлы:
+   ```
+   example/
+     ├── plata1.doc
+     ├── plata2.docx
+     ├── spisok.xlsx
+     └── zakupka.txt
+   ```
+
+3. Запускайте тесты как обычно:
+   ```cmd
+   test_examples.bat
+   ```
+
+**На GitHub:** Папка `example/` будет пустой или отсутствовать (защищена `.gitignore`).
+
+---
+
+**Версия / Version:** 1.3 (обновлено для v3.1.3 / Updated for v3.1.3)  
+**Обновлено / Updated:** 07.11.2025  
+**Автор / Author:** Куреин М.Н. / Kurein M.N.

@@ -1,7 +1,0 @@
-📞 UltraZed-EV + Robust Ethernet FMC 1.8V
-
-1) KVM-коммутатор TinyPilot Voyager 2a ф.TinyPilot - 2шт по 400$ 
-2) Robust Ethernet FMC 2.5V  ф. Opsero Inc - 1шт по 600$ (MicroZed FMC Carrier -> !only MicroZed 7020!,
- PicoZed FMC Carrier Card V2 -> PicoZed SoM 7015 or 7020)
-3) Robust Ethernet FMC 1.8V  ф. Opsero Inc - 2шт по 600$ (for UltraZed-EV, 
-PicoZed FMC Carrier Card V2  -> PicoZed SoM 7030)

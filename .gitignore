@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific
+# Executable files (too large for GitHub)
+*.exe
+
+# Personal data and backups
+database_backups/
+component_database.json
+component_database.xlsx
+*.backup
+
+# Temporary files
+temp_installer/
+temp_for_classification.xlsx
+*.tmp
+*.temp
+
+# Example files (may contain sensitive data)
+example/
+
+# Local configuration (passwords, personal settings)
+config.local.json
+
+# Compiled installers
+BOMCategorizerSetup.exe
+
+# Test files
+test_examples.bat
+quick_test.py
+preview_unclassified.py
+
+# Windows specific
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Backup databases
+*_backup_*.json
+

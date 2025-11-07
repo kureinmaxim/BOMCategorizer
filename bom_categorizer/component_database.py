@@ -1,22 +1,94 @@
 """
 Модуль для работы с базой данных компонентов
 База данных содержит точные соответствия наименований компонентов и их категорий
+
+Структура базы данных (JSON):
+{
+    "metadata": {
+        "version": "1.0.0",
+        "created": "2025-11-01",
+        "last_updated": "2025-11-01",
+        "total_components": 100,
+        "description": "База данных компонентов для BOM классификатора"
+    },
+    "categories": {
+        "resistors": "Резисторы",
+        "capacitors": "Конденсаторы",
+        ...
+    },
+    "components": {
+        "Резистор С2-29В-0.125 100 Ом": "resistors",
+        "1594ТЛ2Т": "ics",
+        ...
+    }
+}
 """
 
 import json
 import os
 from typing import Optional, Dict
+from datetime import datetime
 
 
 # Путь к файлу базы данных (в папке с данными пользователя)
 def get_database_path() -> str:
-    """Получить путь к файлу базы данных компонентов"""
-    # Сохраняем в текущей директории (рядом с rules.json)
-    # Используем абсолютный путь для надежности
+    r"""
+    Получить путь к файлу базы данных компонентов
+    
+    База данных хранится в отдельной пользовательской папке,
+    которая НЕ удаляется при деинсталляции программы.
+    
+    Расположение:
+    - Windows: C:\Users\USERNAME\AppData\Roaming\BOMCategorizer\Data\component_database.json
+    - Режим разработки: рядом с проектом (component_database.json)
+    """
     import os
+    import sys
+    
+    # Определяем, запущена ли программа из установленной версии или из проекта
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(base_dir)  # Выходим из bom_categorizer
-    return os.path.join(parent_dir, "component_database.json")
+    
+    # Проверяем наличие маркера установленной версии
+    installed_marker = os.path.join(parent_dir, ".installed")
+    
+    if os.path.exists(installed_marker):
+        # Установленная версия - используем папку пользовательских данных
+        if sys.platform == "win32":
+            # Windows: %APPDATA%\BOMCategorizer\Data
+            appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
+            data_dir = os.path.join(appdata, 'BOMCategorizer', 'Data')
+        else:
+            # Linux/Mac: ~/.local/share/BOMCategorizer/Data
+            data_dir = os.path.expanduser('~/.local/share/BOMCategorizer/Data')
+        
+        # Создаем папку если её нет
+        os.makedirs(data_dir, exist_ok=True)
+        
+        return os.path.join(data_dir, "component_database.json")
+    else:
+        # Режим разработки - сохраняем в текущей директории (как было)
+        return os.path.join(parent_dir, "component_database.json")
+
+
+# Названия категорий
+CATEGORY_NAMES = {
+    "resistors": "Резисторы",
+    "capacitors": "Конденсаторы",
+    "inductors": "Дроссели/Катушки индуктивности",
+    "ics": "Микросхемы",
+    "semiconductors": "Полупроводники (диоды, транзисторы)",
+    "connectors": "Разъемы",
+    "dev_boards": "Отладочные платы и модули",
+    "optics": "Оптические компоненты",
+    "rf_modules": "СВЧ модули",
+    "cables": "Кабели и провода",
+    "power_modules": "Модули питания",
+    "our_developments": "Наши разработки",
+    "others": "Другие компоненты",
+    "unclassified": "Неклассифицированные",
+    "non_bom": "Не ИВП (служебная информация)"
+}
 
 
 def load_component_database() -> Dict[str, str]:
@@ -30,7 +102,7 @@ def load_component_database() -> Dict[str, str]:
     
     if not os.path.exists(db_path):
         # Создать начальную базу с известными компонентами
-        initial_db = {
+        initial_components = {
             # Микросхемы
             "1594ТЛ2Т": "ics",
             "HMC435AMS8GE": "ics",
@@ -42,34 +114,127 @@ def load_component_database() -> Dict[str, str]:
             "РАТ-20+": "ics",
             "PE43713A-Z": "ics",
         }
-        save_component_database(initial_db)
+        
+        # Создаем структурированную базу
+        structured_db = {
+            "metadata": {
+                "version": "1.0.0",
+                "created": datetime.now().strftime("%Y-%m-%d"),
+                "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                "total_components": len(initial_components),
+                "description": "База данных компонентов для BOM классификатора"
+            },
+            "categories": CATEGORY_NAMES,
+            "components": initial_components
+        }
+        
+        _save_structured_database(structured_db)
         print(f"✅ Создана база данных компонентов: {db_path}")
-        print(f"   Начальных записей: {len(initial_db)}")
-        return initial_db
+        print(f"   Начальных записей: {len(initial_components)}")
+        return initial_components
     
     try:
         with open(db_path, 'r', encoding='utf-8') as f:
-            db = json.load(f)
-            return db
+            data = json.load(f)
+            
+            # Проверяем формат базы данных
+            if isinstance(data, dict):
+                # Новый формат с метаданными
+                if "components" in data:
+                    return data["components"]
+                # Старый формат (простой словарь)
+                elif "metadata" not in data and "categories" not in data:
+                    # Конвертируем старый формат в новый
+                    print("🔄 Обнаружен старый формат базы данных, конвертирую...")
+                    structured_db = {
+                        "metadata": {
+                            "version": "1.0.0",
+                            "created": datetime.now().strftime("%Y-%m-%d"),
+                            "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                            "total_components": len(data),
+                            "description": "База данных компонентов для BOM классификатора (конвертирована из старого формата)"
+                        },
+                        "categories": CATEGORY_NAMES,
+                        "components": data
+                    }
+                    _save_structured_database(structured_db)
+                    print(f"✅ База данных обновлена до нового формата")
+                    return data
+            
+            return {}
     except Exception as e:
         print(f"⚠️ Ошибка чтения базы данных компонентов: {e}")
         return {}
 
 
+def _save_structured_database(structured_db: dict) -> None:
+    """
+    Внутренняя функция для сохранения структурированной базы данных
+    
+    Args:
+        structured_db: Полная структура базы данных с метаданными
+    """
+    db_path = get_database_path()
+    
+    try:
+        with open(db_path, 'w', encoding='utf-8') as f:
+            json.dump(structured_db, f, ensure_ascii=False, indent=2, sort_keys=False)
+    except Exception as e:
+        print(f"⚠️ Ошибка сохранения базы данных компонентов: {e}")
+
+
 def save_component_database(database: Dict[str, str]) -> None:
     """
-    Сохраняет базу данных компонентов
+    Сохраняет базу данных компонентов (с автоматическим обновлением метаданных)
     
     Args:
         database: Словарь {наименование_компонента: категория}
     """
     db_path = get_database_path()
     
+    # Загружаем текущую структуру или создаем новую
     try:
-        with open(db_path, 'w', encoding='utf-8') as f:
-            json.dump(database, f, ensure_ascii=False, indent=2, sort_keys=True)
+        if os.path.exists(db_path):
+            with open(db_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if "metadata" in data:
+                    structured_db = data
+                else:
+                    # Старый формат - создаем новую структуру
+                    structured_db = {
+                        "metadata": {
+                            "version": "1.0.0",
+                            "created": datetime.now().strftime("%Y-%m-%d"),
+                            "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                            "total_components": 0,
+                            "description": "База данных компонентов для BOM классификатора"
+                        },
+                        "categories": CATEGORY_NAMES,
+                        "components": {}
+                    }
+        else:
+            structured_db = {
+                "metadata": {
+                    "version": "1.0.0",
+                    "created": datetime.now().strftime("%Y-%m-%d"),
+                    "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                    "total_components": 0,
+                    "description": "База данных компонентов для BOM классификатора"
+                },
+                "categories": CATEGORY_NAMES,
+                "components": {}
+            }
     except Exception as e:
-        print(f"⚠️ Ошибка сохранения базы данных компонентов: {e}")
+        print(f"⚠️ Ошибка загрузки базы данных: {e}")
+        return
+    
+    # Обновляем компоненты и метаданные
+    structured_db["components"] = database
+    structured_db["metadata"]["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+    structured_db["metadata"]["total_components"] = len(database)
+    
+    # Сохраняем
+    _save_structured_database(structured_db)
 
 
 def add_component_to_database(component_name: str, category: str) -> None:
@@ -128,21 +293,193 @@ def get_component_category(component_name: str) -> Optional[str]:
 
 def get_database_stats() -> dict:
     """
-    Получает статистику по базе данных
+    Получает расширенную статистику по базе данных
     
     Returns:
-        Словарь со статистикой
+        Словарь со статистикой и метаданными
     """
-    db = load_component_database()
+    db_path = get_database_path()
     
-    stats = {
-        'total': len(db),
-        'by_category': {}
-    }
+    if not os.path.exists(db_path):
+        return {
+            'metadata': {},
+            'total': 0,
+            'by_category': {}
+        }
     
-    for category in db.values():
-        if category not in stats['by_category']:
-            stats['by_category'][category] = 0
-        stats['by_category'][category] += 1
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+            # Новый формат с метаданными
+            if "components" in data:
+                components = data["components"]
+                metadata = data.get("metadata", {})
+            else:
+                # Старый формат
+                components = data
+                metadata = {}
+            
+            stats = {
+                'metadata': metadata,
+                'total': len(components),
+                'by_category': {},
+                'category_names': CATEGORY_NAMES
+            }
+            
+            for category in components.values():
+                if category not in stats['by_category']:
+                    stats['by_category'][category] = 0
+                stats['by_category'][category] += 1
+            
+            return stats
+    except Exception as e:
+        print(f"⚠️ Ошибка получения статистики: {e}")
+        return {
+            'metadata': {},
+            'total': 0,
+            'by_category': {}
+        }
+
+
+def export_database_to_excel(output_path: str = "component_database_export.xlsx") -> bool:
+    """
+    Экспортирует базу данных в Excel для редактирования
     
-    return stats
+    Args:
+        output_path: Путь к выходному файлу
+        
+    Returns:
+        True если успешно, False при ошибке
+    """
+    try:
+        import pandas as pd
+        
+        db = load_component_database()
+        
+        if not db:
+            print("⚠️ База данных пуста")
+            return False
+        
+        # Создаем DataFrame
+        data = []
+        for component, category in sorted(db.items()):
+            category_name = CATEGORY_NAMES.get(category, category)
+            data.append({
+                'Наименование компонента': component,
+                'Категория (ключ)': category,
+                'Категория (название)': category_name
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # Получаем метаданные
+        stats = get_database_stats()
+        metadata = stats.get('metadata', {})
+        
+        # Создаем лист с метаданными
+        meta_data = []
+        meta_data.append(['Версия базы данных', metadata.get('version', 'Неизвестно')])
+        meta_data.append(['Дата создания', metadata.get('created', 'Неизвестно')])
+        meta_data.append(['Последнее обновление', metadata.get('last_updated', 'Неизвестно')])
+        meta_data.append(['Всего компонентов', len(db)])
+        meta_data.append(['Описание', metadata.get('description', '')])
+        meta_data.append(['', ''])
+        meta_data.append(['Категория (ключ)', 'Категория (название)', 'Количество'])
+        
+        for cat_key, cat_name in sorted(CATEGORY_NAMES.items()):
+            count = stats['by_category'].get(cat_key, 0)
+            if count > 0:
+                meta_data.append([cat_key, cat_name, count])
+        
+        meta_df = pd.DataFrame(meta_data)
+        
+        # Сохраняем в Excel с двумя листами
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            meta_df.to_excel(writer, sheet_name='Информация', index=False, header=False)
+            df.to_excel(writer, sheet_name='Компоненты', index=False)
+        
+        print(f"✅ База данных экспортирована: {output_path}")
+        print(f"   Компонентов: {len(db)}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка экспорта базы данных: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def backup_database() -> str:
+    """
+    Создает резервную копию базы данных
+    
+    Returns:
+        str: Путь к созданному файлу резервной копии
+        
+    Raises:
+        Exception: При ошибке создания резервной копии
+    """
+    db_path = get_database_path()
+    
+    if not os.path.exists(db_path):
+        raise FileNotFoundError(f"База данных не найдена: {db_path}")
+    
+    # Определяем папку для резервных копий
+    backup_dir = os.path.join(os.path.dirname(db_path), "database_backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    
+    # Генерируем имя файла с временной меткой
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_filename = f"component_database_backup_{timestamp}.json"
+    backup_path = os.path.join(backup_dir, backup_filename)
+    
+    # Копируем файл
+    import shutil
+    shutil.copy2(db_path, backup_path)
+    
+    return backup_path
+
+
+def import_database_from_excel(input_path: str, replace: bool = False) -> int:
+    """
+    Импортирует базу данных из Excel
+    
+    Args:
+        input_path: Путь к файлу Excel
+        replace: Если True - заменяет всю базу, False - объединяет с существующей
+        
+    Returns:
+        int: Количество импортированных компонентов
+        
+    Raises:
+        Exception: При ошибке импорта
+    """
+    import pandas as pd
+    
+    # Читаем лист с компонентами
+    df = pd.read_excel(input_path, sheet_name='Компоненты', engine='openpyxl')
+    
+    if 'Наименование компонента' not in df.columns or 'Категория (ключ)' not in df.columns:
+        raise ValueError("Неверный формат файла. Требуются колонки: 'Наименование компонента' и 'Категория (ключ)'")
+    
+    # Загружаем текущую базу если нужно объединить
+    if not replace:
+        current_db = load_component_database()
+    else:
+        current_db = {}
+    
+    # Импортируем компоненты
+    imported_count = 0
+    for _, row in df.iterrows():
+        component = str(row['Наименование компонента']).strip()
+        category = str(row['Категория (ключ)']).strip()
+        
+        if component and category and category != 'nan':
+            current_db[component] = category
+            imported_count += 1
+    
+    # Сохраняем
+    save_component_database(current_db)
+    
+    return imported_count

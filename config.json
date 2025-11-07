@@ -1,13 +1,15 @@
 {
   "app_info": {
-    "version": "2.0.35",
-    "release_date": "31.10.2025",
+    "version": "3.1.3",
+    "release_date": "07.11.2025",
     "developer": "Куреин М.Н.",
+    "developer_en": "Kurein M.N.",
     "description": "Категоризатор BOM файлов",
-    "last_updated": "2025-10-31"
+    "description_en": "BOM Categorizer - Bill of Materials Categorization Tool",
+    "last_updated": "2025-11-07"
   },
   "security": {
-    "pin": "5421",
+    "pin": "1234",
     "require_pin": true
   }
 }

@@ -287,7 +287,16 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 else:
                     # Листы не указаны - читаем ВСЕ листы
                     all_sheets_data = pd.read_excel(input_path, sheet_name=None, **{k: v for k, v in read_kwargs.items() if k != 'sheet_name'})
+                    
+                    # Создаем обратный маппинг: русское имя листа → английская категория
+                    from .excel_writer import RUS_SHEET_NAMES
+                    sheet_to_category = {v: k for k, v in RUS_SHEET_NAMES.items()}
+                    
                     for sheet_name, df_local in all_sheets_data.items():
+                        # Пропускаем служебные листы
+                        if str(sheet_name).upper() in ['SUMMARY', 'SOURCES', 'INFO']:
+                            continue
+                        
                         # Проверка на пустую первую строку
                         unnamed_count = sum(1 for col in df_local.columns if str(col).lower().startswith('unnamed'))
                         has_mostly_unnamed = unnamed_count >= len(df_local.columns) * 0.5
@@ -310,6 +319,14 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                         
                         df_local["source_file"] = os.path.basename(input_path)
                         df_local["source_sheet"] = str(sheet_name)
+                        
+                        # ВАЖНО: Если лист имеет имя категории, сохраняем категорию из имени листа
+                        # Это предотвращает переклассификацию уже обработанных файлов
+                        if str(sheet_name) in sheet_to_category:
+                            category_eng = sheet_to_category[str(sheet_name)]
+                            df_local["category"] = category_eng
+                            print(f"  [КАТЕГОРИЯ] Лист '{sheet_name}' → category='{category_eng}' (сохранено из xlsx)")
+                        
                         df_local = multiply_quantities(df_local, multiplier)
                         all_rows.append(df_local)
                 
@@ -586,11 +603,26 @@ def run_classification(df: pd.DataFrame, ref_col: str, desc_col: str, value_col:
     """
     Классифицирует все строки DataFrame
     
+    ВАЖНО: Если у строки уже есть категория (из xlsx файла), она НЕ перезаписывается
+    
     Returns:
         DataFrame с добавленной колонкой 'category'
     """
+    df = df.copy()
+    
+    # Проверяем, есть ли уже колонка category
+    has_existing_category = 'category' in df.columns
+    
     categories: List[str] = []
-    for _, row in df.iterrows():
+    for idx, row in df.iterrows():
+        # Если категория уже есть и не пустая - сохраняем её
+        if has_existing_category:
+            existing_cat = row.get('category')
+            if pd.notna(existing_cat) and str(existing_cat).strip():
+                categories.append(str(existing_cat).strip())
+                continue
+        
+        # Иначе классифицируем
         ref = row.get(ref_col) if ref_col else None
         desc = row.get(desc_col) if desc_col else None
         val = row.get(value_col) if value_col else None
@@ -600,7 +632,6 @@ def run_classification(df: pd.DataFrame, ref_col: str, desc_col: str, value_col:
         group_type_val = row.get('group_type') if 'group_type' in df.columns else None
         categories.append(classify_row(ref, desc, val, part, strict=not loose, source_file=src_file, note=note_val, group_type=group_type_val))
     
-    df = df.copy()
     df["category"] = categories
     return df
 
