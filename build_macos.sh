@@ -9,14 +9,57 @@ echo "🚀 Начинаем создание macOS инсталлятора..."
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
+YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Получаем версию из config.json
-VERSION=$(python3 -c "import json; print(json.load(open('config.json'))['app_info']['version'])")
-APP_NAME="BOM Categorizer"
-DMG_NAME="BOMCategorizer-${VERSION}-macOS"
+# ========== ДИАЛОГ ВЫБОРА ВЕРСИИ ==========
+echo ""
+echo -e "${YELLOW}============================================================${NC}"
+echo -e "${YELLOW}  ВЫБЕРИТЕ ВЕРСИЮ ДЛЯ СБОРКИ:${NC}"
+echo -e "${YELLOW}============================================================${NC}"
+echo ""
+echo -e "  ${GREEN}[1]${NC} Standard v3.2.2"
+echo -e "      Tkinter GUI (стабильная версия)"
+echo -e "      Файл: BOMCategorizer-3.2.2-macOS-Standard.dmg"
+echo ""
+echo -e "  ${GREEN}[2]${NC} Modern Edition v4.0.0"
+echo -e "      PySide6 GUI (современный дизайн)"
+echo -e "      Файл: BOMCategorizer-4.0.0-macOS-Modern.dmg"
+echo ""
+echo -e "${YELLOW}============================================================${NC}"
+echo ""
 
-echo -e "${BLUE}📦 Версия: ${VERSION}${NC}"
+while true; do
+    read -p "Введите номер версии (1 или 2): " EDITION_CHOICE
+    case $EDITION_CHOICE in
+        1)
+            EDITION="Standard"
+            CONFIG_FILE="config.json"
+            APP_FILE="app.py"
+            VERSION="3.2.2"
+            APP_NAME="BOM Categorizer Standard"
+            DMG_NAME="BOMCategorizer-${VERSION}-macOS-Standard"
+            break
+            ;;
+        2)
+            EDITION="Modern Edition"
+            CONFIG_FILE="config_qt.json"
+            APP_FILE="app_qt.py"
+            VERSION="4.0.0"
+            APP_NAME="BOM Categorizer Modern Edition"
+            DMG_NAME="BOMCategorizer-${VERSION}-macOS-Modern"
+            break
+            ;;
+        *)
+            echo -e "${RED}[ERROR] Неверный выбор. Введите 1 или 2.${NC}"
+            ;;
+    esac
+done
+
+echo ""
+echo -e "${GREEN}✓ Выбрана версия: ${EDITION} v${VERSION}${NC}"
+echo -e "${BLUE}📦 DMG: ${DMG_NAME}.dmg${NC}"
+echo ""
 
 # Проверка виртуального окружения
 if [ ! -d "venv" ]; then
@@ -36,19 +79,85 @@ pip install py2app
 
 # Очистка предыдущих сборок
 echo -e "${BLUE}🧹 Очистка предыдущих сборок...${NC}"
-rm -rf build dist
+rm -rf build dist *.pyc __pycache__
 
 # Создание .app bundle
 echo -e "${BLUE}🔨 Создание .app bundle...${NC}"
-python3 setup_macos.py py2app
+echo -e "${YELLOW}Версия: ${EDITION}${NC}"
+echo -e "${YELLOW}Конфиг: ${CONFIG_FILE}${NC}"
+echo -e "${YELLOW}App файл: ${APP_FILE}${NC}"
+echo -e "${YELLOW}Имя приложения: ${APP_NAME}${NC}"
+echo ""
 
-# Проверка создания .app
+# Отключаем автоматическую подпись py2app (для локальной разработки)
+export CODESIGN_ALLOCATE="/usr/bin/codesign_allocate"
+export PY2APP_CODESIGN=0
+
+if [ "$EDITION" = "Modern Edition" ]; then
+    # Modern Edition: исключаем Tkinter, используем только Qt
+    echo -e "${GREEN}==> Сборка Modern Edition (PySide6) с параметром --edition=modern${NC}"
+    python3 setup_macos.py py2app --edition=modern 2>&1 | tee build_py2app.log
+    BUILD_EXIT_CODE=$?
+else
+    echo -e "${GREEN}==> Сборка Standard Edition (Tkinter) БЕЗ параметра edition${NC}"
+    python3 setup_macos.py py2app 2>&1 | tee build_py2app.log
+    BUILD_EXIT_CODE=$?
+fi
+
+# Проверка создания .app (главный критерий успеха)
 if [ ! -d "dist/${APP_NAME}.app" ]; then
     echo -e "${RED}❌ Ошибка: .app bundle не создан!${NC}"
+    echo -e "${RED}Смотрите build_py2app.log для деталей${NC}"
     exit 1
 fi
 
+# Если py2app завершился с предупреждениями (обычно из-за missing optional imports)
+if [ $BUILD_EXIT_CODE -ne 0 ]; then
+    echo -e "${YELLOW}⚠️  py2app завершился с кодом: $BUILD_EXIT_CODE${NC}"
+    echo -e "${YELLOW}⚠️  Обычно это предупреждения об опциональных модулях (win32com, matplotlib, и т.д.)${NC}"
+    echo -e "${GREEN}📦 Но .app bundle создан успешно!${NC}"
+    
+    # Проверяем, нужна ли ручная подпись
+    if ! codesign -v "dist/${APP_NAME}.app" 2>&1 >/dev/null; then
+        echo -e "${BLUE}🔐 Пробуем подписать вручную ad-hoc подписью...${NC}"
+        
+        if codesign --force --deep --sign - "dist/${APP_NAME}.app" 2>&1; then
+            echo -e "${GREEN}✅ Ручная подпись успешна${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Ручная подпись не удалась${NC}"
+            echo -e "${BLUE}ℹ️  Приложение может работать и без подписи на этом Mac${NC}"
+            echo -e "${BLUE}ℹ️  Для распространения потребуется правильная подпись${NC}"
+        fi
+    else
+        echo -e "${GREEN}✅ Приложение уже подписано${NC}"
+    fi
+else
+    echo -e "${GREEN}✅ py2app завершился без ошибок${NC}"
+fi
+
 echo -e "${GREEN}✅ .app bundle создан успешно${NC}"
+
+# Очистка ненужных GUI файлов после сборки
+echo -e "${BLUE}🧹 Очистка ненужных GUI файлов...${NC}"
+BOM_CAT_DIR="dist/${APP_NAME}.app/Contents/Resources/bom_categorizer"
+if [ "$EDITION" = "Standard" ]; then
+    # Для Standard удаляем Qt файлы
+    rm -f "$BOM_CAT_DIR/gui_qt.py" "$BOM_CAT_DIR/dialogs_qt.py" 2>/dev/null
+    echo -e "${GREEN}  ✓ Удалены: gui_qt.py, dialogs_qt.py${NC}"
+else
+    # Для Modern Edition удаляем Tkinter GUI (если попал)
+    rm -f "$BOM_CAT_DIR/gui.py" 2>/dev/null
+    echo -e "${GREEN}  ✓ Tkinter файлы удалены${NC}"
+fi
+
+# Переподпись после модификации (иначе macOS убьет приложение)
+echo -e "${BLUE}🔐 Переподпись приложения...${NC}"
+codesign --remove-signature "dist/${APP_NAME}.app" 2>/dev/null
+if codesign --force --deep --sign - "dist/${APP_NAME}.app" 2>&1; then
+    echo -e "${GREEN}  ✓ Приложение подписано заново${NC}"
+else
+    echo -e "${YELLOW}  ⚠️  Подпись не удалась, но попробуем продолжить${NC}"
+fi
 
 # Создание DMG
 echo -e "${BLUE}💿 Создание DMG образа...${NC}"
@@ -65,8 +174,12 @@ cp -R "dist/${APP_NAME}.app" "${DMG_TEMP}/"
 ln -s /Applications "${DMG_TEMP}/Applications"
 
 # Создаем README
+DEVELOPER=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['app_info']['developer'])")
+RELEASE_DATE=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['app_info']['release_date'])")
+
 cat > "${DMG_TEMP}/README.txt" << EOF
 ${APP_NAME} v${VERSION}
+${EDITION}
 
 УСТАНОВКА:
 Перетащите "${APP_NAME}.app" в папку "Applications"
@@ -84,8 +197,8 @@ ${APP_NAME} v${VERSION}
 - macOS 10.13 или новее
 - Python 3.8+ (включен в приложение)
 
-Разработчик: $(python3 -c "import json; print(json.load(open('config.json'))['app_info']['developer'])")
-Дата релиза: $(python3 -c "import json; print(json.load(open('config.json'))['app_info']['release_date'])")
+Разработчик: ${DEVELOPER}
+Дата релиза: ${RELEASE_DATE}
 EOF
 
 # Создаем DMG
@@ -106,6 +219,7 @@ echo -e "${BLUE}📊 Размер DMG: ${DMG_SIZE}${NC}"
 
 echo ""
 echo -e "${GREEN}🎉 Готово!${NC}"
+echo -e "${YELLOW}Версия: ${EDITION} v${VERSION}${NC}"
 echo -e "${BLUE}📦 Инсталлятор: ${DMG_NAME}.dmg${NC}"
 echo -e "${BLUE}📂 .app bundle: dist/${APP_NAME}.app${NC}"
 echo ""

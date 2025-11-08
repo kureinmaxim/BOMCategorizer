@@ -1,23 +1,27 @@
 #define MyAppVersion "3.2.2"
+#define MyAppEdition "Standard"
 [Setup]
-AppName=BOM Categorizer
+AppName=BOM Categorizer Standard
 AppVersion={#MyAppVersion}
 DefaultDirName={userappdata}\BOMCategorizer
-DefaultGroupName=BOM Categorizer
+DefaultGroupName=BOM Categorizer Standard
 OutputDir=.
 OutputBaseFilename=BOMCategorizerSetup
 Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
+SetupIconFile=icon.ico
+UninstallDisplayIcon={app}\icon.ico
 
 [Files]
 Source: "temp_installer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pyc,__pycache__"
+Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 
 [Run]
 Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\post_install.ps1"""; StatusMsg: "Setting up Python environment..."; Flags: runhidden
 
 [Icons]
-Name: "{group}\BOM Categorizer"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 2
-Name: "{group}\Uninstall BOM Categorizer"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\BOM Categorizer"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{sys}\shell32.dll"; IconIndex: 2
+Name: "{group}\BOM Categorizer Standard"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+Name: "{group}\Uninstall BOM Categorizer Standard"; Filename: "{uninstallexe}"
+Name: "{userdesktop}\BOM Categorizer Standard"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
