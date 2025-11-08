@@ -25,7 +25,8 @@ from .component_database import (
     import_database_from_excel,
     backup_database,
     is_first_run,
-    initialize_database_from_template
+    initialize_database_from_template,
+    format_history_tooltip
 )
 
 # Исправление кодировки для корректного вывода русских символов
@@ -39,6 +40,47 @@ if sys.stdout.encoding != 'utf-8':
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 from .main import main as cli_main
+
+
+class ToolTip:
+    """
+    Класс для создания всплывающих подсказок (tooltip)
+    """
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip = None
+        self.widget.bind("<Enter>", self.show_tooltip)
+        self.widget.bind("<Leave>", self.hide_tooltip)
+    
+    def show_tooltip(self, event=None):
+        """Показывает tooltip"""
+        if self.tooltip:
+            return
+        
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        
+        self.tooltip = tk.Toplevel(self.widget)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+        
+        label = tk.Label(self.tooltip, text=self.text, 
+                        justify=tk.LEFT,
+                        background="#FFFFDD", 
+                        foreground="black",
+                        relief=tk.SOLID, 
+                        borderwidth=1,
+                        font=("Courier", 10),
+                        padx=10, 
+                        pady=8)
+        label.pack()
+    
+    def hide_tooltip(self, event=None):
+        """Скрывает tooltip"""
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None
 
 
 def get_system_fonts():
@@ -129,7 +171,7 @@ class BOMCategorizerApp(tk.Tk):
         ver = self.cfg.get("app_info", {}).get("version", "dev")
         name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("900x750")  # Более широкое окно для современного дизайна
+        self.geometry("800x750")  # Компактное окно
 
         # Применяем современную цветовую схему
         self._setup_modern_styles()
@@ -199,24 +241,24 @@ class BOMCategorizerApp(tk.Tk):
 
         # Стиль для основных кнопок
         style.configure('Primary.TButton',
-                       font=(default_font, 10),
-                       padding=(16, 8),
+                       font=(default_font, 13),
+                       padding=(10, 4),
                        borderwidth=0)
 
         # Стиль для акцентных кнопок
         style.configure('Accent.TButton',
-                       font=(default_font, 10, 'bold'),
-                       padding=(16, 8),
+                       font=(default_font, 13, 'bold'),
+                       padding=(10, 4),
                        borderwidth=0)
 
         # Стиль для меток с жирным шрифтом
         style.configure('Bold.TLabel',
-                       font=(default_font, 10, 'bold'),
+                       font=(default_font, 13, 'bold'),
                        foreground=colors['text'])
 
         # Стиль для секций
         style.configure('Section.TLabelframe.Label',
-                       font=(default_font, 11, 'bold'),
+                       font=(default_font, 14, 'bold'),
                        foreground=colors['primary'])
 
         style.configure('Section.TLabelframe',
@@ -225,17 +267,17 @@ class BOMCategorizerApp(tk.Tk):
 
         # Стиль для обычных меток
         style.configure('TLabel',
-                       font=(default_font, 9),
+                       font=(default_font, 12),
                        foreground=colors['text'])
 
         # Стиль для кнопок
         style.configure('TButton',
-                       font=(default_font, 9),
-                       padding=(12, 6))
+                       font=(default_font, 12),
+                       padding=(8, 4))
 
     def create_widgets(self):
         """Создает все виджеты интерфейса"""
-        pad = {"padx": 12, "pady": 8}  # Увеличенные отступы для современного вида
+        pad = {"padx": 3, "pady": 2}  # Очень компактные отступы
 
         # Создать Canvas с вертикальной прокруткой
         main_container = ttk.Frame(self)
@@ -268,7 +310,7 @@ class BOMCategorizerApp(tk.Tk):
         row = 0
 
         # Главная рабочая зона (в рамке)
-        main_work_frame = ttk.LabelFrame(frm, text=" 📁 Основные настройки ", padding=15, style='Section.TLabelframe')
+        main_work_frame = ttk.LabelFrame(frm, text=" 📁 Основные настройки ", padding=6, style='Section.TLabelframe')
         main_work_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
         
         # Сбросить счетчик строк для рамки
@@ -282,7 +324,7 @@ class BOMCategorizerApp(tk.Tk):
         btn2.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn2)
         
-        self.listbox = tk.Listbox(main_work_frame, height=5, font=(self.default_font, 9),
+        self.listbox = tk.Listbox(main_work_frame, height=4, font=(self.default_font, 12),
                                  relief=tk.FLAT, bg='#FFFFFF', fg='#212121',
                                  selectbackground='#2196F3', selectforeground='#FFFFFF')
         self.listbox.grid(row=work_row+1, column=0, columnspan=3, sticky="nsew", **pad)
@@ -309,7 +351,7 @@ class BOMCategorizerApp(tk.Tk):
         self.lockable_widgets.append(apply_btn)
         
         ttk.Label(multiplier_frame, text="(выберите файл и измените количество)", 
-                  font=('TkDefaultFont', 8), foreground='gray').pack(side="left", padx=(10, 0))
+                  font=('TkDefaultFont', 11), foreground='gray').pack(side="left", padx=(10, 0))
 
         work_row += 1
         ttk.Label(main_work_frame, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
@@ -327,15 +369,15 @@ class BOMCategorizerApp(tk.Tk):
         work_row += 1
         sheets_hint = ttk.Label(main_work_frame, 
                                text="💡 Если поле ПУСТОЕ - обрабатываются ВСЕ листы из каждого .xlsx файла. Если ЗАПОЛНЕНО - только указанные листы из КАЖДОГО .xlsx файла.",
-                               font=('TkDefaultFont', 8), 
+                               font=('TkDefaultFont', 11), 
                                foreground='gray',
-                               wraplength=680)
+                               wraplength=600)
         sheets_hint.grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
         self.sheets_warning_label = sheets_hint
 
         work_row += 1
         ttk.Label(main_work_frame, text="Выходной XLSX:").grid(row=work_row, column=0, sticky="w", **pad)
-        entry2 = ttk.Entry(main_work_frame, textvariable=self.output_xlsx, font=(self.default_font, 9))
+        entry2 = ttk.Entry(main_work_frame, textvariable=self.output_xlsx, font=(self.default_font, 12))
         entry2.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry2)
 
@@ -345,7 +387,7 @@ class BOMCategorizerApp(tk.Tk):
 
         work_row += 1
         ttk.Label(main_work_frame, text="Папка для TXT файлов (опционально):").grid(row=work_row, column=0, sticky="w", **pad)
-        entry3 = ttk.Entry(main_work_frame, textvariable=self.txt_dir, font=(self.default_font, 9))
+        entry3 = ttk.Entry(main_work_frame, textvariable=self.txt_dir, font=(self.default_font, 12))
         entry3.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry3)
 
@@ -371,10 +413,10 @@ class BOMCategorizerApp(tk.Tk):
         # Продолжаем с основным фреймом
         # Секция для сравнения двух BOM файлов
         row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=12)
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=3)
 
         row += 1
-        compare_frame = ttk.LabelFrame(frm, text=" 🔍 Сравнение двух BOM файлов ", padding=15, style='Section.TLabelframe')
+        compare_frame = ttk.LabelFrame(frm, text=" 🔍 Сравнение двух BOM файлов ", padding=6, style='Section.TLabelframe')
         compare_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
 
         compare_row = 0
@@ -412,30 +454,30 @@ class BOMCategorizerApp(tk.Tk):
 
         # Секция Лог
         row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=12)
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=3)
 
         row += 1
-        log_frame = ttk.LabelFrame(frm, text=" 📋 Лог выполнения ", padding=15, style='Section.TLabelframe')
+        log_frame = ttk.LabelFrame(frm, text=" 📋 Лог выполнения ", padding=6, style='Section.TLabelframe')
         log_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
 
-        self.txt = tk.Text(log_frame, height=10, wrap=tk.WORD, font=(self.monospace_font, 9),
+        self.txt = tk.Text(log_frame, height=8, wrap=tk.WORD, font=(self.monospace_font, 12),
                           relief=tk.FLAT, bg='#FFFFFF', fg='#212121')
         self.txt.pack(fill=tk.BOTH, expand=True)
         self.lockable_widgets.append(self.txt)
         frm.grid_rowconfigure(row, weight=2)
 
         row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=12)
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=3)
 
         row += 1
         # Секция управления базой данных
-        db_frame = ttk.LabelFrame(frm, text=" 🗄️ Управление базой данных ", padding=15, style='Section.TLabelframe')
+        db_frame = ttk.LabelFrame(frm, text=" 🗄️ Управление базой данных ", padding=6, style='Section.TLabelframe')
         db_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
         
         # Описание секции
         db_info_text = ("Управляйте базой данных компонентов: просматривайте статистику, создавайте резервные "
                       "копии, экспортируйте для переноса на другой ПК.")
-        ttk.Label(db_frame, text=db_info_text, wraplength=700, justify='left').pack(fill=tk.X, pady=(0, 10))
+        ttk.Label(db_frame, text=db_info_text, wraplength=600, justify='left', font=(self.default_font, 11)).pack(fill=tk.X, pady=(0, 3))
         
         # Фрейм для кнопок в 3 ряда
         db_buttons_frame = ttk.Frame(db_frame)
@@ -443,34 +485,34 @@ class BOMCategorizerApp(tk.Tk):
         
         # Первый ряд кнопок
         db_row1 = ttk.Frame(db_buttons_frame)
-        db_row1.pack(fill=tk.X, pady=(0, 5))
+        db_row1.pack(fill=tk.X, pady=(0, 2))
         
-        btn_db_stats = ttk.Button(db_row1, text="📊 Статистика", command=self.on_show_db_stats, width=22)
-        btn_db_stats.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
+        btn_db_stats = ttk.Button(db_row1, text="📊 Статистика", command=self.on_show_db_stats, width=18)
+        btn_db_stats.pack(side=tk.LEFT, padx=(0, 3), expand=True, fill=tk.X)
         self.lockable_widgets.append(btn_db_stats)
         
-        btn_db_export = ttk.Button(db_row1, text="📤 Экспорт в Excel", command=self.on_export_database, width=22)
-        btn_db_export.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        btn_db_export = ttk.Button(db_row1, text="📤 Экспорт в Excel", command=self.on_export_database, width=18)
+        btn_db_export.pack(side=tk.LEFT, padx=3, expand=True, fill=tk.X)
         self.lockable_widgets.append(btn_db_export)
         
-        btn_db_backup = ttk.Button(db_row1, text="💾 Резервная копия", command=self.on_backup_database, width=22)
-        btn_db_backup.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
+        btn_db_backup = ttk.Button(db_row1, text="💾 Резервная копия", command=self.on_backup_database, width=18)
+        btn_db_backup.pack(side=tk.LEFT, padx=(3, 0), expand=True, fill=tk.X)
         self.lockable_widgets.append(btn_db_backup)
         
         # Второй ряд кнопок
         db_row2 = ttk.Frame(db_buttons_frame)
-        db_row2.pack(fill=tk.X, pady=(0, 5))
+        db_row2.pack(fill=tk.X, pady=(0, 2))
         
-        btn_db_import = ttk.Button(db_row2, text="📥 Импорт из Excel", command=self.on_import_database, width=22)
-        btn_db_import.pack(side=tk.LEFT, padx=(0, 5), expand=True, fill=tk.X)
+        btn_db_import = ttk.Button(db_row2, text="📥 Импорт из Excel", command=self.on_import_database, width=18)
+        btn_db_import.pack(side=tk.LEFT, padx=(0, 3), expand=True, fill=tk.X)
         self.lockable_widgets.append(btn_db_import)
         
-        btn_db_folder = ttk.Button(db_row2, text="📁 Открыть папку", command=self.on_open_db_folder, width=22)
-        btn_db_folder.pack(side=tk.LEFT, padx=5, expand=True, fill=tk.X)
+        btn_db_folder = ttk.Button(db_row2, text="📁 Открыть папку", command=self.on_open_db_folder, width=18)
+        btn_db_folder.pack(side=tk.LEFT, padx=3, expand=True, fill=tk.X)
         self.lockable_widgets.append(btn_db_folder)
         
-        btn_db_replace = ttk.Button(db_row2, text="🔄 Заменить базу данных", command=self.on_replace_database, width=22)
-        btn_db_replace.pack(side=tk.LEFT, padx=(5, 0), expand=True, fill=tk.X)
+        btn_db_replace = ttk.Button(db_row2, text="🔄 Заменить БД", command=self.on_replace_database, width=18)
+        btn_db_replace.pack(side=tk.LEFT, padx=(3, 0), expand=True, fill=tk.X)
         self.lockable_widgets.append(btn_db_replace)
         
         # Третий ряд - кнопка импорта из выходного файла (НОВОЕ!)
@@ -489,35 +531,35 @@ class BOMCategorizerApp(tk.Tk):
     def _create_footer(self):
         """Создает футер с информацией о разработчике и базе данных"""
         footer = ttk.Frame(self)
-        footer.pack(fill=tk.X, side=tk.BOTTOM, padx=10, pady=5)
+        footer.pack(fill=tk.X, side=tk.BOTTOM, padx=5, pady=2)
         
-        ttk.Separator(footer, orient='horizontal').pack(fill=tk.X, pady=(0, 5))
+        ttk.Separator(footer, orient='horizontal').pack(fill=tk.X, pady=(0, 2))
         
         # Первая строка: Разработчик и дата выпуска
         footer_text = ttk.Frame(footer)
         footer_text.pack()
         
         ttk.Label(footer_text, text="Разработчик: ", 
-                 font=("Arial", 9)).pack(side=tk.LEFT)
+                 font=("Arial", 13)).pack(side=tk.LEFT)
         
         self.dev_label = tk.Label(footer_text, 
                                   text=self.cfg.get("app_info", {}).get("developer", "Н/Д"),
-                                  font=("Arial", 9, "bold"),
+                                  font=("Arial", 13, "bold"),
                                   fg="#2E7D32",
                                   cursor="hand2")
         self.dev_label.pack(side=tk.LEFT)
         self.dev_label.bind("<Double-Button-1>", self.on_developer_double_click)
         
         ttk.Label(footer_text, text=" | ", 
-                 font=("Arial", 9)).pack(side=tk.LEFT)
+                 font=("Arial", 13)).pack(side=tk.LEFT)
         
         ttk.Label(footer_text, 
                  text=f"Дата выпуска: {self.cfg.get('app_info', {}).get('release_date', 'N/A')}", 
-                 font=("Arial", 9)).pack(side=tk.LEFT)
+                 font=("Arial", 13)).pack(side=tk.LEFT)
         
         # Вторая строка: Информация о базе данных
         db_info_frame = ttk.Frame(footer)
-        db_info_frame.pack(pady=(3, 0))
+        db_info_frame.pack(pady=(1, 0))
         
         # Получаем информацию о базе данных
         try:
@@ -537,23 +579,37 @@ class BOMCategorizerApp(tk.Tk):
             total_components = db_stats.get("metadata", {}).get("total_components", 0)
             
             ttk.Label(db_info_frame, text="🗄️ БД: ", 
-                     font=("Arial", 9)).pack(side=tk.LEFT)
+                     font=("Arial", 13)).pack(side=tk.LEFT)
             
-            ttk.Label(db_info_frame, 
+            # Метка с версией БД с tooltip историей и кликом для открытия файла
+            version_label = tk.Label(db_info_frame, 
                      text=f"v{db_version} ({total_components} компонентов)", 
-                     font=("Arial", 9, "bold"),
-                     foreground="#424242").pack(side=tk.LEFT)
+                     font=("Arial", 13, "bold"),
+                     foreground="#424242",
+                     cursor="hand2",
+                     bg=self.cget('bg'))
+            version_label.pack(side=tk.LEFT)
+            
+            # Создаем tooltip с историей БД
+            try:
+                history_text = format_history_tooltip()
+                ToolTip(version_label, history_text)
+            except Exception as e:
+                print(f"⚠️ Не удалось создать tooltip: {e}")
+            
+            # При клике открываем БД в текстовом редакторе
+            version_label.bind("<Button-1>", lambda e: self.on_open_database_in_editor())
             
             ttk.Label(db_info_frame, text=" | ", 
-                     font=("Arial", 9)).pack(side=tk.LEFT)
+                     font=("Arial", 13)).pack(side=tk.LEFT)
             
             ttk.Label(db_info_frame, text="📁 ", 
-                     font=("Arial", 9)).pack(side=tk.LEFT)
+                     font=("Arial", 13)).pack(side=tk.LEFT)
             
             # Кликабельная метка для открытия папки
             location_label = tk.Label(db_info_frame, 
                     text=location, 
-                    font=("Arial", 9, "bold"),
+                    font=("Arial", 13, "bold"),
                     fg=location_color,
                     cursor="hand2")
             location_label.pack(side=tk.LEFT)
@@ -565,7 +621,7 @@ class BOMCategorizerApp(tk.Tk):
             # Если не удалось загрузить информацию о БД
             ttk.Label(db_info_frame, 
                      text="🗄️ БД: информация недоступна", 
-                     font=("Arial", 9),
+                     font=("Arial", 13),
                      foreground="#757575").pack(side=tk.LEFT)
 
     def on_add_files(self):
@@ -842,7 +898,7 @@ class BOMCategorizerApp(tk.Tk):
         ttk.Label(info_frame, text="Следующие файлы имеют старый формат .doc:", 
                  font=("Arial", 10)).pack(anchor=tk.W, pady=(0, 5))
         
-        files_text = tk.Text(info_frame, height=5, wrap=tk.WORD, font=("Courier", 9))
+        files_text = tk.Text(info_frame, height=5, wrap=tk.WORD, font=("Courier", 12))
         files_text.pack(fill=tk.BOTH, expand=True)
         for doc_file in doc_files:
             files_text.insert(tk.END, f"  • {os.path.basename(doc_file)}\n")
@@ -852,7 +908,7 @@ class BOMCategorizerApp(tk.Tk):
         explanation = ttk.Label(dialog, 
                                text="Библиотека python-docx работает только с новым форматом .docx\n"
                                     "Необходимо конвертировать файлы перед обработкой.",
-                               font=("Arial", 9), foreground="gray")
+                               font=("Arial", 11), foreground="gray")
         explanation.pack(pady=10)
         
         # Кнопки выбора
@@ -875,7 +931,7 @@ class BOMCategorizerApp(tk.Tk):
                   command=on_word_convert, width=40).pack(pady=5)
         
         ttk.Label(buttons_frame, text="Требуется установленный Microsoft Word", 
-                 font=("Arial", 8), foreground="gray").pack()
+                 font=("Arial", 10), foreground="gray").pack()
         
         ttk.Separator(buttons_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
@@ -883,7 +939,7 @@ class BOMCategorizerApp(tk.Tk):
                   command=on_manual, width=40).pack(pady=5)
         
         ttk.Label(buttons_frame, text="Откроет инструкцию и остановит обработку", 
-                 font=("Arial", 8), foreground="gray").pack()
+                 font=("Arial", 10), foreground="gray").pack()
         
         ttk.Separator(buttons_frame, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=10)
         
@@ -950,10 +1006,10 @@ class BOMCategorizerApp(tk.Tk):
         y = (progress_dialog.winfo_screenheight() // 2) - (100)
         progress_dialog.geometry(f"500x200+{x}+{y}")
         
-        status_label = ttk.Label(progress_dialog, text="Инициализация...", font=("Arial", 10))
+        status_label = ttk.Label(progress_dialog, text="Инициализация...", font=("Arial", 12))
         status_label.pack(pady=20)
         
-        progress_text = tk.Text(progress_dialog, height=6, wrap=tk.WORD, font=("Courier", 9))
+        progress_text = tk.Text(progress_dialog, height=6, wrap=tk.WORD, font=("Courier", 11))
         progress_text.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
         
         success = True
@@ -1213,23 +1269,23 @@ class BOMCategorizerApp(tk.Tk):
         top_frame = ttk.Frame(dialog)
         top_frame.pack(fill=tk.X, padx=10, pady=10)
         
-        progress_label = ttk.Label(top_frame, text="", font=("Arial", 10))
+        progress_label = ttk.Label(top_frame, text="", font=("Arial", 12))
         progress_label.pack()
         
         # Средняя панель - информация об элементе
         info_frame = ttk.LabelFrame(dialog, text="Информация об элементе", padding=15)
         info_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        name_label = ttk.Label(info_frame, text="", font=("Arial", 12, "bold"), wraplength=850)
+        name_label = ttk.Label(info_frame, text="", font=("Arial", 14, "bold"), wraplength=850)
         name_label.pack(pady=10)
         
         details_frame = ttk.Frame(info_frame)
         details_frame.pack(fill=tk.X, pady=5)
         
-        qty_label = ttk.Label(details_frame, text="", font=("Arial", 10))
+        qty_label = ttk.Label(details_frame, text="", font=("Arial", 12))
         qty_label.pack(side=tk.LEFT, padx=10)
         
-        source_label = ttk.Label(details_frame, text="", font=("Arial", 10))
+        source_label = ttk.Label(details_frame, text="", font=("Arial", 12))
         source_label.pack(side=tk.LEFT, padx=10)
         
         # Панель выбора категории
@@ -1286,7 +1342,7 @@ class BOMCategorizerApp(tk.Tk):
         bottom_frame.pack(fill=tk.X, padx=10, pady=10)
         
         ttk.Label(bottom_frame, text=f"Правила будут сохранены в rules.json", 
-                 font=("Arial", 9, "italic")).pack(side=tk.LEFT)
+                 font=("Arial", 11, "italic")).pack(side=tk.LEFT)
         ttk.Button(bottom_frame, text="Отмена", command=dialog.destroy).pack(side=tk.RIGHT, padx=5)
         
         update_display()
@@ -1460,7 +1516,7 @@ class BOMCategorizerApp(tk.Tk):
             text_frame = ttk.Frame(dialog)
             text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=(self.monospace_font, 9))
+            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=(self.monospace_font, 12))
             scrollbar = ttk.Scrollbar(text_frame, command=text_widget.yview)
             text_widget.configure(yscrollcommand=scrollbar.set)
             
@@ -1599,6 +1655,32 @@ class BOMCategorizerApp(tk.Tk):
         except Exception as e:
             # Тихо игнорируем ошибки при клике из футера
             pass
+    
+    def on_open_database_in_editor(self):
+        """Открывает файл базы данных в текстовом редакторе по умолчанию"""
+        try:
+            db_path = get_database_path()
+            
+            if not os.path.exists(db_path):
+                messagebox.showerror("Ошибка", f"Файл базы данных не найден:\n{db_path}")
+                return
+            
+            # Открываем в текстовом редакторе по умолчанию для каждой ОС
+            if sys.platform == "win32":
+                # Windows: используем notepad или ассоциированный редактор
+                os.startfile(db_path)
+            elif sys.platform == "darwin":  # macOS
+                # macOS: используем TextEdit или ассоциированный редактор
+                os.system(f'open -e "{db_path}"')
+            else:  # Linux
+                # Linux: используем xdg-open (откроет в редакторе по умолчанию)
+                os.system(f'xdg-open "{db_path}"')
+            
+            self.txt.insert(tk.END, f"\n📝 Открыт файл БД: {os.path.basename(db_path)}\n")
+            self.txt.see(tk.END)
+                
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось открыть файл базы данных:\n{str(e)}")
     
     def on_replace_database(self):
         """Заменить текущую базу данных на другую из JSON файла"""
@@ -1762,7 +1844,7 @@ class BOMCategorizerApp(tk.Tk):
             text_frame = ttk.Frame(progress_dialog)
             text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            progress_text = tk.Text(text_frame, wrap=tk.WORD, font=(self.monospace_font, 9))
+            progress_text = tk.Text(text_frame, wrap=tk.WORD, font=(self.monospace_font, 12))
             scrollbar = ttk.Scrollbar(text_frame, command=progress_text.yview)
             progress_text.configure(yscrollcommand=scrollbar.set)
             
@@ -1892,18 +1974,18 @@ class BOMCategorizerApp(tk.Tk):
         
         # Заголовок
         ttk.Label(main_frame, text="Введите PIN-код:", 
-                 font=("Arial", 10)).pack(pady=(0, 10))
+                 font=("Arial", 12)).pack(pady=(0, 10))
         
         # Поле ввода PIN
         pin_var = tk.StringVar()
         pin_entry = ttk.Entry(main_frame, textvariable=pin_var, show="●", 
-                             font=("Arial", 12), justify="center", width=15)
+                             font=("Arial", 14), justify="center", width=15)
         pin_entry.pack(pady=(0, 5))
         pin_entry.focus_set()
         
         # Метка ошибки
         error_label = ttk.Label(main_frame, text="", foreground="red", 
-                               font=("Arial", 9))
+                               font=("Arial", 11))
         error_label.pack(pady=(0, 10))
         
         def check_pin():
@@ -1959,7 +2041,7 @@ class BOMCategorizerApp(tk.Tk):
         # Заголовок
         title_label = ttk.Label(main_frame, 
                                 text="🗄️ База данных компонентов", 
-                                font=("Arial", 14, "bold"))
+                                font=("Arial", 16, "bold"))
         title_label.pack(pady=(0, 15))
         
         # Разделитель
@@ -1979,7 +2061,7 @@ class BOMCategorizerApp(tk.Tk):
 База будет пополняться автоматически по мере работы."""
         
         info_label = ttk.Label(main_frame, text=info_text, 
-                              font=("Arial", 10), justify=tk.LEFT)
+                              font=("Arial", 12), justify=tk.LEFT)
         info_label.pack(pady=(0, 20))
         
         # Фрейм для кнопок

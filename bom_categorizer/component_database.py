@@ -2,15 +2,29 @@
 Модуль для работы с базой данных компонентов
 База данных содержит точные соответствия наименований компонентов и их категорий
 
-Структура базы данных (JSON):
+Структура базы данных (JSON) с блокчейн-подобным версионированием:
 {
     "metadata": {
-        "version": "1.0.0",
+        "version": "1.5",  # Двузначная версия
         "created": "2025-11-01",
-        "last_updated": "2025-11-01",
+        "last_updated": "2025-11-08 15:30:45",
         "total_components": 100,
-        "description": "База данных компонентов для BOM классификатора"
+        "description": "База данных компонентов для BOM классификатора",
+        "previous_hash": "abc123...",  # SHA256 хэш предыдущей версии
+        "current_hash": "def456..."    # SHA256 хэш текущей версии
     },
+    "history": [
+        {
+            "version": "1.5",
+            "timestamp": "2025-11-08 15:30:45",
+            "action": "import_from_file",  # или "manual_add", "import_from_excel"
+            "source": "input_file.xlsx",
+            "components_added": 5,
+            "component_names": ["Резистор...", "Конденсатор..."],
+            "previous_hash": "abc123...",
+            "current_hash": "def456..."
+        }
+    ],
     "categories": {
         "resistors": "Резисторы",
         "capacitors": "Конденсаторы",
@@ -26,7 +40,8 @@
 
 import json
 import os
-from typing import Optional, Dict
+import hashlib
+from typing import Optional, Dict, List
 from datetime import datetime
 
 
@@ -91,6 +106,83 @@ CATEGORY_NAMES = {
 }
 
 
+def _calculate_database_hash(components: Dict[str, str]) -> str:
+    """
+    Вычисляет SHA256 хэш базы данных компонентов
+    
+    Args:
+        components: Словарь компонентов
+        
+    Returns:
+        Hexadecimal строка хэша
+    """
+    # Сортируем компоненты для стабильного хэша
+    sorted_items = sorted(components.items())
+    data_str = json.dumps(sorted_items, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(data_str.encode('utf-8')).hexdigest()[:16]  # Первые 16 символов
+
+
+def _increment_version(current_version: str) -> str:
+    """
+    Инкрементирует версию БД (формат X.Y)
+    
+    Args:
+        current_version: Текущая версия (например "1.5")
+        
+    Returns:
+        Новая версия (например "1.6")
+    """
+    try:
+        parts = current_version.split('.')
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        minor += 1
+        return f"{major}.{minor}"
+    except:
+        return "1.0"
+
+
+def _add_history_entry(structured_db: dict, action: str, source: Optional[str] = None, 
+                       components_added: int = 0, component_names: List[str] = None) -> None:
+    """
+    Добавляет запись в историю изменений БД
+    
+    Args:
+        structured_db: Структурированная БД
+        action: Тип действия (manual_add, import_from_file, import_from_excel)
+        source: Источник данных (имя файла)
+        components_added: Количество добавленных компонентов
+        component_names: Список названий добавленных компонентов
+    """
+    if "history" not in structured_db:
+        structured_db["history"] = []
+    
+    # Ограничиваем количество имен компонентов в истории
+    if component_names and len(component_names) > 10:
+        component_names = component_names[:10] + [f"... и еще {len(component_names) - 10}"]
+    
+    history_entry = {
+        "version": structured_db["metadata"]["version"],
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "action": action,
+        "components_added": components_added,
+        "previous_hash": structured_db["metadata"].get("previous_hash", ""),
+        "current_hash": structured_db["metadata"]["current_hash"]
+    }
+    
+    if source:
+        history_entry["source"] = source
+    
+    if component_names:
+        history_entry["component_names"] = component_names
+    
+    structured_db["history"].insert(0, history_entry)  # Добавляем в начало (новые первые)
+    
+    # Ограничиваем историю последними 50 записями
+    if len(structured_db["history"]) > 50:
+        structured_db["history"] = structured_db["history"][:50]
+
+
 def load_component_database() -> Dict[str, str]:
     """
     Загружает базу данных компонентов
@@ -115,15 +207,26 @@ def load_component_database() -> Dict[str, str]:
             "PE43713A-Z": "ics",
         }
         
-        # Создаем структурированную базу
+        # Создаем структурированную базу с хэшами
+        initial_hash = _calculate_database_hash(initial_components)
         structured_db = {
             "metadata": {
-                "version": "1.0.0",
-                "created": datetime.now().strftime("%Y-%m-%d"),
-                "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                "version": "1.0",  # Двузначная версия
+                "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "total_components": len(initial_components),
-                "description": "База данных компонентов для BOM классификатора"
+                "description": "База данных компонентов для BOM классификатора",
+                "previous_hash": "",  # Первая версия, нет предыдущего хэша
+                "current_hash": initial_hash
             },
+            "history": [{
+                "version": "1.0",
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "action": "initial_creation",
+                "components_added": len(initial_components),
+                "previous_hash": "",
+                "current_hash": initial_hash
+            }],
             "categories": CATEGORY_NAMES,
             "components": initial_components
         }
@@ -141,24 +244,44 @@ def load_component_database() -> Dict[str, str]:
             if isinstance(data, dict):
                 # Новый формат с метаданными
                 if "components" in data:
+                    # Проверяем и конвертируем трехзначную версию в двухзначную
+                    if "metadata" in data:
+                        old_version = data["metadata"].get("version", "1.0")
+                        if old_version.count('.') == 2:  # Формат X.Y.Z
+                            parts = old_version.split('.')
+                            new_version = f"{parts[0]}.{parts[1]}"  # X.Y
+                            data["metadata"]["version"] = new_version
+                            _save_structured_database(data)
+                            print(f"🔄 Версия БД конвертирована: {old_version} → {new_version}")
                     return data["components"]
                 # Старый формат (простой словарь)
                 elif "metadata" not in data and "categories" not in data:
-                    # Конвертируем старый формат в новый
-                    print("🔄 Обнаружен старый формат базы данных, конвертирую...")
+                    # Конвертируем старый формат в новый с хэшами
+                    print("🔄 Обнаружен старый формат базы данных, конвертирую в новый формат с версионированием...")
+                    current_hash = _calculate_database_hash(data)
                     structured_db = {
                         "metadata": {
-                            "version": "1.0.0",
-                            "created": datetime.now().strftime("%Y-%m-%d"),
-                            "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                            "version": "1.0",  # Двузначная версия
+                            "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "total_components": len(data),
-                            "description": "База данных компонентов для BOM классификатора (конвертирована из старого формата)"
+                            "description": "База данных компонентов для BOM классификатора (конвертирована из старого формата)",
+                            "previous_hash": "",
+                            "current_hash": current_hash
                         },
+                        "history": [{
+                            "version": "1.0",
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "action": "conversion_from_old_format",
+                            "components_added": len(data),
+                            "previous_hash": "",
+                            "current_hash": current_hash
+                        }],
                         "categories": CATEGORY_NAMES,
                         "components": data
                     }
                     _save_structured_database(structured_db)
-                    print(f"✅ База данных обновлена до нового формата")
+                    print(f"✅ База данных обновлена до нового формата с версионированием")
                     return data
             
             return {}
@@ -183,12 +306,16 @@ def _save_structured_database(structured_db: dict) -> None:
         print(f"⚠️ Ошибка сохранения базы данных компонентов: {e}")
 
 
-def save_component_database(database: Dict[str, str]) -> None:
+def save_component_database(database: Dict[str, str], action: str = "update", 
+                            source: Optional[str] = None, component_names: List[str] = None) -> None:
     """
-    Сохраняет базу данных компонентов (с автоматическим обновлением метаданных)
+    Сохраняет базу данных компонентов (с автоматическим обновлением метаданных, версии и хэшей)
     
     Args:
         database: Словарь {наименование_компонента: категория}
+        action: Тип действия (update, import_from_file, import_from_excel, manual_add)
+        source: Источник данных (имя файла)
+        component_names: Список названий добавленных компонентов
     """
     db_path = get_database_path()
     
@@ -200,27 +327,34 @@ def save_component_database(database: Dict[str, str]) -> None:
                 if "metadata" in data:
                     structured_db = data
                 else:
-                    # Старый формат - создаем новую структуру
+                    # Старый формат - создаем новую структуру с хэшами
+                    old_hash = _calculate_database_hash(data) if data else ""
                     structured_db = {
                         "metadata": {
-                            "version": "1.0.0",
-                            "created": datetime.now().strftime("%Y-%m-%d"),
-                            "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                            "version": "1.0",
+                            "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "total_components": 0,
-                            "description": "База данных компонентов для BOM классификатора"
+                            "description": "База данных компонентов для BOM классификатора",
+                            "previous_hash": "",
+                            "current_hash": old_hash
                         },
+                        "history": [],
                         "categories": CATEGORY_NAMES,
-                        "components": {}
+                        "components": data if data else {}
                     }
         else:
             structured_db = {
                 "metadata": {
-                    "version": "1.0.0",
-                    "created": datetime.now().strftime("%Y-%m-%d"),
-                    "last_updated": datetime.now().strftime("%Y-%m-%d"),
+                    "version": "1.0",
+                    "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "total_components": 0,
-                    "description": "База данных компонентов для BOM классификатора"
+                    "description": "База данных компонентов для BOM классификатора",
+                    "previous_hash": "",
+                    "current_hash": ""
                 },
+                "history": [],
                 "categories": CATEGORY_NAMES,
                 "components": {}
             }
@@ -228,22 +362,48 @@ def save_component_database(database: Dict[str, str]) -> None:
         print(f"⚠️ Ошибка загрузки базы данных: {e}")
         return
     
+    # Вычисляем количество добавленных компонентов
+    old_components = structured_db.get("components", {})
+    components_added = len(database) - len(old_components)
+    
+    # Если есть изменения, обновляем версию и хэши
+    if old_components != database and components_added > 0:
+        # Сохраняем предыдущий хэш
+        previous_hash = structured_db["metadata"].get("current_hash", "")
+        
+        # Вычисляем новый хэш
+        new_hash = _calculate_database_hash(database)
+        
+        # Инкрементируем версию
+        old_version = structured_db["metadata"].get("version", "1.0")
+        new_version = _increment_version(old_version)
+        
+        # Обновляем метаданные
+        structured_db["metadata"]["version"] = new_version
+        structured_db["metadata"]["previous_hash"] = previous_hash
+        structured_db["metadata"]["current_hash"] = new_hash
+    
     # Обновляем компоненты и метаданные
     structured_db["components"] = database
-    structured_db["metadata"]["last_updated"] = datetime.now().strftime("%Y-%m-%d")
+    structured_db["metadata"]["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     structured_db["metadata"]["total_components"] = len(database)
+    
+    # Добавляем запись в историю если были изменения
+    if components_added > 0:
+        _add_history_entry(structured_db, action, source, components_added, component_names)
     
     # Сохраняем
     _save_structured_database(structured_db)
 
 
-def add_component_to_database(component_name: str, category: str) -> None:
+def add_component_to_database(component_name: str, category: str, source: Optional[str] = None) -> None:
     """
-    Добавляет компонент в базу данных
+    Добавляет компонент в базу данных с обновлением версии и истории
     
     Args:
         component_name: Наименование компонента
         category: Категория компонента
+        source: Источник данных (имя файла)
     """
     if not component_name or not category:
         return
@@ -256,7 +416,9 @@ def add_component_to_database(component_name: str, category: str) -> None:
     # Добавляем только если категория изменилась или компонента нет в базе
     if component_name not in db or db[component_name] != category:
         db[component_name] = category
-        save_component_database(db)
+        # Передаем информацию о добавляемом компоненте
+        action = "import_from_file" if source else "manual_add"
+        save_component_database(db, action=action, source=source, component_names=[component_name])
         print(f"✅ Добавлено в базу: {component_name} → {category}")
 
 
@@ -289,6 +451,85 @@ def get_component_category(component_name: str) -> Optional[str]:
             return category
     
     return None
+
+
+def get_database_history() -> List[dict]:
+    """
+    Получает историю изменений базы данных
+    
+    Returns:
+        Список записей истории (последние N записей)
+    """
+    db_path = get_database_path()
+    
+    if not os.path.exists(db_path):
+        return []
+    
+    try:
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return data.get("history", [])
+    except Exception as e:
+        print(f"⚠️ Ошибка чтения истории БД: {e}")
+        return []
+
+
+def format_history_tooltip() -> str:
+    """
+    Форматирует историю БД для показа в tooltip
+    
+    Returns:
+        Отформатированная строка с историей изменений
+    """
+    history = get_database_history()
+    
+    if not history:
+        return "История изменений пуста"
+    
+    # Ограничиваем количество записей в tooltip
+    recent_history = history[:10]
+    
+    lines = ["📜 ИСТОРИЯ ИЗМЕНЕНИЙ БД:\n"]
+    
+    action_names = {
+        "initial_creation": "Создание БД",
+        "conversion_from_old_format": "Конвертация из старого формата",
+        "manual_add": "Ручное добавление",
+        "import_from_file": "Импорт из файла",
+        "import_from_excel": "Импорт из Excel",
+        "update": "Обновление"
+    }
+    
+    for i, entry in enumerate(recent_history, 1):
+        version = entry.get("version", "?")
+        timestamp = entry.get("timestamp", "")
+        action = action_names.get(entry.get("action", ""), entry.get("action", ""))
+        added = entry.get("components_added", 0)
+        source = entry.get("source", "")
+        prev_hash = entry.get("previous_hash", "")[:8]
+        curr_hash = entry.get("current_hash", "")[:8]
+        
+        lines.append(f"\n{i}. v{version} ({timestamp})")
+        lines.append(f"   Действие: {action}")
+        lines.append(f"   Добавлено: {added} компонент(ов)")
+        
+        if source:
+            lines.append(f"   Источник: {source}")
+        
+        if prev_hash and curr_hash:
+            lines.append(f"   Хэш: {prev_hash} → {curr_hash}")
+        
+        # Показываем первые несколько компонентов
+        component_names = entry.get("component_names", [])
+        if component_names:
+            lines.append(f"   Компоненты: {', '.join(component_names[:3])}")
+            if len(component_names) > 3:
+                lines.append(f"   ... и еще {len(component_names) - 3}")
+    
+    if len(history) > 10:
+        lines.append(f"\n... и еще {len(history) - 10} записей")
+    
+    return '\n'.join(lines)
 
 
 def get_database_stats() -> dict:
