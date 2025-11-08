@@ -1,0 +1,6 @@
+pandas
+openpyxl
+python-docx
+docx2txt
+chardet
+
