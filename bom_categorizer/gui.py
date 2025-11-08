@@ -15,6 +15,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import sys
+import platform
 
 from .component_database import (
     add_component_to_database, 
@@ -38,6 +39,38 @@ if sys.stdout.encoding != 'utf-8':
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
 
 from .main import main as cli_main
+
+
+def get_system_fonts():
+    """
+    Возвращает подходящие шрифты для текущей ОС
+
+    Returns:
+        dict: Словарь с типами шрифтов (default, monospace)
+    """
+    system = platform.system()
+
+    if system == 'Darwin':  # macOS
+        return {
+            'default': 'SF Pro Text',  # Системный шрифт macOS
+            'default_fallback': 'Helvetica Neue',
+            'monospace': 'Menlo',
+            'monospace_fallback': 'Monaco'
+        }
+    elif system == 'Windows':
+        return {
+            'default': 'Segoe UI',
+            'default_fallback': 'Arial',
+            'monospace': 'Consolas',
+            'monospace_fallback': 'Courier New'
+        }
+    else:  # Linux и другие
+        return {
+            'default': 'DejaVu Sans',
+            'default_fallback': 'Sans',
+            'monospace': 'DejaVu Sans Mono',
+            'monospace_fallback': 'Monospace'
+        }
 
 
 def run_cli_async(args_list, on_finish):
@@ -96,7 +129,10 @@ class BOMCategorizerApp(tk.Tk):
         ver = self.cfg.get("app_info", {}).get("version", "dev")
         name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("750x700")  # Стандартный размер с прокруткой
+        self.geometry("900x750")  # Более широкое окно для современного дизайна
+
+        # Применяем современную цветовую схему
+        self._setup_modern_styles()
 
         self.input_files: dict[str, int] = {}  # {путь_к_файлу: количество}
         self.sheet_spec = tk.StringVar()
@@ -109,8 +145,7 @@ class BOMCategorizerApp(tk.Tk):
         self.create_txt = tk.BooleanVar(value=False)
         self.current_file_multiplier = tk.IntVar(value=1)  # Количество для выбранного файла
         self.selected_file_index = None  # Индекс последнего выбранного файла
-        self.exclude_items_text = None  # Текстовое поле для исключения элементов
-        
+
         # Сравнение файлов
         self.compare_file1 = tk.StringVar()
         self.compare_file2 = tk.StringVar()
@@ -133,60 +168,123 @@ class BOMCategorizerApp(tk.Tk):
         # Проверяем первый запуск и предлагаем импорт БД
         self.after(500, self.check_first_run_and_offer_import)
 
+    def _setup_modern_styles(self):
+        """Настраивает современные стили для ttk виджетов"""
+        style = ttk.Style()
+
+        # Получаем подходящие шрифты для текущей ОС
+        fonts = get_system_fonts()
+        default_font = fonts['default']
+        mono_font = fonts['monospace']
+
+        # Сохраняем шрифты для использования в других методах
+        self.default_font = default_font
+        self.monospace_font = mono_font
+
+        # Современная цветовая палитра
+        colors = {
+            'primary': '#2196F3',      # Синий
+            'primary_dark': '#1976D2',  # Темно-синий
+            'success': '#4CAF50',       # Зеленый
+            'danger': '#F44336',        # Красный
+            'warning': '#FF9800',       # Оранжевый
+            'bg': '#F5F5F5',            # Светло-серый фон
+            'surface': '#FFFFFF',       # Белый
+            'text': '#212121',          # Темно-серый текст
+            'text_secondary': '#757575' # Серый текст
+        }
+
+        # Настройка цвета фона окна
+        self.configure(bg=colors['bg'])
+
+        # Стиль для основных кнопок
+        style.configure('Primary.TButton',
+                       font=(default_font, 10),
+                       padding=(16, 8),
+                       borderwidth=0)
+
+        # Стиль для акцентных кнопок
+        style.configure('Accent.TButton',
+                       font=(default_font, 10, 'bold'),
+                       padding=(16, 8),
+                       borderwidth=0)
+
+        # Стиль для меток с жирным шрифтом
+        style.configure('Bold.TLabel',
+                       font=(default_font, 10, 'bold'),
+                       foreground=colors['text'])
+
+        # Стиль для секций
+        style.configure('Section.TLabelframe.Label',
+                       font=(default_font, 11, 'bold'),
+                       foreground=colors['primary'])
+
+        style.configure('Section.TLabelframe',
+                       borderwidth=2,
+                       relief='solid')
+
+        # Стиль для обычных меток
+        style.configure('TLabel',
+                       font=(default_font, 9),
+                       foreground=colors['text'])
+
+        # Стиль для кнопок
+        style.configure('TButton',
+                       font=(default_font, 9),
+                       padding=(12, 6))
+
     def create_widgets(self):
         """Создает все виджеты интерфейса"""
-        pad = {"padx": 8, "pady": 6}
+        pad = {"padx": 12, "pady": 8}  # Увеличенные отступы для современного вида
 
         # Создать Canvas с вертикальной прокруткой
         main_container = ttk.Frame(self)
-        main_container.pack(fill=tk.BOTH, expand=True)
-        
-        canvas = tk.Canvas(main_container)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+
+        canvas = tk.Canvas(main_container, bg='#F5F5F5', highlightthickness=0)
         scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
-        
+
         # Создать фрейм внутри canvas для содержимого
         frm = ttk.Frame(canvas)
-        
+
         # Привязать фрейм к canvas
         frm.bind(
             "<Configure>",
             lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
         )
-        
+
         canvas.create_window((0, 0), window=frm, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        
+
         # Разместить canvas и scrollbar
         canvas.pack(side="left", fill=tk.BOTH, expand=True)
         scrollbar.pack(side="right", fill="y")
-        
+
         # Привязать прокрутку колесом мыши
         def _on_mousewheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
         canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         row = 0
-        
+
         # Главная рабочая зона (в рамке)
-        # Стиль для LabelFrame с жирным шрифтом
-        style = ttk.Style()
-        style.configure('Bold.TLabelframe.Label', font=('TkDefaultFont', 11, 'bold'))
-        
-        main_work_frame = ttk.LabelFrame(frm, text=" Основные настройки ", padding=10, style='Bold.TLabelframe')
+        main_work_frame = ttk.LabelFrame(frm, text=" 📁 Основные настройки ", padding=15, style='Section.TLabelframe')
         main_work_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
         
         # Сбросить счетчик строк для рамки
         work_row = 0
-        ttk.Label(main_work_frame, text="Входные файлы (XLSX/DOCX/DOC/TXT):").grid(row=work_row, column=0, sticky="w", **pad)
-        btn1 = ttk.Button(main_work_frame, text="Добавить файлы", command=self.on_add_files)
+        ttk.Label(main_work_frame, text="Входные файлы (XLSX/DOCX/DOC/TXT):", style='Bold.TLabel').grid(row=work_row, column=0, sticky="w", **pad)
+        btn1 = ttk.Button(main_work_frame, text="➕ Добавить файлы", command=self.on_add_files)
         btn1.grid(row=work_row, column=1, sticky="w", **pad)
         self.lockable_widgets.append(btn1)
-        
-        btn2 = ttk.Button(main_work_frame, text="Очистить", command=self.on_clear_files)
+
+        btn2 = ttk.Button(main_work_frame, text="🗑️ Очистить", command=self.on_clear_files)
         btn2.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn2)
         
-        self.listbox = tk.Listbox(main_work_frame, height=5)
+        self.listbox = tk.Listbox(main_work_frame, height=5, font=(self.default_font, 9),
+                                 relief=tk.FLAT, bg='#FFFFFF', fg='#212121',
+                                 selectbackground='#2196F3', selectforeground='#FFFFFF')
         self.listbox.grid(row=work_row+1, column=0, columnspan=3, sticky="nsew", **pad)
         self.listbox.bind('<<ListboxSelect>>', self.on_file_selected)
         self.lockable_widgets.append(self.listbox)
@@ -237,21 +335,21 @@ class BOMCategorizerApp(tk.Tk):
 
         work_row += 1
         ttk.Label(main_work_frame, text="Выходной XLSX:").grid(row=work_row, column=0, sticky="w", **pad)
-        entry2 = ttk.Entry(main_work_frame, textvariable=self.output_xlsx)
+        entry2 = ttk.Entry(main_work_frame, textvariable=self.output_xlsx, font=(self.default_font, 9))
         entry2.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry2)
-        
-        btn3 = ttk.Button(main_work_frame, text="Сохранить как...", command=self.on_pick_output)
+
+        btn3 = ttk.Button(main_work_frame, text="💾 Сохранить как...", command=self.on_pick_output)
         btn3.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn3)
 
         work_row += 1
         ttk.Label(main_work_frame, text="Папка для TXT файлов (опционально):").grid(row=work_row, column=0, sticky="w", **pad)
-        entry3 = ttk.Entry(main_work_frame, textvariable=self.txt_dir)
+        entry3 = ttk.Entry(main_work_frame, textvariable=self.txt_dir, font=(self.default_font, 9))
         entry3.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry3)
-        
-        btn4 = ttk.Button(main_work_frame, text="Выбрать...", command=self.on_pick_txt_dir)
+
+        btn4 = ttk.Button(main_work_frame, text="📂 Выбрать...", command=self.on_pick_txt_dir)
         btn4.grid(row=work_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn4)
 
@@ -262,68 +360,76 @@ class BOMCategorizerApp(tk.Tk):
 
         work_row += 1
         # Кнопки запуска - выделяем цветом и крупнее
-        btn5 = ttk.Button(main_work_frame, text="▶ Запустить обработку", command=self.on_run)
+        btn5 = ttk.Button(main_work_frame, text="▶ Запустить обработку", command=self.on_run, style='Primary.TButton')
         btn5.grid(row=work_row, column=0, columnspan=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn5)
-        
-        btn6 = ttk.Button(main_work_frame, text="Интерактивная классификация", command=self.on_interactive_classify)
+
+        btn6 = ttk.Button(main_work_frame, text="🔄 Интерактивная классификация", command=self.on_interactive_classify, style='Accent.TButton')
         btn6.grid(row=work_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn6)
-        
+
         # Продолжаем с основным фреймом
         # Секция для сравнения двух BOM файлов
         row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
-        
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=12)
+
         row += 1
-        ttk.Label(frm, text="Сравнение двух BOM файлов:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="Первый файл (базовый):").grid(row=row, column=0, sticky="w", **pad)
-        entry_cmp1 = ttk.Entry(frm, textvariable=self.compare_file1)
-        entry_cmp1.grid(row=row, column=1, sticky="ew", **pad)
+        compare_frame = ttk.LabelFrame(frm, text=" 🔍 Сравнение двух BOM файлов ", padding=15, style='Section.TLabelframe')
+        compare_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+
+        compare_row = 0
+        ttk.Label(compare_frame, text="Первый файл (базовый):").grid(row=compare_row, column=0, sticky="w", **pad)
+        entry_cmp1 = ttk.Entry(compare_frame, textvariable=self.compare_file1)
+        entry_cmp1.grid(row=compare_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry_cmp1)
-        btn_cmp1 = ttk.Button(frm, text="Выбрать...", command=self.on_select_compare_file1)
-        btn_cmp1.grid(row=row, column=2, sticky="w", **pad)
+        btn_cmp1 = ttk.Button(compare_frame, text="📂 Выбрать...", command=self.on_select_compare_file1)
+        btn_cmp1.grid(row=compare_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn_cmp1)
-        
-        row += 1
-        ttk.Label(frm, text="Второй файл (новый):").grid(row=row, column=0, sticky="w", **pad)
-        entry_cmp2 = ttk.Entry(frm, textvariable=self.compare_file2)
-        entry_cmp2.grid(row=row, column=1, sticky="ew", **pad)
+        compare_frame.grid_columnconfigure(1, weight=1)
+
+        compare_row += 1
+        ttk.Label(compare_frame, text="Второй файл (новый):").grid(row=compare_row, column=0, sticky="w", **pad)
+        entry_cmp2 = ttk.Entry(compare_frame, textvariable=self.compare_file2)
+        entry_cmp2.grid(row=compare_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry_cmp2)
-        btn_cmp2 = ttk.Button(frm, text="Выбрать...", command=self.on_select_compare_file2)
-        btn_cmp2.grid(row=row, column=2, sticky="w", **pad)
+        btn_cmp2 = ttk.Button(compare_frame, text="📂 Выбрать...", command=self.on_select_compare_file2)
+        btn_cmp2.grid(row=compare_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn_cmp2)
-        
-        row += 1
-        ttk.Label(frm, text="Файл результата:").grid(row=row, column=0, sticky="w", **pad)
-        entry_cmp_out = ttk.Entry(frm, textvariable=self.compare_output)
-        entry_cmp_out.grid(row=row, column=1, sticky="ew", **pad)
+
+        compare_row += 1
+        ttk.Label(compare_frame, text="Файл результата:").grid(row=compare_row, column=0, sticky="w", **pad)
+        entry_cmp_out = ttk.Entry(compare_frame, textvariable=self.compare_output)
+        entry_cmp_out.grid(row=compare_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry_cmp_out)
-        btn_cmp_out = ttk.Button(frm, text="Сохранить как...", command=self.on_select_compare_output)
-        btn_cmp_out.grid(row=row, column=2, sticky="w", **pad)
+        btn_cmp_out = ttk.Button(compare_frame, text="💾 Сохранить как...", command=self.on_select_compare_output)
+        btn_cmp_out.grid(row=compare_row, column=2, sticky="w", **pad)
         self.lockable_widgets.append(btn_cmp_out)
-        
-        row += 1
-        btn_compare = ttk.Button(frm, text="Сравнить файлы", command=self.on_compare_files)
-        btn_compare.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
+
+        compare_row += 1
+        btn_compare = ttk.Button(compare_frame, text="⚡ Сравнить файлы", command=self.on_compare_files, style='Primary.TButton')
+        btn_compare.grid(row=compare_row, column=0, columnspan=3, sticky="ew", **pad)
         self.lockable_widgets.append(btn_compare)
 
         # Секция Лог
         row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
-        
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=12)
+
         row += 1
-        ttk.Label(frm, text="Лог:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, sticky="w", **pad)
-        self.txt = tk.Text(frm, height=10, wrap=tk.WORD)
-        self.txt.grid(row=row+1, column=0, columnspan=3, sticky="nsew", **pad)
+        log_frame = ttk.LabelFrame(frm, text=" 📋 Лог выполнения ", padding=15, style='Section.TLabelframe')
+        log_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
+
+        self.txt = tk.Text(log_frame, height=10, wrap=tk.WORD, font=(self.monospace_font, 9),
+                          relief=tk.FLAT, bg='#FFFFFF', fg='#212121')
+        self.txt.pack(fill=tk.BOTH, expand=True)
         self.lockable_widgets.append(self.txt)
-        frm.grid_rowconfigure(row+1, weight=2)
-        
-        row += 2
+        frm.grid_rowconfigure(row, weight=2)
+
+        row += 1
+        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=12)
+
+        row += 1
         # Секция управления базой данных
-        db_frame = ttk.LabelFrame(frm, text=" 🗄️ Управление базой данных ", padding=10, style='Bold.TLabelframe')
+        db_frame = ttk.LabelFrame(frm, text=" 🗄️ Управление базой данных ", padding=15, style='Section.TLabelframe')
         db_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
         
         # Описание секции
@@ -376,58 +482,7 @@ class BOMCategorizerApp(tk.Tk):
                                           style='Accent.TButton')
         btn_db_import_output.pack(fill=tk.X, padx=0)
         self.lockable_widgets.append(btn_db_import_output)
-        
-        # ====== Секция для переноса компонентов в "Не распределено" ======
-        row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
-        
-        row += 1
-        ttk.Label(frm, text="Перенос компонентов в 'Не распределено':", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        help_text = ("Эта функция работает с ВЫХОДНЫМ файлом, созданным ранее. Она перемещает указанные "
-                     "компоненты из их текущих категорий (Резисторы, Конденсаторы и т.д.) в категорию "
-                     "'Не распределено'. Используйте, если некоторые компоненты были ошибочно "
-                     "классифицированы и нужно их вернуть для повторной обработки.")
-        ttk.Label(frm, text=help_text, wraplength=700, justify='left').grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="Введите названия компонентов (по одному на строку, частичное совпадение):").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        self.reclassify_text = tk.Text(frm, height=4, wrap=tk.WORD)
-        self.reclassify_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
-        self.lockable_widgets.append(self.reclassify_text)
-        frm.grid_rowconfigure(row, weight=1)
-        
-        row += 1
-        btn7 = ttk.Button(frm, text="Перенести в 'Не распределено'", command=self.on_move_to_unclassified)
-        btn7.grid(row=row, column=0, columnspan=3, sticky="ew", **pad)
-        self.lockable_widgets.append(btn7)
-        
-        # ====== Секция для исключения элементов из BOM (ВНИЗУ ИНТЕРФЕЙСА) ======
-        row += 1
-        ttk.Separator(frm, orient='horizontal').grid(row=row, column=0, columnspan=3, sticky="ew", pady=10)
-        
-        row += 1
-        ttk.Label(frm, text="Исключение элементов из BOM:", font=('TkDefaultFont', 10, 'bold')).grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        help_text_exclude = "Элементы будут удалены из входных данных в процессе обработки. Входной файл не изменяется, выходной файл создается уже без исключенных элементов."
-        ttk.Label(frm, text=help_text_exclude, wraplength=700, justify='left').grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="Формат: Название ИВП, количество (по одному на строку). Пример: AD9221AR, 2").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        ttk.Label(frm, text="После ввода элементов нажмите кнопку 'Запустить обработку' выше").grid(row=row, column=0, columnspan=3, sticky="w", **pad)
-        
-        row += 1
-        self.exclude_items_text = tk.Text(frm, height=4, wrap=tk.WORD)
-        self.exclude_items_text.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
-        self.lockable_widgets.append(self.exclude_items_text)
-        frm.grid_rowconfigure(row, weight=1)
-        
+
         # Футер с информацией о разработчике
         self._create_footer()
 
@@ -740,20 +795,7 @@ class BOMCategorizerApp(tk.Tk):
         td = self.txt_dir.get().strip()
         if td:
             args.extend(["--txt-dir", td])
-        
-        # Обработка исключений элементов
-        if self.exclude_items_text:
-            exclude_text = self.exclude_items_text.get("1.0", tk.END).strip()
-            
-            if exclude_text:
-                # Создать временный файл с исключениями
-                import tempfile
-                temp_exclude_file = tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', 
-                                                                  suffix='.txt', delete=False)
-                temp_exclude_file.write(exclude_text)
-                temp_exclude_file.close()
-                args.extend(["--exclude-items", temp_exclude_file.name])
-        
+
         # Всегда отключаем автоматический интерактивный режим в GUI
         args.append("--no-interactive")
         return args
@@ -1334,114 +1376,7 @@ class BOMCategorizerApp(tk.Tk):
             messagebox.showinfo("Готово", f"Обработка завершена!\n\nПрименено {added_count} новых правил классификации.\nОбщее количество правил: {len(rules)}")
         
         run_cli_async(args, after_rerun)
-    
-    def on_move_to_unclassified(self):
-        """Обработчик переноса компонентов в 'Не распределено'"""
-        # Проверяем наличие выходного файла
-        output_file = self.output_xlsx.get()
-        if not output_file or not os.path.exists(output_file):
-            messagebox.showerror("Ошибка", 
-                               f"Выходной файл не найден: {output_file}\n\n" +
-                               "Сначала запустите обработку для создания файла.")
-            return
-        
-        # Получаем список компонентов для переноса
-        components_text = self.reclassify_text.get("1.0", tk.END).strip()
-        if not components_text:
-            messagebox.showwarning("Внимание", "Введите хотя бы один компонент для переноса.")
-            return
-        
-        component_names = [line.strip() for line in components_text.split('\n') if line.strip()]
-        
-        try:
-            import pandas as pd
-            from openpyxl import load_workbook
-            from openpyxl.utils.dataframe import dataframe_to_rows
-            
-            self.txt.insert(tk.END, f"\n\n🔄 Перенос компонентов в 'Не распределено'...\n")
-            self.txt.insert(tk.END, f"Файл: {output_file}\n")
-            self.txt.insert(tk.END, f"Компонентов для переноса: {len(component_names)}\n\n")
-            self.update_idletasks()
-            
-            # Читаем все листы из Excel
-            xls = pd.ExcelFile(output_file)
-            all_sheets = {}
-            for sheet_name in xls.sheet_names:
-                all_sheets[sheet_name] = pd.read_excel(output_file, sheet_name=sheet_name)
-            
-            # Список для хранения найденных компонентов
-            found_components = []
-            moved_count = 0
-            
-            # Ищем компоненты во всех листах (кроме "Не распределено")
-            for sheet_name in all_sheets.keys():
-                if sheet_name == "Не распределено":
-                    continue
-                
-                df = all_sheets[sheet_name]
-                
-                # Ищем компоненты по частичному совпадению в колонке "Наименование ИВП"
-                if 'Наименование ИВП' not in df.columns:
-                    continue
-                
-                for comp_name in component_names:
-                    # Ищем строки, содержащие искомый текст (регистронезависимый поиск)
-                    mask = df['Наименование ИВП'].astype(str).str.contains(comp_name, case=False, na=False)
-                    matching_rows = df[mask]
-                    
-                    if not matching_rows.empty:
-                        self.txt.insert(tk.END, f"  ✓ Найдено {len(matching_rows)} совпадений для '{comp_name}' в листе '{sheet_name}'\n")
-                        self.update_idletasks()
-                        
-                        # Добавляем найденные строки к списку для переноса
-                        for idx, row in matching_rows.iterrows():
-                            found_components.append(row.to_dict())
-                            moved_count += 1
-                        
-                        # Удаляем найденные строки из исходного листа
-                        all_sheets[sheet_name] = df[~mask]
-            
-            if moved_count == 0:
-                self.txt.insert(tk.END, "\n⚠️ Ни один компонент не найден в выходном файле.\n")
-                self.txt.insert(tk.END, "Проверьте правильность написания названий компонентов.\n")
-                messagebox.showwarning("Внимание", "Ни один компонент не найден в выходном файле.")
-                return
-            
-            # Добавляем найденные компоненты в лист "Не распределено"
-            if "Не распределено" not in all_sheets:
-                # Создаем новый DataFrame для "Не распределено" с теми же колонками
-                first_sheet_df = list(all_sheets.values())[0]
-                all_sheets["Не распределено"] = pd.DataFrame(columns=first_sheet_df.columns)
-            
-            df_unclassified = all_sheets["Не распределено"]
-            new_rows = pd.DataFrame(found_components)
-            all_sheets["Не распределено"] = pd.concat([df_unclassified, new_rows], ignore_index=True)
-            
-            # Сохраняем изменения в файл
-            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-                for sheet_name, df in all_sheets.items():
-                    df.to_excel(writer, sheet_name=sheet_name, index=False)
-            
-            self.txt.insert(tk.END, f"\n✅ Успешно перенесено {moved_count} компонентов в 'Не распределено'!\n")
-            self.txt.insert(tk.END, "\nТеперь вы можете запустить 'Интерактивную классификацию' для правильной категоризации.\n")
-            self.txt.see(tk.END)
-            self.update_idletasks()
-            
-            # Очищаем текстовое поле
-            self.reclassify_text.delete("1.0", tk.END)
-            
-            messagebox.showinfo("Готово", 
-                              f"Успешно перенесено {moved_count} компонентов в 'Не распределено'!\n\n" +
-                              "Теперь вы можете запустить 'Интерактивную классификацию'.")
-            
-        except Exception as e:
-            error_msg = f"Ошибка при переносе компонентов: {e}"
-            self.txt.insert(tk.END, f"\n❌ {error_msg}\n")
-            self.txt.see(tk.END)
-            import traceback
-            self.txt.insert(tk.END, f"Детали: {traceback.format_exc()}\n")
-            messagebox.showerror("Ошибка", error_msg)
-    
+
     def lock_interface(self):
         """Блокирует все элементы управления"""
         for widget in self.lockable_widgets:
@@ -1525,7 +1460,7 @@ class BOMCategorizerApp(tk.Tk):
             text_frame = ttk.Frame(dialog)
             text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=("Consolas", 9))
+            text_widget = tk.Text(text_frame, wrap=tk.WORD, font=(self.monospace_font, 9))
             scrollbar = ttk.Scrollbar(text_frame, command=text_widget.yview)
             text_widget.configure(yscrollcommand=scrollbar.set)
             
@@ -1827,7 +1762,7 @@ class BOMCategorizerApp(tk.Tk):
             text_frame = ttk.Frame(progress_dialog)
             text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
-            progress_text = tk.Text(text_frame, wrap=tk.WORD, font=("Consolas", 9))
+            progress_text = tk.Text(text_frame, wrap=tk.WORD, font=(self.monospace_font, 9))
             scrollbar = ttk.Scrollbar(text_frame, command=progress_text.yview)
             progress_text.configure(yscrollcommand=scrollbar.set)
             
