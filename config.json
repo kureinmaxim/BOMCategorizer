@@ -1,6 +1,6 @@
 {
   "app_info": {
-    "version": "3.1.8",
+    "version": "3.2.2",
     "release_date": "08.11.2025",
     "developer": "Куреин М.Н.",
     "developer_en": "Kurein M.N.",
@@ -11,5 +11,10 @@
   "security": {
     "pin": "1234",
     "require_pin": true
+  },
+  "window": {
+    "width": 660,
+    "height": 1000,
+    "remember_size": true
   }
 }

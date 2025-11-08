@@ -171,7 +171,12 @@ class BOMCategorizerApp(tk.Tk):
         ver = self.cfg.get("app_info", {}).get("version", "dev")
         name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
         self.title(f"{name} v{ver}")
-        self.geometry("800x750")  # Компактное окно
+        
+        # Загружаем размер окна из конфигурации
+        window_cfg = self.cfg.get("window", {})
+        width = window_cfg.get("width", 660)
+        height = window_cfg.get("height", 1000)
+        self.geometry(f"{width}x{height}")
 
         # Применяем современную цветовую схему
         self._setup_modern_styles()
@@ -223,17 +228,17 @@ class BOMCategorizerApp(tk.Tk):
         self.default_font = default_font
         self.monospace_font = mono_font
 
-        # Современная цветовая палитра
+        # Современная цветовая палитра (Material Design 3 inspired)
         colors = {
-            'primary': '#2196F3',      # Синий
-            'primary_dark': '#1976D2',  # Темно-синий
-            'success': '#4CAF50',       # Зеленый
-            'danger': '#F44336',        # Красный
-            'warning': '#FF9800',       # Оранжевый
-            'bg': '#F5F5F5',            # Светло-серый фон
+            'primary': '#1976D2',       # Синий (более насыщенный)
+            'primary_dark': '#0D47A1',  # Темно-синий
+            'success': '#2E7D32',       # Зеленый (более строгий)
+            'danger': '#C62828',        # Красный (более строгий)
+            'warning': '#F57C00',       # Оранжевый
+            'bg': '#FAFAFA',            # Очень светлый серый фон
             'surface': '#FFFFFF',       # Белый
             'text': '#212121',          # Темно-серый текст
-            'text_secondary': '#757575' # Серый текст
+            'text_secondary': '#616161' # Серый текст
         }
 
         # Настройка цвета фона окна
@@ -256,13 +261,13 @@ class BOMCategorizerApp(tk.Tk):
                        font=(default_font, 13, 'bold'),
                        foreground=colors['text'])
 
-        # Стиль для секций
+        # Стиль для секций (карточный дизайн)
         style.configure('Section.TLabelframe.Label',
-                       font=(default_font, 14, 'bold'),
+                       font=(default_font, 13, 'bold'),
                        foreground=colors['primary'])
 
         style.configure('Section.TLabelframe',
-                       borderwidth=2,
+                       borderwidth=1,
                        relief='solid')
 
         # Стиль для обычных меток
@@ -283,7 +288,7 @@ class BOMCategorizerApp(tk.Tk):
         main_container = ttk.Frame(self)
         main_container.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
 
-        canvas = tk.Canvas(main_container, bg='#F5F5F5', highlightthickness=0)
+        canvas = tk.Canvas(main_container, bg='#FAFAFA', highlightthickness=0)
         scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=canvas.yview)
 
         # Создать фрейм внутри canvas для содержимого
@@ -315,30 +320,32 @@ class BOMCategorizerApp(tk.Tk):
         
         # Сбросить счетчик строк для рамки
         work_row = 0
-        ttk.Label(main_work_frame, text="Входные файлы (XLSX/DOCX/DOC/TXT):", style='Bold.TLabel').grid(row=work_row, column=0, sticky="w", **pad)
-        btn1 = ttk.Button(main_work_frame, text="➕ Добавить файлы", command=self.on_add_files)
-        btn1.grid(row=work_row, column=1, sticky="w", **pad)
+        ttk.Label(main_work_frame, text="Входные файлы:", style='Bold.TLabel').grid(row=work_row, column=0, sticky="w", **pad)
+        btn1 = ttk.Button(main_work_frame, text="➕ Добавить", command=self.on_add_files, width=20)
+        btn1.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(btn1)
 
-        btn2 = ttk.Button(main_work_frame, text="🗑️ Очистить", command=self.on_clear_files)
-        btn2.grid(row=work_row, column=2, sticky="w", **pad)
+        btn2 = ttk.Button(main_work_frame, text="🗑️ Очистить", command=self.on_clear_files, width=15)
+        btn2.grid(row=work_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn2)
         
-        self.listbox = tk.Listbox(main_work_frame, height=4, font=(self.default_font, 12),
+        self.listbox = tk.Listbox(main_work_frame, height=3, font=(self.default_font, 12),
                                  relief=tk.FLAT, bg='#FFFFFF', fg='#212121',
                                  selectbackground='#2196F3', selectforeground='#FFFFFF')
         self.listbox.grid(row=work_row+1, column=0, columnspan=3, sticky="nsew", **pad)
         self.listbox.bind('<<ListboxSelect>>', self.on_file_selected)
         self.lockable_widgets.append(self.listbox)
         main_work_frame.grid_rowconfigure(work_row+1, weight=1)
-        main_work_frame.grid_columnconfigure(2, weight=1)
+        main_work_frame.grid_columnconfigure(0, weight=0, minsize=220)  # Фиксированная ширина для меток
+        main_work_frame.grid_columnconfigure(1, weight=1)  # Растягивается
+        main_work_frame.grid_columnconfigure(2, weight=0, minsize=130)  # Фиксированная ширина для кнопок
 
         work_row += 2
         # Поле для указания количества для выбранного файла
         multiplier_frame = ttk.Frame(main_work_frame)
         multiplier_frame.grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
         
-        ttk.Label(multiplier_frame, text="Количество экземпляров для выбранного файла:").pack(side="left")
+        ttk.Label(multiplier_frame, text="Количество экземпляров:").pack(side="left")
         self.file_multiplier_spinbox = ttk.Spinbox(multiplier_frame, from_=1, to=1000, 
                                                      textvariable=self.current_file_multiplier, 
                                                      width=10)
@@ -350,11 +357,11 @@ class BOMCategorizerApp(tk.Tk):
         apply_btn.pack(side="left", padx=(5, 0))
         self.lockable_widgets.append(apply_btn)
         
-        ttk.Label(multiplier_frame, text="(выберите файл и измените количество)", 
+        ttk.Label(multiplier_frame, text="(выберите файл)", 
                   font=('TkDefaultFont', 11), foreground='gray').pack(side="left", padx=(10, 0))
 
         work_row += 1
-        ttk.Label(main_work_frame, text="Листы (например: Лист1,Лист2 или оставьте пустым для всех):").grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
+        ttk.Label(main_work_frame, text="Листы (через запятую):").grid(row=work_row, column=0, columnspan=3, sticky="w", **pad)
         
         work_row += 1
         self.sheet_entry = ttk.Entry(main_work_frame, textvariable=self.sheet_spec, state='normal')
@@ -368,7 +375,7 @@ class BOMCategorizerApp(tk.Tk):
         # Подсказка о работе параметра "Листы"
         work_row += 1
         sheets_hint = ttk.Label(main_work_frame, 
-                               text="💡 Если поле ПУСТОЕ - обрабатываются ВСЕ листы из каждого .xlsx файла. Если ЗАПОЛНЕНО - только указанные листы из КАЖДОГО .xlsx файла.",
+                               text="💡 Пустое поле — все листы. Заполнено — только указанные.",
                                font=('TkDefaultFont', 11), 
                                foreground='gray',
                                wraplength=600)
@@ -381,33 +388,33 @@ class BOMCategorizerApp(tk.Tk):
         entry2.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry2)
 
-        btn3 = ttk.Button(main_work_frame, text="💾 Сохранить как...", command=self.on_pick_output)
-        btn3.grid(row=work_row, column=2, sticky="w", **pad)
+        btn3 = ttk.Button(main_work_frame, text="💾 Выбрать...", command=self.on_pick_output, width=15)
+        btn3.grid(row=work_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn3)
 
         work_row += 1
-        ttk.Label(main_work_frame, text="Папка для TXT файлов (опционально):").grid(row=work_row, column=0, sticky="w", **pad)
+        ttk.Label(main_work_frame, text="Папка для TXT (опционально):").grid(row=work_row, column=0, sticky="w", **pad)
         entry3 = ttk.Entry(main_work_frame, textvariable=self.txt_dir, font=(self.default_font, 12))
         entry3.grid(row=work_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry3)
 
-        btn4 = ttk.Button(main_work_frame, text="📂 Выбрать...", command=self.on_pick_txt_dir)
-        btn4.grid(row=work_row, column=2, sticky="w", **pad)
+        btn4 = ttk.Button(main_work_frame, text="📂 Выбрать...", command=self.on_pick_txt_dir, width=15)
+        btn4.grid(row=work_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn4)
 
         work_row += 1
-        chk1 = ttk.Checkbutton(main_work_frame, text="Суммарная комплектация (SUMMARY)", variable=self.combine)
+        chk1 = ttk.Checkbutton(main_work_frame, text="Суммарная комплектация", variable=self.combine)
         chk1.grid(row=work_row, column=0, columnspan=2, sticky="w", **pad)
         self.lockable_widgets.append(chk1)
 
         work_row += 1
         # Кнопки запуска - выделяем цветом и крупнее
         btn5 = ttk.Button(main_work_frame, text="▶ Запустить обработку", command=self.on_run, style='Primary.TButton')
-        btn5.grid(row=work_row, column=0, columnspan=2, sticky="ew", **pad)
+        btn5.grid(row=work_row, column=0, columnspan=1, sticky="ew", **pad)
         self.lockable_widgets.append(btn5)
 
         btn6 = ttk.Button(main_work_frame, text="🔄 Интерактивная классификация", command=self.on_interactive_classify, style='Accent.TButton')
-        btn6.grid(row=work_row, column=2, sticky="ew", **pad)
+        btn6.grid(row=work_row, column=1, columnspan=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn6)
 
         # Продолжаем с основным фреймом
@@ -421,30 +428,32 @@ class BOMCategorizerApp(tk.Tk):
 
         compare_row = 0
         ttk.Label(compare_frame, text="Первый файл (базовый):").grid(row=compare_row, column=0, sticky="w", **pad)
-        entry_cmp1 = ttk.Entry(compare_frame, textvariable=self.compare_file1)
+        entry_cmp1 = ttk.Entry(compare_frame, textvariable=self.compare_file1, font=(self.default_font, 12))
         entry_cmp1.grid(row=compare_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry_cmp1)
-        btn_cmp1 = ttk.Button(compare_frame, text="📂 Выбрать...", command=self.on_select_compare_file1)
-        btn_cmp1.grid(row=compare_row, column=2, sticky="w", **pad)
+        btn_cmp1 = ttk.Button(compare_frame, text="📂 Выбрать...", command=self.on_select_compare_file1, width=15)
+        btn_cmp1.grid(row=compare_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn_cmp1)
+        compare_frame.grid_columnconfigure(0, weight=0, minsize=220)
         compare_frame.grid_columnconfigure(1, weight=1)
+        compare_frame.grid_columnconfigure(2, weight=0, minsize=130)
 
         compare_row += 1
         ttk.Label(compare_frame, text="Второй файл (новый):").grid(row=compare_row, column=0, sticky="w", **pad)
-        entry_cmp2 = ttk.Entry(compare_frame, textvariable=self.compare_file2)
+        entry_cmp2 = ttk.Entry(compare_frame, textvariable=self.compare_file2, font=(self.default_font, 12))
         entry_cmp2.grid(row=compare_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry_cmp2)
-        btn_cmp2 = ttk.Button(compare_frame, text="📂 Выбрать...", command=self.on_select_compare_file2)
-        btn_cmp2.grid(row=compare_row, column=2, sticky="w", **pad)
+        btn_cmp2 = ttk.Button(compare_frame, text="📂 Выбрать...", command=self.on_select_compare_file2, width=15)
+        btn_cmp2.grid(row=compare_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn_cmp2)
 
         compare_row += 1
         ttk.Label(compare_frame, text="Файл результата:").grid(row=compare_row, column=0, sticky="w", **pad)
-        entry_cmp_out = ttk.Entry(compare_frame, textvariable=self.compare_output)
+        entry_cmp_out = ttk.Entry(compare_frame, textvariable=self.compare_output, font=(self.default_font, 12))
         entry_cmp_out.grid(row=compare_row, column=1, sticky="ew", **pad)
         self.lockable_widgets.append(entry_cmp_out)
-        btn_cmp_out = ttk.Button(compare_frame, text="💾 Сохранить как...", command=self.on_select_compare_output)
-        btn_cmp_out.grid(row=compare_row, column=2, sticky="w", **pad)
+        btn_cmp_out = ttk.Button(compare_frame, text="💾 Выбрать...", command=self.on_select_compare_output, width=15)
+        btn_cmp_out.grid(row=compare_row, column=2, sticky="ew", **pad)
         self.lockable_widgets.append(btn_cmp_out)
 
         compare_row += 1
@@ -460,7 +469,7 @@ class BOMCategorizerApp(tk.Tk):
         log_frame = ttk.LabelFrame(frm, text=" 📋 Лог выполнения ", padding=6, style='Section.TLabelframe')
         log_frame.grid(row=row, column=0, columnspan=3, sticky="nsew", **pad)
 
-        self.txt = tk.Text(log_frame, height=8, wrap=tk.WORD, font=(self.monospace_font, 12),
+        self.txt = tk.Text(log_frame, height=6, wrap=tk.WORD, font=(self.monospace_font, 12),
                           relief=tk.FLAT, bg='#FFFFFF', fg='#212121')
         self.txt.pack(fill=tk.BOTH, expand=True)
         self.lockable_widgets.append(self.txt)
@@ -623,6 +632,27 @@ class BOMCategorizerApp(tk.Tk):
                      text="🗄️ БД: информация недоступна", 
                      font=("Arial", 13),
                      foreground="#757575").pack(side=tk.LEFT)
+        
+        # Добавляем метку с размером окна справа
+        window_size_frame = ttk.Frame(footer)
+        window_size_frame.pack(side=tk.RIGHT, pady=(1, 0))
+        
+        ttk.Label(window_size_frame, text="📐 ", 
+                 font=("Arial", 11)).pack(side=tk.LEFT)
+        
+        self.window_size_label = tk.Label(window_size_frame, 
+                text=f"{self.winfo_width()}×{self.winfo_height()}", 
+                font=("Arial", 11, "bold"),
+                fg="#1976D2",
+                cursor="hand2")
+        self.window_size_label.pack(side=tk.LEFT)
+        self.window_size_label.bind("<Button-1>", self.on_show_size_menu)
+        
+        # Обновляем размер окна после отрисовки
+        self.after(100, self.update_window_size_label)
+        
+        # Привязываем обновление размера при изменении окна
+        self.bind("<Configure>", self.on_window_configure)
 
     def on_add_files(self):
         """Обработчик кнопки добавления файлов"""
@@ -1682,6 +1712,76 @@ class BOMCategorizerApp(tk.Tk):
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть файл базы данных:\n{str(e)}")
     
+    def on_window_configure(self, event):
+        """Обработчик изменения размера окна"""
+        if event.widget == self:
+            self.after(100, self.update_window_size_label)
+    
+    def update_window_size_label(self):
+        """Обновляет метку с размером окна"""
+        try:
+            width = self.winfo_width()
+            height = self.winfo_height()
+            self.window_size_label.config(text=f"{width}×{height}")
+        except:
+            pass
+    
+    def on_show_size_menu(self, event):
+        """Показывает меню выбора размера окна"""
+        menu = tk.Menu(self, tearoff=0)
+        
+        # Предустановленные размеры
+        sizes = [
+            ("По умолчанию (660×1000)", 660, 1000),
+            ("Компактный (720×792)", 720, 792),
+            ("Средний (800×850)", 800, 850),
+            ("Большой (900×900)", 900, 900),
+            ("Широкий (1000×800)", 1000, 800),
+            ("HD (1280×720)", 1280, 720),
+        ]
+        
+        for label, w, h in sizes:
+            menu.add_command(label=label, command=lambda w=w, h=h: self.set_window_size(w, h))
+        
+        menu.add_separator()
+        menu.add_command(label="📌 Сохранить текущий размер", 
+                        command=self.save_current_window_size)
+        
+        # Показываем меню рядом с меткой
+        try:
+            x = event.widget.winfo_rootx()
+            y = event.widget.winfo_rooty() + event.widget.winfo_height()
+            menu.post(x, y)
+        finally:
+            menu.grab_release()
+    
+    def set_window_size(self, width, height):
+        """Устанавливает размер окна"""
+        self.geometry(f"{width}x{height}")
+        self.save_window_size_to_config(width, height)
+    
+    def save_current_window_size(self):
+        """Сохраняет текущий размер окна"""
+        width = self.winfo_width()
+        height = self.winfo_height()
+        self.save_window_size_to_config(width, height)
+        messagebox.showinfo("Сохранено", f"Размер окна {width}×{height} сохранен")
+    
+    def save_window_size_to_config(self, width, height):
+        """Сохраняет размер окна в конфигурационный файл"""
+        try:
+            self.cfg["window"] = {
+                "width": width,
+                "height": height,
+                "remember_size": True
+            }
+            
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.cfg, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ Не удалось сохранить размер окна: {e}")
+    
     def on_replace_database(self):
         """Заменить текущую базу данных на другую из JSON файла"""
         try:
@@ -1957,36 +2057,29 @@ class BOMCategorizerApp(tk.Tk):
         """Показывает диалог ввода PIN-кода"""
         dialog = tk.Toplevel(self)
         dialog.title("Авторизация")
-        dialog.geometry("320x140")
+        dialog.geometry("420x260")  # Увеличен размер для видимости всех элементов
         dialog.resizable(False, False)
-        dialog.grab_set()
-        
-        # Центрируем окно
         dialog.transient(self)
-        dialog.update_idletasks()
-        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
-        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
-        dialog.geometry(f"+{x}+{y}")
         
         # Основной фрейм с отступами
-        main_frame = ttk.Frame(dialog, padding="15")
+        main_frame = ttk.Frame(dialog, padding="25")
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # Заголовок
         ttk.Label(main_frame, text="Введите PIN-код:", 
-                 font=("Arial", 12)).pack(pady=(0, 10))
+                 font=("Arial", 14, "bold")).pack(pady=(10, 20))
         
         # Поле ввода PIN
         pin_var = tk.StringVar()
         pin_entry = ttk.Entry(main_frame, textvariable=pin_var, show="●", 
-                             font=("Arial", 14), justify="center", width=15)
-        pin_entry.pack(pady=(0, 5))
+                             font=("Arial", 18), justify="center", width=12)
+        pin_entry.pack(pady=(0, 20))
         pin_entry.focus_set()
         
         # Метка ошибки
-        error_label = ttk.Label(main_frame, text="", foreground="red", 
-                               font=("Arial", 11))
-        error_label.pack(pady=(0, 10))
+        error_label = ttk.Label(main_frame, text="", foreground="#C62828", 
+                               font=("Arial", 12))
+        error_label.pack(pady=(0, 20))
         
         def check_pin():
             entered_pin = pin_var.get().strip()
@@ -1994,16 +2087,30 @@ class BOMCategorizerApp(tk.Tk):
                 dialog.destroy()
                 self.unlock_interface()
             else:
-                error_label.config(text="Неверный PIN-код")
+                error_label.config(text="❌ Неверный PIN-код")
                 pin_entry.delete(0, tk.END)
                 pin_entry.focus_set()
         
+        # Обработка Enter
+        pin_entry.bind('<Return>', lambda e: check_pin())
+        
         # Кнопки
         btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
         
-        ttk.Button(btn_frame, text="OK", command=check_pin, width=12).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(btn_frame, text="Отмена", command=dialog.destroy, width=12).pack(side=tk.LEFT)
+        ttk.Button(btn_frame, text="OK", command=check_pin, width=14, 
+                  style='Primary.TButton').pack(side=tk.LEFT, padx=(0, 5), expand=True)
+        ttk.Button(btn_frame, text="Отмена", command=dialog.destroy, width=14
+                  ).pack(side=tk.RIGHT, padx=(5, 0), expand=True)
+        
+        # Центрируем окно после создания всех элементов
+        dialog.update_idletasks()
+        dialog.grab_set()
+        
+        # Центрирование относительно главного окна
+        x = self.winfo_x() + (self.winfo_width() // 2) - (dialog.winfo_width() // 2)
+        y = self.winfo_y() + (self.winfo_height() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f"+{x}+{y}")
         
         # Обработка Enter и Escape
         pin_entry.bind("<Return>", lambda e: check_pin())
