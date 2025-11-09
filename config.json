@@ -13,8 +13,8 @@
     "require_pin": true
   },
   "window": {
-    "width": 660,
-    "height": 1000,
+    "width": 750,
+    "height": 1110,
     "remember_size": true
   }
 }

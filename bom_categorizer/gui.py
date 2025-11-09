@@ -2130,7 +2130,7 @@ class BOMCategorizerApp(tk.Tk):
         # Показываем диалог импорта
         dialog = tk.Toplevel(self)
         dialog.title("База данных компонентов")
-        dialog.geometry("500x350")
+        dialog.geometry("550x420")
         dialog.resizable(False, False)
         dialog.grab_set()
         
@@ -2170,10 +2170,6 @@ class BOMCategorizerApp(tk.Tk):
         info_label = ttk.Label(main_frame, text=info_text, 
                               font=("Arial", 12), justify=tk.LEFT)
         info_label.pack(pady=(0, 20))
-        
-        # Фрейм для кнопок
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(pady=(10, 0))
         
         def on_import():
             """Обработчик импорта БД"""
@@ -2228,15 +2224,19 @@ class BOMCategorizerApp(tk.Tk):
             dialog.destroy()
             # БД уже инициализирована из шаблона, ничего делать не нужно
         
+        # Фрейм для кнопок
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=20)
+        
         # Кнопка импорта
         import_btn = ttk.Button(button_frame, text="📁 Импортировать", 
-                               command=on_import, width=20)
-        import_btn.pack(side=tk.LEFT, padx=5)
+                               command=on_import, width=22)
+        import_btn.pack(side=tk.LEFT, padx=10)
         
         # Кнопка "Начать с нуля"
         fresh_btn = ttk.Button(button_frame, text="✨ Начать с нуля", 
-                              command=on_start_fresh, width=20)
-        fresh_btn.pack(side=tk.LEFT, padx=5)
+                              command=on_start_fresh, width=22)
+        fresh_btn.pack(side=tk.LEFT, padx=10)
         
         # Обработка Escape
         dialog.bind("<Escape>", lambda e: on_start_fresh())

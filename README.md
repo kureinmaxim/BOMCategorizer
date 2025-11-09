@@ -48,17 +48,19 @@ python -m venv .venv
 # 3) Активировать окружение (PowerShell)
 .\.venv\Scripts\Activate.ps1
 
-# 4) Установить зависимости
-pip install --upgrade pip
+# 4) Обновить pip (если требуется)
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+
+# 5) Установить зависимости
 pip install -r requirements.txt
 
-# 5) Запустить графический интерфейс
+# 6) Запустить графический интерфейс
 python app.py
 
-# 6) (Опционально) Запуск без активации окружения
+# 7) (Опционально) Запуск без активации окружения
 .\.venv\Scripts\python.exe app.py
 
-# 7) Пример командной строки для разборки
+# 8) Пример командной строки для разборки
 .\.venv\Scripts\python.exe split_bom.py --inputs all_25.xlsx "БЗ.doc" "Докупить в 2025.txt" --sheets 3,4 --xlsx categorized.xlsx --combine --interactive --assign-json rules.json
 ```
 
@@ -68,7 +70,7 @@ python app.py
 cd /d C:\Project\ProjectSnabjenie
 python -m venv .venv
 .venv\Scripts\activate
-pip install --upgrade pip
+.venv\Scripts\python.exe -m pip install --upgrade pip
 pip install -r requirements.txt
 python app.py
 ```
@@ -79,7 +81,7 @@ python app.py
 cd /path/to/ProjectSnabjenie
 python3 -m venv venv
 source venv/bin/activate
-pip install --upgrade pip
+python3 -m pip install --upgrade pip
 pip install -r requirements.txt
 python3 app.py
 ```
