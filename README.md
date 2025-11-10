@@ -16,13 +16,28 @@
 
 ---
 
-## ⚡ Быстрый старт (Windows)
+## 🖥️ Поддержка командных оболочек Windows 11
+
+BOM Categorizer полностью поддерживает все популярные командные оболочки на Windows 11:
+
+| Оболочка | Описание | Активация venv | Особенности |
+|----------|----------|----------------|-------------|
+| **PowerShell** 💙 | Современная оболочка (рекомендуется) | `.\.venv\Scripts\Activate.ps1` | Требует настройки `ExecutionPolicy` |
+| **CMD** 📟 | Классическая командная строка | `.venv\Scripts\activate.bat` | Простой синтаксис, проверенная стабильность |
+| **GitBash** 🐙 | Unix-подобная оболочка | `source .venv/Scripts/activate` | Путь `C:\` → `/c/`, слэши `/` вместо `\` |
+
+> 💡 **Совет:** BAT-файлы (`start_gui.bat`, `split_bom.bat`) работают одинаково во всех оболочках!
+
+---
+
+## ⚡ Быстрый старт (Windows 11)
 
 ### 🚀 Самый простой способ (BAT файлы):
 
-После установки зависимостей, используйте готовые bat-файлы:
+После установки зависимостей, используйте готовые bat-файлы (работают во всех оболочках):
 
-```cmd
+**PowerShell / CMD / GitBash:**
+```bash
 # Запуск GUI (графический интерфейс с PIN защитой)
 start_gui.bat
 
@@ -36,16 +51,21 @@ split_bom.bat --inputs "file.xlsx" --xlsx "output.xlsx" --combine
 
 ---
 
-### 🔧 Полная установка (PowerShell):
+### 🔧 Полная установка (Windows 11)
+
+> 💡 **На Windows 11 доступны три типа командных оболочек:** PowerShell, CMD и GitBash. Выберите удобный для вас вариант!
+
+<details>
+<summary><b>📘 PowerShell (рекомендуется)</b></summary>
 
 ```powershell
 # 1) Перейти в папку проекта
-cd C:\Project\ProjectSnabjenie
+cd C:\Project\BOMCategorizer
 
 # 2) Создать виртуальное окружение (однажды)
 python -m venv .venv
 
-# 3) Активировать окружение (PowerShell)
+# 3) Активировать окружение
 .\.venv\Scripts\Activate.ps1
 
 # 4) Обновить pip (если требуется)
@@ -64,21 +84,85 @@ python app.py
 .\.venv\Scripts\python.exe split_bom.py --inputs all_25.xlsx "БЗ.doc" "Докупить в 2025.txt" --sheets 3,4 --xlsx categorized.xlsx --combine --interactive --assign-json rules.json
 ```
 
-## Быстрый старт (Windows CMD)
+**Проблемы активации PowerShell?**
+Если PowerShell запрещает выполнение скриптов:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\.venv\Scripts\Activate.ps1
+```
+
+</details>
+
+<details>
+<summary><b>🖥️ CMD (Командная строка)</b></summary>
 
 ```cmd
-cd /d C:\Project\ProjectSnabjenie
+REM 1) Перейти в папку проекта
+cd /d C:\Project\BOMCategorizer
+
+REM 2) Создать виртуальное окружение (однажды)
 python -m venv .venv
-.venv\Scripts\activate
+
+REM 3) Активировать окружение
+.venv\Scripts\activate.bat
+
+REM 4) Обновить pip (если требуется)
 .venv\Scripts\python.exe -m pip install --upgrade pip
+
+REM 5) Установить зависимости
 pip install -r requirements.txt
+
+REM 6) Запустить графический интерфейс
 python app.py
+
+REM 7) (Опционально) Запуск без активации окружения
+.venv\Scripts\python.exe app.py
+
+REM 8) Пример командной строки для разборки
+.venv\Scripts\python.exe split_bom.py --inputs all_25.xlsx "БЗ.doc" "Докупить в 2025.txt" --sheets 3,4 --xlsx categorized.xlsx --combine --interactive --assign-json rules.json
 ```
+
+</details>
+
+<details>
+<summary><b>🐙 GitBash (Git для Windows)</b></summary>
+
+```bash
+# 1) Перейти в папку проекта
+cd /c/Project/BOMCategorizer
+
+# 2) Создать виртуальное окружение (однажды)
+python -m venv .venv
+
+# 3) Активировать окружение
+source .venv/Scripts/activate
+
+# 4) Обновить pip (если требуется)
+.venv/Scripts/python.exe -m pip install --upgrade pip
+
+# 5) Установить зависимости
+pip install -r requirements.txt
+
+# 6) Запустить графический интерфейс
+python app.py
+
+# 7) (Опционально) Запуск без активации окружения
+.venv/Scripts/python.exe app.py
+
+# 8) Пример командной строки для разборки
+.venv/Scripts/python.exe split_bom.py --inputs all_25.xlsx "БЗ.doc" "Докупить в 2025.txt" --sheets 3,4 --xlsx categorized.xlsx --combine --interactive --assign-json rules.json
+```
+
+> 💡 **Примечание:** В GitBash пути Windows конвертируются: `C:\` → `/c/`, обратные слэши → прямые
+
+</details>
+
+---
 
 ## Быстрый старт (macOS/Linux)
 
 ```bash
-cd /path/to/ProjectSnabjenie
+cd /path/to/BOMCategorizer
 python3 -m venv venv
 source venv/bin/activate
 python3 -m pip install --upgrade pip
@@ -101,10 +185,12 @@ python3 app.py
 
 ### 1. GUI режим (рекомендуется) 🖥️
 
+**Все оболочки Windows (PowerShell / CMD / GitBash):**
 ```bash
-# Windows
+# Вариант 1: BAT файл (самый простой)
 start_gui.bat
-# или
+
+# Вариант 2: Прямой запуск Python
 python app.py
 ```
 
@@ -130,13 +216,29 @@ python app.py
 
 ### 2. CLI режим (консоль) 💻
 
-```bash
-# Windows
-.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
+<details>
+<summary><b>Windows - все варианты оболочек</b></summary>
 
-# macOS/Linux
+**PowerShell / CMD:**
+```powershell
+.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
+```
+
+**GitBash:**
+```bash
+.venv/Scripts/python.exe interactive_classify.py --input "example/БЗ.doc"
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
 venv/bin/python3 interactive_classify.py --input "example/БЗ.doc"
 ```
+
+</details>
 
 **Все подробности:** ➡️ **[INTERACTIVE_MODE_GUIDE.md](docs/INTERACTIVE_MODE_GUIDE.md)**
 
@@ -157,13 +259,34 @@ venv/bin/python3 interactive_classify.py --input "example/БЗ.doc"
 14. **Не распределено** - требуют классификации (можно переносить вручную через GUI)
 
 ## Пример: только TXT
+
+<details>
+<summary><b>Windows - примеры для разных оболочек</b></summary>
+
+**PowerShell:**
 ```powershell
 .\.venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
 ```
 
+**CMD:**
+```cmd
+.venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+```
+
+**GitBash:**
+```bash
+.venv/Scripts/python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+```
+
+</details>
+
 ## Экспорт в TXT файлы (новое!)
 Создание отдельных TXT файлов для каждой категории в удобочитаемом формате:
 
+<details>
+<summary><b>Windows - примеры для разных оболочек</b></summary>
+
+**PowerShell:**
 ```powershell
 # Базовое использование
 .\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
@@ -172,29 +295,95 @@ venv/bin/python3 interactive_classify.py --input "example/БЗ.doc"
 .\.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
 ```
 
+**CMD:**
+```cmd
+REM Базовое использование
+.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+
+REM С несколькими входными файлами
+.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+```
+
+**GitBash:**
+```bash
+# Базовое использование
+.venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+
+# С несколькими входными файлами
+.venv/Scripts/python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+# Базовое использование
+venv/bin/python3 split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+
+# С несколькими входными файлами
+venv/bin/python3 split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+```
+
+</details>
+
 **Что создаётся:**
 - Папка с TXT файлами: `Резисторы.txt`, `Конденсаторы.txt`, `Оптические компоненты.txt`, и т.д.
 - Каждый файл содержит список компонентов в удобочитаемом формате
 - Подробности в файле [TXT_EXPORT_GUIDE.md](docs/TXT_EXPORT_GUIDE.md)
 
-## Проблемы активации PowerShell
-Если PowerShell запрещает выполнение скриптов:
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
-
 ## Создание инсталлятора (Inno Setup)
 
 ### 🚀 Быстрый способ:
 
+<details>
+<summary><b>PowerShell (рекомендуется)</b></summary>
+
 ```powershell
+# Перейти в папку проекта
+cd C:\Project\BOMCategorizer
+
 # Обычная сборка (если окружение уже настроено)
 python build_installer.py
 
 # Или полная пересборка с чистым окружением (только при проблемах!)
 .\rebuild_venv.ps1
 ```
+
+</details>
+
+<details>
+<summary><b>CMD</b></summary>
+
+```cmd
+REM Перейти в папку проекта
+cd /d C:\Project\BOMCategorizer
+
+REM Обычная сборка (если окружение уже настроено)
+python build_installer.py
+
+REM Или полная пересборка с чистым окружением (только при проблемах!)
+powershell -ExecutionPolicy Bypass -File .\rebuild_venv.ps1
+```
+
+</details>
+
+<details>
+<summary><b>GitBash</b></summary>
+
+```bash
+# Перейти в папку проекта
+cd /c/Project/BOMCategorizer
+
+# Обычная сборка (если окружение уже настроено)
+python build_installer.py
+
+# Или полная пересборка с чистым окружением (только при проблемах!)
+powershell.exe -ExecutionPolicy Bypass -File ./rebuild_venv.ps1
+```
+
+</details>
 
 **Скрипт `rebuild_venv.ps1` делает всё автоматически:**
 - 🔄 Пересоздаёт виртуальное окружение
@@ -212,6 +401,9 @@ python build_installer.py
 
 ### ✅ Обычная работа (ежедневно):
 
+<details>
+<summary><b>PowerShell</b></summary>
+
 ```powershell
 # 1. Активировать окружение (если еще не активно)
 .\.venv\Scripts\Activate.ps1
@@ -223,11 +415,320 @@ python build_installer.py
 python app.py
 ```
 
+</details>
+
+<details>
+<summary><b>CMD</b></summary>
+
+```cmd
+REM 1. Активировать окружение (если еще не активно)
+.venv\Scripts\activate.bat
+
+REM 2. Собрать инсталлятор
+python build_installer.py
+
+REM 3. Или запустить приложение для тестирования
+python app.py
+```
+
+</details>
+
+<details>
+<summary><b>GitBash</b></summary>
+
+```bash
+# 1. Активировать окружение (если еще не активно)
+source .venv/Scripts/activate
+
+# 2. Собрать инсталлятор
+python build_installer.py
+
+# 3. Или запустить приложение для тестирования
+python app.py
+```
+
+</details>
+
 **Требования:**
 - Установленный Python 3.10+
 - Inno Setup Compiler (`innosetup.com`)
 
 📖 **Подробная инструкция:** [BUILD.md](BUILD.md)
+
+---
+
+## 🎯 Практические примеры: Полный рабочий процесс
+
+Полный цикл работы от установки до обработки файла в разных оболочках Windows 11:
+
+<details>
+<summary><b>PowerShell - Полный пример</b></summary>
+
+```powershell
+# Шаг 1: Перейти в папку проекта
+cd C:\Project\BOMCategorizer
+
+# Шаг 2: Создать виртуальное окружение (только один раз!)
+python -m venv .venv
+
+# Шаг 3: Активировать окружение
+.\.venv\Scripts\Activate.ps1
+
+# Если ошибка выполнения скриптов:
+# Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+# .\.venv\Scripts\Activate.ps1
+
+# Шаг 4: Установить зависимости
+pip install -r requirements.txt
+
+# Шаг 5: Запустить GUI для обработки
+python app.py
+
+# ИЛИ использовать командную строку
+.\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
+
+# ИЛИ использовать интерактивный режим
+.\.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
+
+# Экспорт в TXT файлы
+.\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+```
+
+</details>
+
+<details>
+<summary><b>CMD - Полный пример</b></summary>
+
+```cmd
+REM Шаг 1: Перейти в папку проекта
+cd /d C:\Project\BOMCategorizer
+
+REM Шаг 2: Создать виртуальное окружение (только один раз!)
+python -m venv .venv
+
+REM Шаг 3: Активировать окружение
+.venv\Scripts\activate.bat
+
+REM Шаг 4: Установить зависимости
+pip install -r requirements.txt
+
+REM Шаг 5: Запустить GUI для обработки
+python app.py
+
+REM ИЛИ использовать командную строку
+.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
+
+REM ИЛИ использовать интерактивный режим
+.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
+
+REM Экспорт в TXT файлы
+.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+```
+
+</details>
+
+<details>
+<summary><b>GitBash - Полный пример</b></summary>
+
+```bash
+# Шаг 1: Перейти в папку проекта (обратите внимание на путь!)
+cd /c/Project/BOMCategorizer
+
+# Шаг 2: Создать виртуальное окружение (только один раз!)
+python -m venv .venv
+
+# Шаг 3: Активировать окружение (как в Linux!)
+source .venv/Scripts/activate
+
+# Шаг 4: Установить зависимости
+pip install -r requirements.txt
+
+# Шаг 5: Запустить GUI для обработки
+python app.py
+
+# ИЛИ использовать командную строку (обратите внимание на слэши!)
+.venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
+
+# ИЛИ использовать интерактивный режим
+.venv/Scripts/python.exe interactive_classify.py --input "example/БЗ.doc"
+
+# Экспорт в TXT файлы
+.venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+```
+
+</details>
+
+<details>
+<summary><b>🚀 Самый быстрый способ (все оболочки)</b></summary>
+
+После первой установки, просто используйте BAT-файлы:
+
+```bash
+# GUI режим
+start_gui.bat
+
+# CLI режим
+split_bom.bat --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
+```
+
+**Работает одинаково в PowerShell, CMD и GitBash!** 🎉
+
+</details>
+
+---
+
+## 🌿 Работа с Git ветками
+
+Все команды Git работают одинаково во всех оболочках (PowerShell, CMD, GitBash):
+
+### Просмотр веток
+
+```bash
+# Показать все локальные ветки (* - текущая ветка)
+git branch
+
+# Показать все ветки (включая удаленные)
+git branch -a
+
+# Показать текущую ветку
+git branch --show-current
+```
+
+### Переключение на другую ветку
+
+```bash
+# Переключиться на существующую ветку
+git checkout main
+git checkout develop
+git checkout feature/new-feature
+
+# Или использовать новую команду (Git 2.23+)
+git switch main
+git switch develop
+```
+
+### Создание и переключение на новую ветку
+
+```bash
+# Создать новую ветку и переключиться на неё
+git checkout -b feature/my-new-feature
+
+# Или использовать новую команду (Git 2.23+)
+git switch -c feature/my-new-feature
+```
+
+### Синхронизация с удаленным репозиторием
+
+```bash
+# Скачать изменения из удаленного репозитория
+git fetch origin
+
+# Переключиться на удаленную ветку (создает локальную копию)
+git checkout -b develop origin/develop
+
+# Обновить текущую ветку
+git pull origin main
+```
+
+### Практический пример: Переключение на удаленную ветку
+
+**Ситуация:** Вы хотите переключиться на ветку `feature/experimental-improvements`, которая существует только на удаленном репозитории.
+
+```bash
+# 1. Посмотреть все ветки (включая удаленные)
+PS C:\Project\BOMCategorizer> git branch -a
+
+* main
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/feature/experimental-improvements
+  remotes/origin/main
+
+# 2. Переключиться на удаленную ветку (ПРАВИЛЬНО - полное имя с 's' в конце!)
+PS C:\Project\BOMCategorizer> git checkout -b feature/experimental-improvements origin/feature/experimental-improvements
+
+Switched to a new branch 'feature/experimental-improvements'
+branch 'feature/experimental-improvements' set up to track 'origin/feature/experimental-improvements'.
+
+# 3. Проверить текущую ветку
+PS C:\Project\BOMCategorizer> git branch --show-current
+feature/experimental-improvements
+```
+
+**⚠️ Частая ошибка - опечатка в имени ветки:**
+
+```bash
+# НЕПРАВИЛЬНО - пропущена буква 's' в конце (experimental-improvement вместо experimental-improvements)
+PS C:\Project\BOMCategorizer> git checkout -b feature/experimental-improvements origin/feature/experimental-improvement
+
+fatal: 'origin/feature/experimental-improvement' is not a commit and a branch 'feature/experimental-improvements' cannot be created from it
+```
+
+> 💡 **Совет:** Внимательно копируйте полное имя ветки из вывода `git branch -a`. Используйте автодополнение Tab в терминале или копируйте имя прямо из вывода команды!
+
+### Типичный рабочий процесс
+
+<details>
+<summary><b>PowerShell / CMD / GitBash - одинаково для всех</b></summary>
+
+```bash
+# 1. Перейти в папку проекта
+cd C:\Project\BOMCategorizer         # PowerShell/CMD
+# или
+cd /c/Project/BOMCategorizer         # GitBash
+
+# 2. Проверить текущую ветку
+git branch --show-current
+
+# 3. Посмотреть доступные ветки
+git branch -a
+
+# 4. Переключиться на нужную ветку
+git checkout develop
+
+# 5. Обновить ветку с удаленного репозитория
+git pull origin develop
+
+# 6. Создать новую ветку для своей задачи
+git checkout -b feature/add-new-category
+
+# 7. После работы - вернуться на главную ветку
+git checkout main
+```
+
+</details>
+
+### Полезные команды
+
+```bash
+# Отменить незакоммиченные изменения
+git checkout -- .
+
+# Сохранить текущие изменения перед переключением ветки
+git stash
+git checkout other-branch
+git stash pop
+
+# Посмотреть статус (измененные файлы)
+git status
+
+# Посмотреть историю коммитов
+git log --oneline | cat          # PowerShell/CMD (с | cat для избежания пейджера)
+git log --oneline                # GitBash
+```
+
+### 💡 Важные примечания
+
+> **Внимание:** Перед переключением ветки убедитесь, что:
+> - Все важные изменения закоммичены: `git commit -am "описание изменений"`
+> - Или сохранены в stash: `git stash`
+> - Иначе Git может не позволить переключить ветку или изменения будут потеряны
+
+> **Виртуальное окружение:** `.venv/` находится в `.gitignore`, поэтому при переключении веток окружение сохраняется. Но если зависимости изменились в другой ветке, выполните:
+> ```bash
+> pip install -r requirements.txt
+> ```
+
+---
 
 ## 📚 Документация
 
