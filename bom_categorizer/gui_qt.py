@@ -49,6 +49,93 @@ from .dialogs_qt import (
 from .styles import DARK_THEME, LIGHT_THEME
 
 
+class ProcessingWorker(QThread):
+    """Worker thread для обработки BOM файлов"""
+    finished = Signal(str, bool, str)  # (message, success, output_file)
+    progress = Signal(str)  # progress message
+    
+    def __init__(self, args: list):
+        super().__init__()
+        self.args = args
+        self.output_file = ""
+    
+    def run(self):
+        """Выполняет обработку в отдельном потоке"""
+        try:
+            from .main import main as cli_main
+            import sys
+            from io import StringIO
+            
+            # Перехватываем stdout для получения прогресса
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            old_argv = sys.argv
+            
+            captured_output = StringIO()
+            
+            try:
+                sys.stdout = captured_output
+                sys.stderr = captured_output
+                sys.argv = ["split_bom.py"] + self.args
+                
+                # Отправляем начальное сообщение
+                self.progress.emit("⏳ Начинаем обработку файлов...\n")
+                self.progress.emit(f"Команда: split_bom {' '.join(self.args)}\n\n")
+                
+                # Запускаем обработку
+                cli_main()
+                
+                # Восстанавливаем
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                sys.argv = old_argv
+                
+                # Получаем вывод
+                output_text = captured_output.getvalue()
+                
+                # Фильтруем проблемные символы
+                output_text = output_text.replace('\u2192', '->')
+                output_text = output_text.encode('utf-8', errors='replace').decode('utf-8')
+                
+                if output_text:
+                    self.progress.emit(output_text)
+                
+                # Извлекаем путь к выходному файлу
+                import re
+                match = re.search(r'XLSX written: (.+?)(?:\s+\(|$)', output_text)
+                if match:
+                    self.output_file = match.group(1).strip()
+                else:
+                    # Ищем в аргументах
+                    if "--xlsx" in self.args:
+                        idx = self.args.index("--xlsx")
+                        if idx + 1 < len(self.args):
+                            self.output_file = self.args[idx + 1]
+                
+                # Проверяем что файл создан
+                if self.output_file and os.path.exists(self.output_file):
+                    self.finished.emit(f"✅ Обработка завершена!\nФайл сохранен: {self.output_file}", True, self.output_file)
+                else:
+                    self.finished.emit("⚠️ Обработка завершена, но выходной файл не найден", False, "")
+                    
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                sys.argv = old_argv
+                
+        except SystemExit as e:
+            # CLI может вызывать sys.exit(), это нормально
+            if e.code == 0:
+                self.finished.emit("✅ Обработка завершена!", True, self.output_file)
+            else:
+                error_msg = f"❌ Ошибка при обработке (код {e.code})"
+                self.finished.emit(error_msg, False, "")
+        except Exception as e:
+            import traceback
+            error_msg = f"❌ Ошибка при обработке:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.finished.emit(error_msg, False, "")
+
+
 class ComparisonWorker(QThread):
     """Worker thread для сравнения BOM файлов"""
     finished = Signal(str, bool)  # (message, success)
@@ -831,10 +918,192 @@ class BOMCategorizerMainWindow(QMainWindow):
         if file_path:
             self.compare_output_entry.setText(file_path)
 
+    def _build_args(self, output_file: str) -> list:
+        """
+        Формирует список аргументов для CLI
+        
+        Args:
+            output_file: Путь к выходному файлу
+            
+        Returns:
+            Список аргументов для передачи в CLI
+        """
+        args = []
+        if self.input_files:
+            # Формируем список файлов в формате "файл:количество"
+            file_specs = []
+            for file_path, count in self.input_files.items():
+                if count > 1:
+                    file_specs.append(f"{file_path}:{count}")
+                else:
+                    file_specs.append(file_path)
+            args.extend(["--inputs"] + file_specs)
+        
+        sheet_txt = self.sheet_entry.text().strip()
+        if sheet_txt:
+            args.extend(["--sheets", sheet_txt])
+        
+        args.extend(["--xlsx", output_file])
+        
+        if self.combine_check.isChecked():
+            args.append("--combine")
+        
+        td = self.txt_entry.text().strip()
+        if td:
+            args.extend(["--txt-dir", td])
+        
+        # Всегда отключаем автоматический интерактивный режим в GUI
+        args.append("--no-interactive")
+        
+        return args
+    
+    def check_and_convert_doc_files(self) -> bool:
+        """
+        Проверяет наличие .doc файлов и предлагает конвертацию
+        
+        Returns:
+            True если можно продолжить, False если нужно остановить
+        """
+        # Ищем .doc файлы (старый формат)
+        doc_files = [f for f in self.input_files.keys() if f.lower().endswith('.doc') and not f.lower().endswith('.docx')]
+        
+        if not doc_files:
+            return True  # Нет .doc файлов, продолжаем
+        
+        # Показываем диалог конвертации
+        dialog = DocConversionDialog(doc_files, self)
+        result = dialog.exec()
+        
+        if result == QDialog.Rejected:
+            return False  # Пользователь отменил
+        
+        # Проверяем успешность конвертации
+        if dialog.converted_files:
+            # Заменяем .doc на .docx в списке файлов
+            for old_file, new_file in dialog.converted_files.items():
+                if old_file in self.input_files:
+                    count = self.input_files[old_file]
+                    del self.input_files[old_file]
+                    self.input_files[new_file] = count
+            
+            self.update_listbox()
+            return True
+        
+        return dialog.can_continue
+    
     def on_run(self):
         """Запуск обработки"""
-        # TODO: Реализовать асинхронный запуск через QThread
-        QMessageBox.information(self, "В разработке", "Функция обработки будет реализована")
+        if not self.input_files:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                "Добавьте хотя бы один входной файл (XLSX/DOCX/DOC/TXT)"
+            )
+            return
+        
+        # Проверяем и конвертируем .doc файлы
+        if not self.check_and_convert_doc_files():
+            return  # Пользователь отменил или нужна ручная конвертация
+        
+        args = self._build_args(self.output_entry.text())
+        
+        # Очищаем лог
+        self.log_text.clear()
+        self.log_text.append(f"🚀 Запуск обработки BOM файлов...")
+        self.log_text.append(f"Команда: split_bom {' '.join(args)}\n")
+        
+        # Создаем progress dialog
+        self.progress_dialog = QProgressDialog(
+            "Обработка файлов...",
+            "Отмена",
+            0, 0,
+            self
+        )
+        self.progress_dialog.setWindowTitle("Обработка")
+        self.progress_dialog.setWindowModality(Qt.WindowModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.setCancelButton(None)  # Убираем кнопку отмены
+        self.progress_dialog.show()
+        
+        # Создаем и запускаем worker
+        self.processing_worker = ProcessingWorker(args)
+        self.processing_worker.progress.connect(self.on_processing_progress)
+        self.processing_worker.finished.connect(self.on_processing_finished)
+        self.processing_worker.start()
+    
+    def on_processing_progress(self, message: str):
+        """Обработка прогресса обработки"""
+        self.log_text.append(message)
+    
+    def on_processing_finished(self, message: str, success: bool, output_file: str):
+        """Обработка завершения обработки"""
+        # Закрываем progress dialog
+        if hasattr(self, 'progress_dialog'):
+            self.progress_dialog.close()
+        
+        # Добавляем сообщение в лог
+        self.log_text.append("\n" + message)
+        
+        # Показываем результат
+        if success:
+            QMessageBox.information(
+                self,
+                "Готово",
+                message
+            )
+            
+            # Проверяем наличие нераспределенных элементов
+            if output_file:
+                self.check_and_offer_interactive_classification(output_file)
+        else:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                message
+            )
+    
+    def check_and_offer_interactive_classification(self, output_file: str):
+        """Проверяет наличие нераспределенных элементов и предлагает интерактивную классификацию"""
+        if not output_file or not os.path.exists(output_file):
+            return
+        
+        try:
+            import pandas as pd
+            # Проверяем наличие листа "Не распределено"
+            xls = pd.ExcelFile(output_file, engine='openpyxl')
+            
+            self.log_text.append(f"\n📊 Листы в файле: {', '.join(xls.sheet_names)}\n")
+            
+            if 'Не распределено' not in xls.sheet_names:
+                self.log_text.append("✅ Все элементы успешно классифицированы!\n")
+                return
+            
+            df_un = pd.read_excel(output_file, sheet_name='Не распределено', engine='openpyxl')
+            df_un_valid = df_un[df_un['Наименование ИВП'].notna()]
+            
+            unclassified_count = len(df_un_valid)
+            
+            if unclassified_count == 0:
+                self.log_text.append("✅ Все элементы успешно классифицированы!\n")
+                return
+            
+            self.log_text.append(f"\n⚠️ Найдено нераспределенных элементов: {unclassified_count}\n")
+            
+            # Предлагаем интерактивную классификацию
+            reply = QMessageBox.question(
+                self,
+                "Интерактивная классификация",
+                f"Найдено {unclassified_count} нераспределенных элементов.\n\n"
+                f"Хотите классифицировать их вручную?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                self.run_interactive_classification(output_file)
+                
+        except Exception as e:
+            self.log_text.append(f"\n⚠️ Ошибка при проверке нераспределенных элементов: {e}\n")
 
     def on_compare_files(self):
         """Сравнение файлов"""
@@ -950,32 +1219,96 @@ class BOMCategorizerMainWindow(QMainWindow):
 
     def on_interactive_classify(self):
         """Интерактивная классификация"""
-        # TODO: Реализовать интерактивную классификацию
-        QMessageBox.information(self, "В разработке", "Интерактивная классификация будет реализована")
-
-    def on_show_db_stats(self):
-        """Показать статистику БД"""
+        output_file = self.output_entry.text().strip()
+        
+        if not output_file:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                "Сначала обработайте файлы, затем запустите интерактивную классификацию"
+            )
+            return
+        
+        if not os.path.exists(output_file):
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Выходной файл не найден:\n{output_file}\n\nСначала обработайте входные файлы"
+            )
+            return
+        
+        self.run_interactive_classification(output_file)
+    
+    def run_interactive_classification(self, output_file: str):
+        """
+        Запускает интерактивную классификацию для выходного файла
+        
+        Args:
+            output_file: Путь к выходному файлу с нераспределенными элементами
+        """
         try:
-            stats = get_database_stats()
-            dialog = DatabaseStatsDialog(stats, self)
+            import pandas as pd
+            
+            # Проверяем наличие листа "Не распределено"
+            xls = pd.ExcelFile(output_file, engine='openpyxl')
+            
+            if 'Не распределено' not in xls.sheet_names:
+                QMessageBox.information(
+                    self,
+                    "Информация",
+                    "В файле нет нераспределенных элементов.\n\nВсе элементы уже классифицированы!"
+                )
+                return
+            
+            df_un = pd.read_excel(output_file, sheet_name='Не распределено', engine='openpyxl')
+            
+            # Фильтруем пустые строки
+            df_un_valid = df_un[df_un['Наименование ИВП'].notna()]
+            
+            if len(df_un_valid) == 0:
+                QMessageBox.information(
+                    self,
+                    "Информация",
+                    "В листе 'Не распределено' нет элементов для классификации"
+                )
+                return
+            
+            # Показываем диалог классификации
+            dialog = ClassificationDialog(df_un_valid, output_file, self)
             dialog.exec()
+            
+            # После завершения диалога обновляем лог
+            if hasattr(dialog, 'classified_count') and dialog.classified_count > 0:
+                self.log_text.append(f"\n✅ Классифицировано элементов: {dialog.classified_count}\n")
+                self.log_text.append(f"   Файл обновлен: {output_file}\n")
+                
+                # Предлагаем открыть файл
+                reply = QMessageBox.question(
+                    self,
+                    "Открыть файл?",
+                    f"Классификация завершена!\n\n"
+                    f"Классифицировано: {dialog.classified_count} элементов\n\n"
+                    f"Открыть файл?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes and os.path.exists(output_file):
+                    if platform.system() == 'Windows':
+                        os.startfile(output_file)
+                    elif platform.system() == 'Darwin':
+                        subprocess.Popen(['open', output_file])
+                    else:
+                        subprocess.Popen(['xdg-open', output_file])
+            
         except Exception as e:
-            QMessageBox.critical(self, "Ошибка", f"Не удалось загрузить статистику: {e}")
+            import traceback
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось запустить интерактивную классификацию:\n{str(e)}\n\n{traceback.format_exc()}"
+            )
 
-    def on_export_database(self):
-        """Экспорт БД"""
-        # TODO: Реализовать экспорт
-        QMessageBox.information(self, "В разработке", "Функция экспорта будет реализована")
-
-    def on_backup_database(self):
-        """Резервная копия БД"""
-        # TODO: Реализовать резервное копирование
-        QMessageBox.information(self, "В разработке", "Функция резервного копирования будет реализована")
-
-    def on_import_database(self):
-        """Импорт БД"""
-        # TODO: Реализовать импорт
-        QMessageBox.information(self, "В разработке", "Функция импорта будет реализована")
 
     def on_open_db_folder(self):
         """Открыть папку с базой данных в проводнике"""
