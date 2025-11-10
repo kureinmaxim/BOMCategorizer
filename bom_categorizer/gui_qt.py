@@ -19,10 +19,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QPushButton, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QSpinBox, QCheckBox, QTextEdit,
-    QFileDialog, QMessageBox, QScrollArea, QFrame, QDialog
+    QFileDialog, QMessageBox, QScrollArea, QFrame, QDialog, QMenuBar, QMenu
 )
 from PySide6.QtCore import Qt, Signal, QThread, QSize
-from PySide6.QtGui import QFont, QColor, QPalette
+from PySide6.QtGui import QFont, QColor, QPalette, QAction
 
 from .component_database import (
     add_component_to_database,
@@ -43,6 +43,8 @@ from .dialogs_qt import (
     ClassificationDialog,
     DocConversionDialog
 )
+
+from .styles import DARK_THEME, LIGHT_THEME
 
 
 def load_config() -> dict:
@@ -113,216 +115,134 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.correct_pin = self.cfg.get("security", {}).get("pin", "1234")
         self.lockable_widgets = []
 
+        # Тема интерфейса
+        self.current_theme = self.cfg.get("ui", {}).get("theme", "dark")  # "dark" или "light"
+
         # Применяем стили
         self._setup_styles()
 
         # Создаем UI
         self._create_ui()
 
+        # Создаем меню
+        self._create_menu()
+
         # Применяем блокировку интерфейса при необходимости
         if self.require_pin:
             self.lock_interface()
 
     def _setup_styles(self):
-        """Настраивает стили приложения - современный лаконичный дизайн"""
+        """Настраивает стили приложения с поддержкой темной и светлой темы"""
         # Устанавливаем системный шрифт с увеличенным размером
         font = QFont(get_system_font(), 12)
         self.setFont(font)
 
-        # Приглушенная цветовая палитра с хорошим контрастом текста
-        # Primary: #5B9BD5 (спокойный синий), Success: #67B279 (мягкий зеленый), Danger: #D9534F (приглушенный красный)
-        # Background: #F5F6F7, Surface: #FFFFFF, Border: #D0D5DD, Text: темные для контраста
+        # Применяем тему
+        self.apply_theme()
+
+    def apply_theme(self):
+        """Применяет выбранную тему к приложению"""
+        if self.current_theme == "dark":
+            self.setStyleSheet(DARK_THEME)
+        else:
+            self.setStyleSheet(LIGHT_THEME)
+
+    def toggle_theme(self):
+        """Переключает между темной и светлой темой"""
+        # Переключаем тему
+        self.current_theme = "light" if self.current_theme == "dark" else "dark"
         
-        self.setStyleSheet("""
-            /* Главное окно */
-            QMainWindow {
-                background-color: #F5F6F7;
-            }
+        # Применяем новую тему
+        self.apply_theme()
+        
+        # Сохраняем выбор в конфиг
+        self.save_theme_preference()
+        
+        # Показываем уведомление
+        theme_name = "Темная" if self.current_theme == "dark" else "Светлая"
+        QMessageBox.information(
+            self,
+            "Тема изменена",
+            f"{theme_name} тема применена успешно!"
+        )
+
+    def save_theme_preference(self):
+        """Сохраняет выбор темы в конфигурационный файл"""
+        cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+        try:
+            # Обновляем конфиг в памяти
+            if "ui" not in self.cfg:
+                self.cfg["ui"] = {}
+            self.cfg["ui"]["theme"] = self.current_theme
             
-            /* Группы (секции) - единый шрифт */
-            QGroupBox {
-                font-size: 14pt;
-                font-weight: 600;
-                border: 1px solid #D0D5DD;
-                border-radius: 8px;
-                margin-top: 8px;
-                margin-bottom: 8px;
-                padding: 16px 12px 12px 12px;
-                background-color: #FFFFFF;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 12px;
-                padding: 0 6px;
-                color: #2C3E50;
-                font-size: 14pt;
-                font-weight: 600;
-            }
-            
-            /* Кнопки - основной стиль (приглушенный синий) */
-            QPushButton {
-                background-color: #5B9BD5;
-                color: white;
-                border: none;
-                border-radius: 6px;
-                padding: 12px 24px;
-                font-size: 13pt;
-                font-weight: 600;
-                min-height: 24px;
-            }
-            QPushButton:hover {
-                background-color: #4A8FC7;
-            }
-            QPushButton:pressed {
-                background-color: #3B7FB8;
-            }
-            QPushButton:disabled {
-                background-color: #E0E0E0;
-                color: #9E9E9E;
-            }
-            
-            /* Кнопки - акцентные (приглушенный зеленый) */
-            QPushButton.accent {
-                background-color: #67B279;
-                font-weight: 600;
-            }
-            QPushButton.accent:hover {
-                background-color: #5AA66C;
-            }
-            QPushButton.accent:pressed {
-                background-color: #4D995F;
-            }
-            
-            /* Кнопки - вторичные действия (нейтральный серый) */
-            QPushButton.danger {
-                background-color: #95A5A6;
-                color: white;
-            }
-            QPushButton.danger:hover {
-                background-color: #7F8C8D;
-            }
-            QPushButton.danger:pressed {
-                background-color: #6C7A7B;
-            }
-            
-            /* Поля ввода */
-            QLineEdit, QSpinBox {
-                border: 1px solid #D0D5DD;
-                border-radius: 4px;
-                padding: 10px 12px;
-                background-color: #FFFFFF;
-                font-size: 13pt;
-                color: #2C3E50;
-            }
-            QLineEdit:focus, QSpinBox:focus {
-                border: 2px solid #5B9BD5;
-                background-color: #FFFFFF;
-            }
-            QLineEdit:disabled, QSpinBox:disabled {
-                background-color: #F4F5F7;
-                color: #7A869A;
-            }
-            
-            /* Списки */
-            QListWidget {
-                border: 1px solid #D0D5DD;
-                border-radius: 6px;
-                background-color: #FFFFFF;
-                font-size: 13pt;
-                padding: 4px;
-            }
-            QListWidget::item {
-                border-radius: 4px;
-                padding: 8px 10px;
-                margin: 2px;
-                color: #2C3E50;
-            }
-            QListWidget::item:selected {
-                background-color: #D6E9F8;
-                color: #2C5F8D;
-                font-weight: 600;
-            }
-            QListWidget::item:hover {
-                background-color: #F4F5F7;
-            }
-            
-            /* Текстовые области (лог) */
-            QTextEdit {
-                border: 1px solid #D0D5DD;
-                border-radius: 6px;
-                background-color: #FAFBFC;
-                font-family: 'Menlo', 'Consolas', 'Courier New', monospace;
-                font-size: 11pt;
-                padding: 10px;
-                color: #2C3E50;
-            }
-            
-            /* Чекбоксы */
-            QCheckBox {
-                font-size: 13pt;
-                spacing: 10px;
-                color: #2C3E50;
-                font-weight: 500;
-            }
-            QCheckBox::indicator {
-                width: 20px;
-                height: 20px;
-                border-radius: 4px;
-                border: 2px solid #D0D5DD;
-                background-color: #FFFFFF;
-            }
-            QCheckBox::indicator:checked {
-                background-color: #5B9BD5;
-                border-color: #5B9BD5;
-            }
-            QCheckBox::indicator:hover {
-                border-color: #5B9BD5;
-            }
-            
-            /* Метки */
-            QLabel {
-                font-size: 13pt;
-                color: #2C3E50;
-            }
-            QLabel.bold {
-                font-weight: 600;
-                font-size: 14pt;
-                color: #2C3E50;
-            }
-            QLabel.section {
-                font-size: 14pt;
-                font-weight: 600;
-                color: #2C3E50;
-            }
-            QLabel.hint {
-                font-size: 12pt;
-                color: #5A6C7D;
-            }
-            
-            /* Область прокрутки */
-            QScrollArea {
-                border: none;
-                background-color: transparent;
-            }
-            
-            /* Полоса прокрутки */
-            QScrollBar:vertical {
-                background: #F4F5F7;
-                width: 12px;
-                border-radius: 6px;
-            }
-            QScrollBar::handle:vertical {
-                background: #A5ADBA;
-                border-radius: 6px;
-                min-height: 30px;
-            }
-            QScrollBar::handle:vertical:hover {
-                background: #7A869A;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """)
+            # Сохраняем в файл
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Не удалось сохранить настройку темы: {e}")
+
+    def _create_menu(self):
+        """Создает меню приложения"""
+        menubar = self.menuBar()
+        
+        # Меню "Вид"
+        view_menu = menubar.addMenu("Вид")
+        
+        # Пункт переключения темы
+        theme_action = QAction("🌓 Переключить тему", self)
+        theme_action.setShortcut("Ctrl+T")
+        theme_action.triggered.connect(self.toggle_theme)
+        view_menu.addAction(theme_action)
+        
+        # Меню "База данных"
+        db_menu = menubar.addMenu("База данных")
+        
+        # Статистика БД
+        stats_action = QAction("📊 Статистика", self)
+        stats_action.triggered.connect(self.show_database_stats)
+        db_menu.addAction(stats_action)
+        
+        # Экспорт БД
+        export_action = QAction("📤 Экспорт в Excel", self)
+        export_action.triggered.connect(self.export_database)
+        db_menu.addAction(export_action)
+        
+        # Импорт БД
+        import_action = QAction("📥 Импорт из Excel", self)
+        import_action.triggered.connect(self.import_database)
+        db_menu.addAction(import_action)
+        
+        db_menu.addSeparator()
+        
+        # Резервное копирование
+        backup_action = QAction("💾 Резервное копирование", self)
+        backup_action.triggered.connect(self.backup_database)
+        db_menu.addAction(backup_action)
+        
+        # Открыть папку БД
+        folder_action = QAction("📁 Открыть папку БД", self)
+        folder_action.triggered.connect(self.open_database_folder)
+        db_menu.addAction(folder_action)
+        
+        db_menu.addSeparator()
+        
+        # Заменить БД
+        replace_action = QAction("🔄 Заменить БД", self)
+        replace_action.triggered.connect(self.on_replace_database)
+        db_menu.addAction(replace_action)
+        
+        # Добавить все из выходного файла
+        import_output_action = QAction("📋 Добавить из выходного файла", self)
+        import_output_action.triggered.connect(self.on_import_from_output)
+        db_menu.addAction(import_output_action)
+        
+        # Меню "Помощь"
+        help_menu = menubar.addMenu("Помощь")
+        
+        # О программе
+        about_action = QAction("ℹ️ О программе", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
 
     def _create_ui(self):
         """Создает элементы интерфейса"""
@@ -332,8 +252,8 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Создаем главный layout с прокруткой
         main_layout = QVBoxLayout(central_widget)
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(6, 6, 6, 6)
+        main_layout.setSpacing(6)
 
         # Область прокрутки
         scroll_area = QScrollArea()
@@ -343,13 +263,13 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Контейнер для содержимого
         scroll_content = QWidget()
         scroll_layout = QVBoxLayout(scroll_content)
-        scroll_layout.setSpacing(15)
+        scroll_layout.setSpacing(8)
 
         # Добавляем секции
         scroll_layout.addWidget(self._create_main_section())
         scroll_layout.addWidget(self._create_comparison_section())
         scroll_layout.addWidget(self._create_log_section())
-        scroll_layout.addWidget(self._create_database_section())
+        # scroll_layout.addWidget(self._create_database_section())  # Перенесено в меню
         scroll_layout.addStretch()
         scroll_layout.addWidget(self._create_footer())
 
@@ -364,12 +284,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Кнопки управления файлами
         buttons_layout = QHBoxLayout()
 
-        add_btn = QPushButton("Добавить файлы")
+        add_btn = QPushButton("➕ Добавить файлы")
         add_btn.clicked.connect(self.on_add_files)
         self.lockable_widgets.append(add_btn)
         buttons_layout.addWidget(add_btn)
 
-        clear_btn = QPushButton("Очистить список")
+        clear_btn = QPushButton("🗑️ Очистить список")
         clear_btn.setProperty("class", "danger")
         clear_btn.clicked.connect(self.on_clear_files)
         self.lockable_widgets.append(clear_btn)
@@ -383,7 +303,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         layout.addWidget(files_label)
 
         self.files_list = QListWidget()
-        self.files_list.setMaximumHeight(150)
+        self.files_list.setMaximumHeight(100)
         self.files_list.itemSelectionChanged.connect(self.on_file_selected)
         self.lockable_widgets.append(self.files_list)
         layout.addWidget(self.files_list)
@@ -464,13 +384,13 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Кнопки запуска
         action_layout = QHBoxLayout()
 
-        run_btn = QPushButton("▶ Запустить обработку")
+        run_btn = QPushButton("▶️ Запустить обработку")
         run_btn.setProperty("class", "accent")
         run_btn.clicked.connect(self.on_run)
         self.lockable_widgets.append(run_btn)
         action_layout.addWidget(run_btn)
 
-        interactive_btn = QPushButton("Интерактивная классификация")
+        interactive_btn = QPushButton("🔄 Интерактивная классификация")
         interactive_btn.clicked.connect(self.on_interactive_classify)
         self.lockable_widgets.append(interactive_btn)
         action_layout.addWidget(interactive_btn)
@@ -548,7 +468,7 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(120)
+        self.log_text.setMaximumHeight(80)
         layout.addWidget(self.log_text)
 
         group.setLayout(layout)
@@ -560,39 +480,39 @@ class BOMCategorizerMainWindow(QMainWindow):
         layout = QGridLayout()
 
         # Первая строка кнопок
-        stats_btn = QPushButton("Статистика")
+        stats_btn = QPushButton("📊 Статистика")
         stats_btn.clicked.connect(self.on_show_db_stats)
         self.lockable_widgets.append(stats_btn)
         layout.addWidget(stats_btn, 0, 0)
 
-        export_btn = QPushButton("Экспорт")
+        export_btn = QPushButton("📤 Экспорт")
         export_btn.clicked.connect(self.on_export_database)
         self.lockable_widgets.append(export_btn)
         layout.addWidget(export_btn, 0, 1)
 
-        backup_btn = QPushButton("Резервная копия")
+        backup_btn = QPushButton("💾 Резервная копия")
         backup_btn.clicked.connect(self.on_backup_database)
         self.lockable_widgets.append(backup_btn)
         layout.addWidget(backup_btn, 0, 2)
 
         # Вторая строка кнопок
-        import_btn = QPushButton("Импорт")
+        import_btn = QPushButton("📥 Импорт")
         import_btn.clicked.connect(self.on_import_database)
         self.lockable_widgets.append(import_btn)
         layout.addWidget(import_btn, 1, 0)
 
-        open_folder_btn = QPushButton("Открыть")
+        open_folder_btn = QPushButton("📁 Открыть папку")
         open_folder_btn.clicked.connect(self.on_open_db_folder)
         self.lockable_widgets.append(open_folder_btn)
         layout.addWidget(open_folder_btn, 1, 1)
 
-        replace_btn = QPushButton("Заменить БД")
+        replace_btn = QPushButton("🔄 Заменить БД")
         replace_btn.clicked.connect(self.on_replace_database)
         self.lockable_widgets.append(replace_btn)
         layout.addWidget(replace_btn, 1, 2)
 
         # Третья строка
-        import_output_btn = QPushButton("Добавить все из выходного файла")
+        import_output_btn = QPushButton("📋 Добавить из выходного файла")
         import_output_btn.clicked.connect(self.on_import_from_output)
         self.lockable_widgets.append(import_output_btn)
         layout.addWidget(import_output_btn, 2, 0, 1, 3)
@@ -604,7 +524,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Создает футер с информацией"""
         footer = QWidget()
         layout = QVBoxLayout()
-        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setContentsMargins(3, 3, 3, 3)
 
         # Информация о разработчике
         dev_layout = QHBoxLayout()
@@ -819,19 +739,306 @@ class BOMCategorizerMainWindow(QMainWindow):
         QMessageBox.information(self, "В разработке", "Функция импорта будет реализована")
 
     def on_open_db_folder(self):
-        """Открыть папку БД"""
-        # TODO: Реализовать открытие папки
-        QMessageBox.information(self, "В разработке", "Функция открытия папки будет реализована")
+        """Открыть папку с базой данных в проводнике"""
+        try:
+            db_path = get_database_path()
+            folder_path = os.path.dirname(db_path)
+            
+            # Открываем в проводнике
+            import sys
+            if sys.platform == "win32":
+                os.startfile(folder_path)
+            elif sys.platform == "darwin":  # macOS
+                os.system(f'open "{folder_path}"')
+            else:  # Linux
+                os.system(f'xdg-open "{folder_path}"')
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку:\n{str(e)}")
 
     def on_replace_database(self):
-        """Заменить БД"""
-        # TODO: Реализовать замену БД
-        QMessageBox.information(self, "В разработке", "Функция замены БД будет реализована")
+        """Заменить текущую базу данных на другую из JSON файла"""
+        try:
+            # Выбор файла базы данных
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Выберите файл базы данных (component_database.json)",
+                "",
+                "JSON файлы (*.json);;Все файлы (*.*)"
+            )
+            
+            if not file_path:
+                return
+            
+            # Проверяем что файл существует и валиден
+            if not os.path.exists(file_path):
+                QMessageBox.critical(self, "Ошибка", f"Файл не найден:\n{file_path}")
+                return
+            
+            # Проверяем формат файла
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    
+                # Проверяем что это база данных компонентов
+                if not isinstance(data, dict):
+                    QMessageBox.critical(self, "Ошибка", "Неверный формат файла!\n\nОжидается JSON с данными компонентов.")
+                    return
+                
+                # Определяем количество компонентов
+                if "components" in data:
+                    component_count = len(data["components"])
+                elif "metadata" in data or "categories" in data:
+                    QMessageBox.critical(self, "Ошибка", "Файл не содержит компонентов!")
+                    return
+                else:
+                    # Старый формат - прямой словарь
+                    component_count = len(data)
+                
+                if component_count == 0:
+                    reply = QMessageBox.question(
+                        self,
+                        "Предупреждение",
+                        "⚠️ Выбранная база данных пустая (0 компонентов)!\n\n"
+                        "Это удалит все компоненты из текущей базы.\n\n"
+                        "Продолжить?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
+                    )
+                    if reply != QMessageBox.Yes:
+                        return
+                
+            except json.JSONDecodeError:
+                QMessageBox.critical(self, "Ошибка", "Файл поврежден или имеет неверный формат JSON!")
+                return
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка", f"Не удалось прочитать файл:\n{str(e)}")
+                return
+            
+            # Получаем информацию о текущей базе
+            current_db_path = get_database_path()
+            current_stats = get_database_stats()
+            current_count = current_stats.get('total', 0)
+            
+            # Подтверждение замены
+            reply = QMessageBox.question(
+                self,
+                "Подтверждение замены",
+                f"🔄 ЗАМЕНА БАЗЫ ДАННЫХ\n\n"
+                f"Текущая база данных:\n"
+                f"  📊 Компонентов: {current_count}\n"
+                f"  📁 Расположение: ...{current_db_path[-50:]}\n\n"
+                f"Новая база данных:\n"
+                f"  📊 Компонентов: {component_count}\n"
+                f"  📁 Файл: {os.path.basename(file_path)}\n\n"
+                f"⚠️ Текущая база будет заменена!\n"
+                f"Резервная копия будет создана автоматически.\n\n"
+                f"Продолжить?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # Создаем резервную копию текущей базы
+            try:
+                backup_file = backup_database()
+                self.log_text.append(f"\n💾 Резервная копия создана:")
+                self.log_text.append(f"   {os.path.basename(backup_file)}\n")
+            except Exception as e:
+                reply = QMessageBox.question(
+                    self,
+                    "Ошибка резервного копирования",
+                    f"Не удалось создать резервную копию:\n{str(e)}\n\n"
+                    f"Продолжить без резервной копии?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if reply != QMessageBox.Yes:
+                    return
+            
+            # Копируем новую базу данных
+            import shutil
+            shutil.copy2(file_path, current_db_path)
+            
+            # Проверяем что копирование прошло успешно
+            new_stats = get_database_stats()
+            new_count = new_stats.get('total', 0)
+            
+            self.log_text.append(f"\n✅ База данных успешно заменена!")
+            self.log_text.append(f"   Новое количество компонентов: {new_count}")
+            self.log_text.append(f"   Расположение: {current_db_path}\n")
+            
+            QMessageBox.information(
+                self,
+                "Успех",
+                f"✅ База данных успешно заменена!\n\n"
+                f"Компонентов в новой базе: {new_count}\n\n"
+                f"Резервная копия старой базы сохранена.\n\n"
+                f"Перезапустите приложение чтобы увидеть\n"
+                f"актуальные данные в футере."
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось заменить базу данных:\n{str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def on_import_from_output(self):
-        """Импорт из выходного файла"""
-        # TODO: Реализовать импорт из выходного файла
-        QMessageBox.information(self, "В разработке", "Функция импорта из выходного файла будет реализована")
+        """Импорт всех компонентов из выходного файла в базу данных"""
+        try:
+            # Проверяем есть ли выходной файл
+            output_file = self.output_entry.text()
+            
+            if not output_file or not os.path.exists(output_file):
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    "Выходной файл не найден!\n\n"
+                    "Сначала обработайте входные файлы, "
+                    "проверьте результат, а затем импортируйте компоненты в базу данных."
+                )
+                return
+            
+            # Подтверждение
+            reply = QMessageBox.question(
+                self,
+                "Импорт из выходного файла",
+                f"Вы хотите добавить ВСЕ компоненты из файла:\n\n"
+                f"{os.path.basename(output_file)}\n\n"
+                f"в базу данных?\n\n"
+                f"Это позволит автоматически классифицировать эти компоненты "
+                f"в будущем при обработке других файлов.\n\n"
+                f"Продолжить?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # Создаем диалог прогресса
+            from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QPushButton
+            progress_dialog = QDialog(self)
+            progress_dialog.setWindowTitle("Импорт из выходного файла")
+            progress_dialog.setMinimumSize(600, 400)
+            progress_dialog.setModal(True)
+            
+            layout = QVBoxLayout(progress_dialog)
+            
+            progress_text = QTextEdit()
+            progress_text.setReadOnly(True)
+            layout.addWidget(progress_text)
+            
+            close_btn = QPushButton("Закрыть")
+            close_btn.clicked.connect(progress_dialog.accept)
+            close_btn.setEnabled(False)
+            layout.addWidget(close_btn)
+            
+            progress_text.append("📥 Импорт компонентов из выходного файла...")
+            progress_text.append(f"Файл: {output_file}\n")
+            
+            progress_dialog.show()
+            QApplication.processEvents()
+            
+            # Импортируем компоненты
+            import pandas as pd
+            
+            # Маппинг русских названий листов на ключи категорий
+            SHEET_TO_CATEGORY = {
+                'Резисторы': 'resistors',
+                'Конденсаторы': 'capacitors',
+                'Индуктивности': 'inductors',
+                'Полупроводники': 'semiconductors',
+                'Микросхемы': 'ics',
+                'Разъемы': 'connectors',
+                'Оптика': 'optics',
+                'СВЧ модули': 'rf_modules',
+                'Кабели': 'cables',
+                'Модули питания': 'power_modules',
+                'Отладочные платы': 'dev_boards',
+                'Наши разработки': 'our_developments',
+                'Другие': 'others',
+            }
+            
+            # Читаем файл Excel
+            xl_file = pd.ExcelFile(output_file, engine='openpyxl')
+            
+            added_count = 0
+            skipped_count = 0
+            total_sheets = 0
+            
+            progress_text.append("📊 Обработка листов:\n")
+            QApplication.processEvents()
+            
+            # Обрабатываем каждый лист
+            for sheet_name in xl_file.sheet_names:
+                # Пропускаем служебные листы
+                if sheet_name in ['SOURCES', 'SUMMARY', 'Не распределено', 'INFO']:
+                    continue
+                
+                # Проверяем что это лист категории
+                if sheet_name not in SHEET_TO_CATEGORY:
+                    continue
+                
+                category_key = SHEET_TO_CATEGORY[sheet_name]
+                total_sheets += 1
+                
+                # Читаем данные
+                df = pd.read_excel(output_file, sheet_name=sheet_name, engine='openpyxl')
+                
+                if df.empty:
+                    continue
+                
+                # Ищем колонку с наименованием
+                name_col = None
+                for col in ['Наименование ИВП', 'Наименование', 'наименование ивп', 'наименование']:
+                    if col in df.columns:
+                        name_col = col
+                        break
+                
+                if not name_col:
+                    progress_text.append(f"⚠️  {sheet_name}: не найдена колонка с наименованием")
+                    continue
+                
+                sheet_added = 0
+                
+                # Добавляем каждый компонент в базу данных
+                for idx, row in df.iterrows():
+                    name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
+                    
+                    # Пропускаем пустые названия
+                    if not name or name == 'nan':
+                        skipped_count += 1
+                        continue
+                    
+                    # Добавляем в базу данных
+                    add_component_to_database(name, category_key)
+                    added_count += 1
+                    sheet_added += 1
+                
+                progress_text.append(f"✅ {sheet_name}: добавлено {sheet_added} компонентов")
+                QApplication.processEvents()
+            
+            progress_text.append(f"\n✅ Импорт завершен!\n")
+            progress_text.append(f"📈 Статистика:")
+            progress_text.append(f"   Обработано листов: {total_sheets}")
+            progress_text.append(f"   Добавлено компонентов: {added_count}")
+            progress_text.append(f"   Пропущено (пустые): {skipped_count}\n")
+            
+            # Показываем обновленную статистику базы данных
+            stats = get_database_stats()
+            progress_text.append(f"📊 База данных после импорта:")
+            progress_text.append(f"   Всего компонентов: {stats['total']}")
+            
+            close_btn.setEnabled(True)
+            progress_dialog.exec()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось импортировать компоненты:\n{str(e)}")
+            import traceback
+            traceback.print_exc()
 
     def on_developer_double_click(self):
         """Двойной клик на имени разработчика - PIN диалог"""
@@ -864,6 +1071,164 @@ class BOMCategorizerMainWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, 'size_label'):
             self.size_label.setText(f"📐 {self.width()}×{self.height()}")
+
+    # =======================
+    # Методы меню
+    # =======================
+
+    def show_database_stats(self):
+        """Показывает статистику базы данных"""
+        try:
+            dialog = DatabaseStatsDialog(self)
+            dialog.exec()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось показать статистику базы данных:\n{str(e)}"
+            )
+
+    def export_database(self):
+        """Экспорт базы данных в Excel"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Экспорт базы данных",
+            "component_database.xlsx",
+            "Excel файлы (*.xlsx)"
+        )
+
+        if file_path:
+            try:
+                row_count = export_database_to_excel(file_path)
+                QMessageBox.information(
+                    self,
+                    "Экспорт завершен",
+                    f"✅ База данных успешно экспортирована!\n\n"
+                    f"Файл: {file_path}\n"
+                    f"Компонентов: {row_count}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Ошибка экспорта",
+                    f"Не удалось экспортировать базу данных:\n{str(e)}"
+                )
+
+    def import_database(self):
+        """Импорт базы данных из Excel"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Импорт базы данных",
+            "",
+            "Поддерживаемые файлы (*.xlsx *.json);;Excel файлы (*.xlsx);;JSON файлы (*.json)"
+        )
+
+        if file_path:
+            try:
+                if file_path.endswith('.json'):
+                    import shutil
+                    db_path = get_database_path()
+                    # Создаем резервную копию
+                    backup_database()
+                    # Копируем новый файл
+                    shutil.copy2(file_path, db_path)
+                    stats = get_database_stats()
+                    imported_count = stats.get('total_components', 0)
+                elif file_path.endswith('.xlsx'):
+                    # Создаем резервную копию
+                    backup_database()
+                    # Импортируем из Excel
+                    imported_count = import_database_from_excel(file_path, replace=True)
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Неподдерживаемый формат",
+                        "Поддерживаются только файлы .xlsx и .json"
+                    )
+                    return
+
+                QMessageBox.information(
+                    self,
+                    "Импорт завершен",
+                    f"✅ База данных успешно импортирована!\n\n"
+                    f"Компонентов импортировано: {imported_count}\n"
+                    f"База данных: {get_database_path()}"
+                )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Ошибка импорта",
+                    f"Не удалось импортировать базу данных:\n{str(e)}"
+                )
+
+    def backup_database(self):
+        """Создает резервную копию базы данных"""
+        try:
+            backup_file = backup_database()
+            QMessageBox.information(
+                self,
+                "Резервное копирование",
+                f"✅ Резервная копия создана успешно!\n\n"
+                f"Файл: {backup_file}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось создать резервную копию:\n{str(e)}"
+            )
+
+    def open_database_folder(self):
+        """Открывает папку с базой данных в проводнике"""
+        try:
+            db_path = get_database_path()
+            db_dir = os.path.dirname(db_path)
+
+            # Открываем папку в системном проводнике
+            if platform.system() == 'Windows':
+                os.startfile(db_dir)
+            elif platform.system() == 'Darwin':  # macOS
+                os.system(f'open "{db_dir}"')
+            else:  # Linux
+                os.system(f'xdg-open "{db_dir}"')
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось открыть папку:\n{str(e)}"
+            )
+
+    def show_about(self):
+        """Показывает информацию о программе"""
+        ver = self.cfg.get("app_info", {}).get("version", "dev")
+        edition = self.cfg.get("app_info", {}).get("edition", "Modern Edition")
+        
+        about_text = f"""
+<h2>BOM Categorizer {edition}</h2>
+<p><b>Версия:</b> {ver}</p>
+<p><b>Разработчик:</b> Куреин М.Н. / Kurein M.N.</p>
+<p><b>Дата:</b> 08.11.2025</p>
+
+<p><b>Возможности:</b></p>
+<ul>
+<li>📋 Обработка файлов: XLSX, DOCX, TXT</li>
+<li>🤖 Автоматическая классификация компонентов</li>
+<li>🎨 Форматирование и сортировка</li>
+<li>🗄️ База данных компонентов</li>
+<li>🖥️ Современный темный/светлый интерфейс</li>
+<li>🔒 PIN защита</li>
+<li>💾 Экспорт в Excel и TXT</li>
+</ul>
+
+<p><b>Горячие клавиши:</b></p>
+<ul>
+<li>Ctrl+T - Переключить тему</li>
+</ul>
+
+<p style="color: #7287fd;"><b>Modern Edition</b> на основе PySide6 (Qt)</p>
+        """
+
+        QMessageBox.about(self, "О программе", about_text)
 
 
 def main():

@@ -24,7 +24,7 @@ class PinDialog(QDialog):
         self.is_authenticated = False
 
         self.setWindowTitle("Авторизация")
-        self.setFixedSize(420, 260)
+        self.setFixedSize(380, 220)
         self.setModal(True)
 
         self._create_ui()
@@ -39,8 +39,8 @@ class PinDialog(QDialog):
     def _create_ui(self):
         """Создает элементы диалога"""
         layout = QVBoxLayout()
-        layout.setContentsMargins(25, 25, 25, 25)
-        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(10)
 
         # Заголовок
         title_label = QLabel("Введите PIN-код:")
@@ -172,7 +172,7 @@ class FirstRunImportDialog(QDialog):
         self.import_selected = False
 
         self.setWindowTitle("База данных компонентов")
-        self.setFixedSize(500, 350)
+        self.setFixedSize(450, 300)
         self.setModal(True)
 
         self._create_ui()
@@ -180,8 +180,8 @@ class FirstRunImportDialog(QDialog):
     def _create_ui(self):
         """Создает элементы диалога"""
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
         # Заголовок
         title_label = QLabel("Первый запуск")
@@ -206,15 +206,15 @@ class FirstRunImportDialog(QDialog):
 
         # Кнопки
         buttons_layout = QVBoxLayout()
-        buttons_layout.setSpacing(10)
+        buttons_layout.setSpacing(8)
 
         import_btn = QPushButton("📥 Импортировать существующую БД")
-        import_btn.setMinimumHeight(40)
+        import_btn.setMinimumHeight(32)
         import_btn.clicked.connect(self.on_import)
         buttons_layout.addWidget(import_btn)
 
         fresh_btn = QPushButton("✨ Начать с чистой БД")
-        fresh_btn.setMinimumHeight(40)
+        fresh_btn.setMinimumHeight(32)
         fresh_btn.clicked.connect(self.on_fresh_start)
         buttons_layout.addWidget(fresh_btn)
 
@@ -275,8 +275,8 @@ class ClassificationDialog(QDialog):
     def _create_ui(self):
         """Создает элементы диалога"""
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
         # Прогресс
         self.progress_label = QLabel()
@@ -307,7 +307,7 @@ class ClassificationDialog(QDialog):
         # Кнопки категорий
         categories_group = QWidget()
         categories_layout = QGridLayout(categories_group)
-        categories_layout.setSpacing(10)
+        categories_layout.setSpacing(6)
 
         self.category_buttons = {}
 
@@ -391,7 +391,7 @@ class DocConversionDialog(QDialog):
         self.conversion_method = None  # 'word', 'manual', или None
 
         self.setWindowTitle("Обнаружены .doc файлы")
-        self.setFixedSize(650, 400)
+        self.setFixedSize(600, 360)
         self.setModal(True)
 
         self._create_ui()
@@ -399,8 +399,8 @@ class DocConversionDialog(QDialog):
     def _create_ui(self):
         """Создает элементы диалога"""
         layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(10)
 
         # Заголовок
         title_label = QLabel("Обнаружены файлы в формате .doc")
@@ -425,15 +425,15 @@ class DocConversionDialog(QDialog):
 
         # Кнопки выбора
         buttons_layout = QVBoxLayout()
-        buttons_layout.setSpacing(10)
+        buttons_layout.setSpacing(8)
 
         word_btn = QPushButton("Конвертировать с помощью Word (Windows)")
-        word_btn.setMinimumHeight(40)
+        word_btn.setMinimumHeight(32)
         word_btn.clicked.connect(self.on_word_conversion)
         buttons_layout.addWidget(word_btn)
 
         manual_btn = QPushButton("Конвертировать вручную и продолжить")
-        manual_btn.setMinimumHeight(40)
+        manual_btn.setMinimumHeight(32)
         manual_btn.clicked.connect(self.on_manual_conversion)
         buttons_layout.addWidget(manual_btn)
 
