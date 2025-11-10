@@ -100,37 +100,135 @@ split_bom.bat --inputs "file.xlsx" --xlsx "output.xlsx" --combine
 
 ---
 
-### 🔧 Полная установка (PowerShell):
+## 🖥️ Поддержка командных оболочек Windows 11
+
+BOM Categorizer полностью поддерживает все популярные командные оболочки на Windows 11:
+
+| Оболочка | Описание | Активация venv | Особенности |
+|----------|----------|----------------|-------------|
+| **PowerShell** 💙 | Современная оболочка (рекомендуется) | `.\venv\Scripts\Activate.ps1` | Требует настройки `ExecutionPolicy` |
+| **CMD** 📟 | Классическая командная строка | `venv\Scripts\activate.bat` | Простой синтаксис, проверенная стабильность |
+| **GitBash** 🐙 | Unix-подобная оболочка | `source venv/Scripts/activate` | Путь `C:\` → `/c/`, слэши `/` вместо `\` |
+
+> 💡 **Совет:** BAT-файлы (`start_gui.bat`, `split_bom.bat`) работают одинаково во всех оболочках!
+
+---
+
+### 🔧 Полная установка (Windows 11)
+
+> 💡 **На Windows 11 доступны три типа командных оболочек:** PowerShell, CMD и GitBash. Выберите удобный для вас вариант!
+
+<details>
+<summary><b>📘 PowerShell (рекомендуется)</b></summary>
 
 ```powershell
 # 1) Перейти в папку проекта
-cd C:\Project\ProjectSnabjenie
+cd C:\Project\BOMCategorizer
 
 # 2) Создать виртуальное окружение (однажды)
 python -m venv venv
 
-# 3) Активировать окружение (PowerShell)
+# 3) Активировать окружение
 .\venv\Scripts\Activate.ps1
 
-# 4) Установить зависимости
-pip install --upgrade pip
+# 4) Обновить pip (ВАЖНО: используйте python -m pip на Windows!)
+python -m pip install --upgrade pip
+
+# 5) Установить зависимости
 pip install -r requirements.txt
 
-# 5) Запустить Standard Edition
+# 6) Запустить Standard Edition
 python app.py
 
-# 6) Или запустить Modern Edition
+# 7) Или запустить Modern Edition
 python app_qt.py
 
-# 7) (Опционально) Запуск без активации окружения
+# 8) (Опционально) Запуск без активации окружения
 .\venv\Scripts\python.exe app.py         # Standard
 .\venv\Scripts\python.exe app_qt.py      # Modern Edition
 ```
 
+**Проблемы активации PowerShell?**
+Если PowerShell запрещает выполнение скриптов:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\venv\Scripts\Activate.ps1
+```
+
+</details>
+
+<details>
+<summary><b>🖥️ CMD (Командная строка)</b></summary>
+
+```cmd
+REM 1) Перейти в папку проекта
+cd /d C:\Project\BOMCategorizer
+
+REM 2) Создать виртуальное окружение (однажды)
+python -m venv venv
+
+REM 3) Активировать окружение
+venv\Scripts\activate.bat
+
+REM 4) Обновить pip (ВАЖНО: используйте python -m pip на Windows!)
+python -m pip install --upgrade pip
+
+REM 5) Установить зависимости
+pip install -r requirements.txt
+
+REM 6) Запустить Standard Edition
+python app.py
+
+REM 7) Или запустить Modern Edition
+python app_qt.py
+
+REM 8) (Опционально) Запуск без активации окружения
+venv\Scripts\python.exe app.py           REM Standard
+venv\Scripts\python.exe app_qt.py        REM Modern Edition
+```
+
+</details>
+
+<details>
+<summary><b>🐙 GitBash (Git для Windows)</b></summary>
+
+```bash
+# 1) Перейти в папку проекта
+cd /c/Project/BOMCategorizer
+
+# 2) Создать виртуальное окружение (однажды)
+python -m venv venv
+
+# 3) Активировать окружение
+source venv/Scripts/activate
+
+# 4) Обновить pip
+python -m pip install --upgrade pip
+
+# 5) Установить зависимости
+pip install -r requirements.txt
+
+# 6) Запустить Standard Edition
+python app.py
+
+# 7) Или запустить Modern Edition
+python app_qt.py
+
+# 8) (Опционально) Запуск без активации окружения
+venv/Scripts/python.exe app.py           # Standard
+venv/Scripts/python.exe app_qt.py        # Modern Edition
+```
+
+> 💡 **Примечание:** В GitBash пути Windows конвертируются: `C:\` → `/c/`, обратные слэши → прямые
+
+</details>
+
+---
+
 ### Быстрый старт (macOS/Linux)
 
 ```bash
-cd /path/to/ProjectSnabjenie
+cd /path/to/BOMCategorizer
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
@@ -187,13 +285,29 @@ python app.py
 
 ### 2. CLI режим (консоль) 💻
 
-```bash
-# Windows
-.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
+<details>
+<summary><b>Windows - все варианты оболочек</b></summary>
 
-# macOS/Linux
+**PowerShell / CMD:**
+```powershell
+venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
+```
+
+**GitBash:**
+```bash
+venv/Scripts/python.exe interactive_classify.py --input "example/БЗ.doc"
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
 venv/bin/python3 interactive_classify.py --input "example/БЗ.doc"
 ```
+
+</details>
 
 **Все подробности:** ➡️ **[INTERACTIVE_MODE_GUIDE.md](docs/INTERACTIVE_MODE_GUIDE.md)**
 
@@ -214,32 +328,88 @@ venv/bin/python3 interactive_classify.py --input "example/БЗ.doc"
 14. **Не распределено** - требуют классификации (можно переносить вручную через GUI)
 
 ## Пример: только TXT
+
+<details>
+<summary><b>Windows - примеры для разных оболочек</b></summary>
+
+**PowerShell:**
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+.\venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
 ```
+
+**CMD:**
+```cmd
+venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+```
+
+**GitBash:**
+```bash
+venv/Scripts/python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+venv/bin/python3 split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+```
+
+</details>
 
 ## Экспорт в TXT файлы (новое!)
 Создание отдельных TXT файлов для каждой категории в удобочитаемом формате:
 
+<details>
+<summary><b>Windows - примеры для разных оболочек</b></summary>
+
+**PowerShell:**
 ```powershell
 # Базовое использование
-.\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+.\venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
 
 # С несколькими входными файлами
-.\.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+.\venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
 ```
+
+**CMD:**
+```cmd
+REM Базовое использование
+venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+
+REM С несколькими входными файлами
+venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+```
+
+**GitBash:**
+```bash
+# Базовое использование
+venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+
+# С несколькими входными файлами
+venv/Scripts/python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+# Базовое использование
+venv/bin/python3 split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+
+# С несколькими входными файлами
+venv/bin/python3 split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+```
+
+</details>
 
 **Что создаётся:**
 - Папка с TXT файлами: `Резисторы.txt`, `Конденсаторы.txt`, `Оптические компоненты.txt`, и т.д.
 - Каждый файл содержит список компонентов в удобочитаемом формате
 - Подробности в файле [TXT_EXPORT_GUIDE.md](docs/TXT_EXPORT_GUIDE.md)
-
-## Проблемы активации PowerShell
-Если PowerShell запрещает выполнение скриптов:
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
-```
 
 ## Создание инсталлятора
 
@@ -310,6 +480,539 @@ python app_qt.py              # Modern Edition
 - macOS: py2app (устанавливается автоматически)
 
 📖 **Подробная инструкция:** [BUILD.md](BUILD.md) | [EDITIONS.md](EDITIONS.md)
+
+---
+
+## 🌿 Работа с Git ветками
+
+Все команды Git работают одинаково во всех оболочках (PowerShell, CMD, GitBash):
+
+### Просмотр веток
+
+```bash
+# Показать все локальные ветки (* - текущая ветка)
+git branch
+
+# Показать все ветки (включая удаленные)
+git branch -a
+
+# Показать текущую ветку
+git branch --show-current
+```
+
+### Переключение на другую ветку
+
+```bash
+# Переключиться на существующую ветку
+git checkout main
+git checkout develop
+git checkout feature/new-feature
+
+# Или использовать новую команду (Git 2.23+)
+git switch main
+git switch develop
+```
+
+### Создание и переключение на новую ветку
+
+```bash
+# Создать новую ветку и переключиться на неё
+git checkout -b feature/my-new-feature
+
+# Или использовать новую команду (Git 2.23+)
+git switch -c feature/my-new-feature
+```
+
+### Синхронизация с удаленным репозиторием
+
+```bash
+# Скачать изменения из удаленного репозитория
+git fetch origin
+
+# Переключиться на удаленную ветку (создает локальную копию)
+git checkout -b develop origin/develop
+
+# Обновить текущую ветку
+git pull origin main
+```
+
+### Практический пример: Переключение на удаленную ветку
+
+**Ситуация:** Вы хотите переключиться на ветку `feature/experimental-improvements`, которая существует только на удаленном репозитории.
+
+```bash
+# 1. Посмотреть все ветки (включая удаленные)
+PS C:\Project\BOMCategorizer> git branch -a
+
+* main
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/feature/experimental-improvements
+  remotes/origin/main
+
+# 2. Переключиться на удаленную ветку (ПРАВИЛЬНО - полное имя с 's' в конце!)
+PS C:\Project\BOMCategorizer> git checkout -b feature/experimental-improvements origin/feature/experimental-improvements
+
+Switched to a new branch 'feature/experimental-improvements'
+branch 'feature/experimental-improvements' set up to track 'origin/feature/experimental-improvements'.
+
+# 3. Проверить текущую ветку
+PS C:\Project\BOMCategorizer> git branch --show-current
+feature/experimental-improvements
+```
+
+**⚠️ Частая ошибка - опечатка в имени ветки:**
+
+```bash
+# НЕПРАВИЛЬНО - пропущена буква 's' в конце (experimental-improvement вместо experimental-improvements)
+PS C:\Project\BOMCategorizer> git checkout -b feature/experimental-improvements origin/feature/experimental-improvement
+
+fatal: 'origin/feature/experimental-improvement' is not a commit and a branch 'feature/experimental-improvements' cannot be created from it
+```
+
+> 💡 **Совет:** Внимательно копируйте полное имя ветки из вывода `git branch -a`. Используйте автодополнение Tab в терминале или копируйте имя прямо из вывода команды!
+
+### Типичный рабочий процесс
+
+<details>
+<summary><b>PowerShell / CMD / GitBash - одинаково для всех</b></summary>
+
+```bash
+# 1. Перейти в папку проекта
+cd C:\Project\BOMCategorizer         # PowerShell/CMD
+# или
+cd /c/Project/BOMCategorizer         # GitBash
+
+# 2. Проверить текущую ветку
+git branch --show-current
+
+# 3. Посмотреть доступные ветки
+git branch -a
+
+# 4. Переключиться на нужную ветку
+git checkout develop
+
+# 5. Обновить ветку с удаленного репозитория
+git pull origin develop
+
+# 6. Создать новую ветку для своей задачи
+git checkout -b feature/add-new-category
+
+# 7. После работы - вернуться на главную ветку
+git checkout main
+```
+
+</details>
+
+### Полезные команды
+
+```bash
+# Отменить незакоммиченные изменения
+git checkout -- .
+
+# Сохранить текущие изменения перед переключением ветки
+git stash
+git checkout other-branch
+git stash pop
+
+# Посмотреть статус (измененные файлы)
+git status
+
+# Посмотреть историю коммитов
+git log --oneline | cat          # PowerShell/CMD (с | cat для избежания пейджера)
+git log --oneline                # GitBash
+```
+
+### 💡 Важные примечания
+
+> **Внимание:** Перед переключением ветки убедитесь, что:
+> - Все важные изменения закоммичены: `git commit -am "описание изменений"`
+> - Или сохранены в stash: `git stash`
+> - Иначе Git может не позволить переключить ветку или изменения будут потеряны
+
+> **Виртуальное окружение:** `venv/` находится в `.gitignore`, поэтому при переключении веток окружение сохраняется. Но если зависимости изменились в другой ветке, выполните:
+> ```bash
+> pip install -r requirements.txt
+> ```
+
+---
+
+## 🔐 Решение проблемы с постоянным запросом пароля Git
+
+### ⚠️ Проблема: Git постоянно запрашивает Username и Password
+
+```bash
+PS C:\Project\BOMCategorizer> git push -u origin main
+Username for 'https://github.com': kureinmaxim
+Password for 'https://kureinmaxim@github.com':
+```
+
+> **GitHub с августа 2021 года НЕ принимает обычные пароли для HTTPS!**  
+> Вместо пароля нужно использовать **Personal Access Token (PAT)**
+
+### ✅ Решение 1: Git Credential Manager (Рекомендуется для Windows)
+
+Git Credential Manager обычно уже установлен вместе с Git для Windows. Активируем его:
+
+```powershell
+# Включить Git Credential Manager
+git config --global credential.helper manager
+
+# Проверить настройку
+git config --global credential.helper
+```
+
+**После этого:**
+1. При следующем `git push` появится окно входа в GitHub
+2. Войдите через браузер или введите Personal Access Token
+3. Учетные данные сохранятся в Windows Credential Manager
+4. Больше не будет запрашивать!
+
+### ✅ Решение 2: Использовать SSH ключи (Более безопасно)
+
+#### Шаг 1: Создать SSH ключ
+
+```powershell
+# Создать новый SSH ключ
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# Нажмите Enter 3 раза (использовать путь по умолчанию, без passphrase)
+```
+
+#### Шаг 2: Скопировать публичный ключ
+
+```powershell
+# Показать публичный ключ (скопируйте весь вывод)
+cat ~/.ssh/id_ed25519.pub
+
+# Или открыть в блокноте
+notepad ~/.ssh/id_ed25519.pub
+```
+
+#### Шаг 3: Добавить SSH ключ на GitHub
+
+1. Откройте https://github.com/settings/keys
+2. Нажмите **"New SSH key"**
+3. Вставьте скопированный ключ
+4. Сохраните
+
+#### Шаг 4: Переключить репозиторий на SSH
+
+```powershell
+# Проверить текущий URL
+git remote -v
+
+# Если показывает https://github.com/... - меняем на SSH
+git remote set-url origin git@github.com:username/BOMCategorizer.git
+
+# Проверить изменения
+git remote -v
+```
+
+**Теперь `git push` будет работать БЕЗ запроса пароля!** 🎉
+
+### ✅ Решение 3: Personal Access Token (если нужен HTTPS)
+
+#### Шаг 1: Создать Personal Access Token
+
+1. Откройте https://github.com/settings/tokens
+2. **"Generate new token"** → **"Generate new token (classic)"**
+3. Имя: `BOMCategorizer Development`
+4. Срок действия: 90 дней (или больше)
+5. Права: ✅ `repo` (полный доступ к репозиториям)
+6. **"Generate token"**
+7. **ВАЖНО:** Скопируйте токен - он показывается только один раз!
+
+#### Шаг 2: Использовать токен вместо пароля
+
+```powershell
+# При следующем git push вводите:
+# Username: ваш_username
+# Password: [вставьте ваш Personal Access Token]
+
+# Настроить сохранение учетных данных
+git config --global credential.helper store
+
+# Теперь выполните push - введите токен
+git push -u origin main
+```
+
+### 📋 Сравнение методов
+
+| Метод | Безопасность | Удобство | Рекомендация |
+|-------|--------------|----------|--------------|
+| **Git Credential Manager** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ✅ Лучший для Windows |
+| **SSH ключи** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ Универсальный, безопасный |
+| **credential.helper store + PAT** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⚠️ Токен в открытом виде |
+
+---
+
+## ⚠️ Решение типичных проблем
+
+### Проблема: Ошибка при обновлении pip на Windows
+
+**Ситуация:** При попытке обновить pip командой `pip install --upgrade pip` получаете ошибку:
+
+```powershell
+(venv) PS C:\Project\BOMCategorizer> pip install --upgrade pip
+
+ERROR: To modify pip, please run the following command:
+C:\Project\BOMCategorizer\venv\Scripts\python.exe -m pip install --upgrade pip
+```
+
+**Причина:** Windows блокирует обновление pip.exe, когда он запущен.
+
+**✅ Решение:**
+
+<details>
+<summary><b>PowerShell / CMD / GitBash</b></summary>
+
+Используйте `python -m pip` вместо просто `pip`:
+
+**PowerShell:**
+```powershell
+# НЕПРАВИЛЬНО (вызывает ошибку на Windows):
+pip install --upgrade pip
+
+# ПРАВИЛЬНО:
+python -m pip install --upgrade pip
+
+# Или полный путь (как подсказывает сама ошибка):
+.\venv\Scripts\python.exe -m pip install --upgrade pip
+```
+
+**CMD:**
+```cmd
+REM ПРАВИЛЬНО:
+python -m pip install --upgrade pip
+
+REM Или полный путь:
+venv\Scripts\python.exe -m pip install --upgrade pip
+```
+
+**GitBash:**
+```bash
+# ПРАВИЛЬНО:
+python -m pip install --upgrade pip
+
+# Или полный путь:
+venv/Scripts/python.exe -m pip install --upgrade pip
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+На macOS/Linux обычно проблем нет, но рекомендуется тот же подход:
+
+```bash
+# Рекомендуется:
+python3 -m pip install --upgrade pip
+
+# Или:
+pip install --upgrade pip
+```
+
+</details>
+
+**💡 Правило:**
+> На **Windows** всегда используйте `python -m pip` для установки/обновления пакетов.  
+> Это избегает проблем с блокировкой файлов Windows.
+
+**Пример полной установки на Windows:**
+```powershell
+# 1. Создать виртуальное окружение
+python -m venv venv
+
+# 2. Активировать
+.\venv\Scripts\Activate.ps1
+
+# 3. Обновить pip (ПРАВИЛЬНО!)
+python -m pip install --upgrade pip
+
+# 4. Установить зависимости
+python -m pip install -r requirements.txt
+
+# ИЛИ можно использовать просто pip для установки пакетов (но не для обновления pip):
+pip install -r requirements.txt
+```
+
+---
+
+## 🌐 Работа при плохом интернете
+
+### Использование PySide6 из глобального окружения
+
+Если у вас **плохой интернет** или **медленная загрузка**, но PySide6 уже установлен глобально, можно **временно** использовать его без установки в виртуальное окружение.
+
+> ⚠️ **Важно:** Это временное решение для разработки! Для продакшна всегда используйте виртуальное окружение.
+
+### Вариант 1: Запуск без виртуального окружения (самый быстрый)
+
+```bash
+# Проверить, установлен ли PySide6 глобально
+python -c "import PySide6; print(PySide6.__version__)"
+
+# Если установлен, можно запускать напрямую
+python app_qt.py
+```
+
+**Плюсы:**
+- ✅ Мгновенный запуск, не нужно качать пакеты
+- ✅ Работает при любом качестве интернета
+
+**Минусы:**
+- ⚠️ Не изолировано от системных пакетов
+- ⚠️ Могут быть конфликты версий
+
+---
+
+### Вариант 2: Виртуальное окружение с доступом к системным пакетам
+
+Создать виртуальное окружение, которое имеет доступ к глобальным пакетам:
+
+<details>
+<summary><b>Windows (PowerShell / CMD / GitBash)</b></summary>
+
+```powershell
+# 1. Создать venv с доступом к системным пакетам
+python -m venv venv --system-site-packages
+
+# 2. Активировать окружение
+# PowerShell:
+.\venv\Scripts\Activate.ps1
+
+# CMD:
+venv\Scripts\activate.bat
+
+# GitBash:
+source venv/Scripts/activate
+
+# 3. Установить только недостающие пакеты (легкие)
+pip install openpyxl pandas python-docx pywin32
+
+# 4. Запустить приложение
+python app_qt.py
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+# 1. Создать venv с доступом к системным пакетам
+python3 -m venv venv --system-site-packages
+
+# 2. Активировать окружение
+source venv/bin/activate
+
+# 3. Установить только недостающие пакеты (легкие)
+pip install openpyxl pandas python-docx
+
+# 4. Запустить приложение
+python3 app_qt.py
+```
+
+</details>
+
+**Преимущества:**
+- ✅ Использует глобальный PySide6 (~300MB не нужно качать!)
+- ✅ Изоляция для остальных пакетов
+- ✅ Быстрая установка легких зависимостей
+
+---
+
+### Вариант 3: Установка PySide6 глобально (для постоянного использования)
+
+Если часто работаете с Qt приложениями, установите PySide6 глобально один раз:
+
+<details>
+<summary><b>Windows</b></summary>
+
+**PowerShell (от администратора):**
+```powershell
+# Установить PySide6 глобально
+python -m pip install PySide6
+
+# Проверить установку
+python -c "import PySide6; print('PySide6', PySide6.__version__)"
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+# Установить PySide6 глобально
+sudo python3 -m pip install PySide6
+
+# Или без sudo (в user site-packages)
+python3 -m pip install --user PySide6
+
+# Проверить установку
+python3 -c "import PySide6; print('PySide6', PySide6.__version__)"
+```
+
+</details>
+
+---
+
+### Вариант 4: Офлайн установка из локального кеша pip
+
+Если у вас уже есть скачанный PySide6 в кеше pip на другой машине:
+
+```powershell
+# 1. На машине с интернетом: скачать все пакеты
+pip download -r requirements.txt -d offline_packages
+
+# 2. Перенести папку offline_packages на машину без интернета
+
+# 3. На машине без интернета: установить из локальной папки
+pip install --no-index --find-links=offline_packages -r requirements.txt
+```
+
+> 💡 **Совет:** В проекте уже есть папка `offline_packages` с предустановленными пакетами для Windows!
+
+---
+
+### Сравнение подходов при плохом интернете
+
+| Метод | Скорость | Изоляция | Когда использовать |
+|-------|----------|----------|-------------------|
+| **Без venv** | ⚡⚡⚡⚡⚡ | ❌ | Быстрый тест, демонстрация |
+| **venv --system-site-packages** | ⚡⚡⚡⚡ | ⚡⚡⚡ | Разработка при плохом интернете |
+| **Глобальный PySide6** | ⚡⚡⚡⚡ | ⚡⚡ | Постоянная работа с Qt |
+| **Офлайн установка** | ⚡⚡⚡ | ⚡⚡⚡⚡⚡ | Полная изоляция без интернета |
+| **Обычный venv** | ⚡ | ⚡⚡⚡⚡⚡ | Продакшн, чистая среда |
+
+---
+
+### 📝 Практический пример: Быстрый старт Modern Edition при плохом интернете
+
+```powershell
+# Ситуация: PySide6 установлен глобально, интернет медленный
+
+# Шаг 1: Проверить глобальный PySide6
+python -c "import PySide6; print('OK:', PySide6.__version__)"
+
+# Шаг 2: Создать venv с доступом к системным пакетам
+python -m venv venv --system-site-packages
+
+# Шаг 3: Активировать
+.\venv\Scripts\Activate.ps1
+
+# Шаг 4: Установить только легкие зависимости (~10MB вместо ~300MB)
+pip install openpyxl pandas python-docx pywin32
+
+# Шаг 5: Запустить Modern Edition
+python app_qt.py
+
+# ✅ Готово! Запуск через 1-2 минуты вместо 20-30 минут!
+```
+
+---
 
 ## 📚 Документация
 
