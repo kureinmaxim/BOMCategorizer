@@ -1123,6 +1123,209 @@ def normalize_name_for_comparison(name: str) -> str:
     return name
 
 
+def compare_processed_files(file1_path: str, file2_path: str, output_path: str) -> bool:
+    """
+    Сравнивает два УЖЕ ОБРАБОТАННЫХ BOM файла (с категориями)
+    
+    Args:
+        file1_path: Путь к первому файлу (базовый)
+        file2_path: Путь ко второму файлу (новый)
+        output_path: Путь к выходному файлу с результатами
+        
+    Returns:
+        True если сравнение успешно, False если файлы не обработанные
+    """
+    import pandas as pd
+    
+    # Маппинг названий листов на категории
+    CATEGORY_SHEETS = {
+        'Резисторы': 'Резисторы',
+        'Конденсаторы': 'Конденсаторы',
+        'Индуктивности': 'Индуктивности',
+        'Полупроводники': 'Полупроводники',
+        'Микросхемы': 'Микросхемы',
+        'Разъемы': 'Разъемы',
+        'Оптика': 'Оптика',
+        'СВЧ модули': 'СВЧ модули',
+        'Кабели': 'Кабели',
+        'Модули питания': 'Модули питания',
+        'Отладочные платы': 'Отладочные платы',
+        'Наши разработки': 'Наши разработки',
+        'Другие': 'Другие'
+    }
+    
+    IGNORED_SHEETS = ['SOURCES', 'SUMMARY', 'Не распределено', 'INFO']
+    
+    print("=" * 80)
+    print("[СРАВНЕНИЕ] ОБРАБОТАННЫХ BOM ФАЙЛОВ")
+    print("=" * 80)
+    
+    # Проверяем что оба файла - обработанные
+    try:
+        xl1 = pd.ExcelFile(file1_path, engine='openpyxl')
+        xl2 = pd.ExcelFile(file2_path, engine='openpyxl')
+    except Exception as e:
+        print(f"❌ Ошибка чтения файлов: {e}")
+        return False
+    
+    # Проверяем наличие листов категорий
+    sheets1 = set(xl1.sheet_names)
+    sheets2 = set(xl2.sheet_names)
+    
+    category_sheets1 = sheets1 & set(CATEGORY_SHEETS.keys())
+    category_sheets2 = sheets2 & set(CATEGORY_SHEETS.keys())
+    
+    if not category_sheets1 and not category_sheets2:
+        print("❌ Файлы не являются обработанными BOM файлами")
+        print(f"   Файл 1 листы: {', '.join(xl1.sheet_names)}")
+        print(f"   Файл 2 листы: {', '.join(xl2.sheet_names)}")
+        return False
+    
+    print(f"\n[ФАЙЛ 1] {os.path.basename(file1_path)}")
+    print(f"   Найдено категорий: {len(category_sheets1)}")
+    
+    print(f"\n[ФАЙЛ 2] {os.path.basename(file2_path)}")
+    print(f"   Найдено категорий: {len(category_sheets2)}")
+    
+    # Объединяем все категории из обоих файлов
+    all_categories = sorted(category_sheets1 | category_sheets2)
+    
+    comparison_results = []
+    
+    print(f"\n[АНАЛИЗ] Сравнение по категориям...")
+    
+    for category in all_categories:
+        print(f"\n  📂 {category}")
+        
+        # Читаем данные из первого файла
+        items1 = {}
+        if category in category_sheets1:
+            try:
+                df1 = pd.read_excel(file1_path, sheet_name=category, engine='openpyxl')
+                # Ищем колонки
+                name_col = None
+                qty_col = None
+                for col in ['Наименование ИВП', 'Наименование', 'наименование ивп']:
+                    if col in df1.columns:
+                        name_col = col
+                        break
+                for col in ['Кол-во', 'Количество', 'qty']:
+                    if col in df1.columns:
+                        qty_col = col
+                        break
+                
+                if name_col and qty_col:
+                    for _, row in df1.iterrows():
+                        name = str(row[name_col]) if pd.notna(row[name_col]) else ""
+                        if name and name != 'nan':
+                            # Нормализуем название
+                            name_normalized = normalize_name_for_comparison(name)
+                            qty = 0
+                            if pd.notna(row[qty_col]):
+                                try:
+                                    qty = int(float(row[qty_col]))
+                                except:
+                                    pass
+                            items1[name_normalized] = items1.get(name_normalized, 0) + qty
+                print(f"     Файл 1: {len(items1)} уникальных компонентов")
+            except Exception as e:
+                print(f"     ⚠️ Ошибка чтения из файла 1: {e}")
+        
+        # Читаем данные из второго файла
+        items2 = {}
+        if category in category_sheets2:
+            try:
+                df2 = pd.read_excel(file2_path, sheet_name=category, engine='openpyxl')
+                # Ищем колонки
+                name_col = None
+                qty_col = None
+                for col in ['Наименование ИВП', 'Наименование', 'наименование ивп']:
+                    if col in df2.columns:
+                        name_col = col
+                        break
+                for col in ['Кол-во', 'Количество', 'qty']:
+                    if col in df2.columns:
+                        qty_col = col
+                        break
+                
+                if name_col and qty_col:
+                    for _, row in df2.iterrows():
+                        name = str(row[name_col]) if pd.notna(row[name_col]) else ""
+                        if name and name != 'nan':
+                            # Нормализуем название
+                            name_normalized = normalize_name_for_comparison(name)
+                            qty = 0
+                            if pd.notna(row[qty_col]):
+                                try:
+                                    qty = int(float(row[qty_col]))
+                                except:
+                                    pass
+                            items2[name_normalized] = items2.get(name_normalized, 0) + qty
+                print(f"     Файл 2: {len(items2)} уникальных компонентов")
+            except Exception as e:
+                print(f"     ⚠️ Ошибка чтения из файла 2: {e}")
+        
+        # Сравниваем
+        all_items = set(list(items1.keys()) + list(items2.keys()))
+        category_diffs = 0
+        
+        for item_name in sorted(all_items):
+            if not item_name:
+                continue
+            
+            qty1 = items1.get(item_name, 0)
+            qty2 = items2.get(item_name, 0)
+            
+            if qty1 != qty2:
+                category_diffs += 1
+                if qty1 == 0:
+                    change_type = 'Добавлено'
+                elif qty2 == 0:
+                    change_type = 'Удалено'
+                else:
+                    change_type = 'Изменено'
+                
+                comparison_results.append({
+                    'Категория': category,
+                    'Изменение': change_type,
+                    'Наименование ИВП': item_name,
+                    'Кол-во в файле 1': qty1,
+                    'Кол-во в файле 2': qty2,
+                    'Разница': qty2 - qty1
+                })
+        
+        print(f"     Различий: {category_diffs}")
+    
+    # Создаем отчет
+    if comparison_results:
+        result_df = pd.DataFrame(comparison_results)
+        
+        with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+            result_df.to_excel(writer, sheet_name='Сравнение', index=False)
+            
+            # Применяем стили
+            from .excel_writer import apply_excel_styles
+            apply_excel_styles(writer)
+        
+        print(f"\n[УСПЕХ] Результаты сравнения записаны: {output_path}")
+        print(f"        Найдено различий: {len(comparison_results)}")
+        
+        added = len([r for r in comparison_results if r['Изменение'] == 'Добавлено'])
+        removed = len([r for r in comparison_results if r['Изменение'] == 'Удалено'])
+        changed = len([r for r in comparison_results if r['Изменение'] == 'Изменено'])
+        
+        print(f"   Добавлено: {added}")
+        print(f"   Удалено: {removed}")
+        print(f"   Изменено: {changed}")
+    else:
+        print("\n[РЕЗУЛЬТАТ] Файлы идентичны, различий не найдено")
+        
+        result_df = pd.DataFrame([{'Результат': 'Файлы идентичны, различий не найдено'}])
+        result_df.to_excel(output_path, sheet_name='Сравнение', index=False)
+    
+    return True
+
+
 def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_interactive: bool = True):
     """
     Сравнивает два BOM файла и создает отчет о различиях

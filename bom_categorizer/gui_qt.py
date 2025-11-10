@@ -19,10 +19,12 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QPushButton, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QSpinBox, QCheckBox, QTextEdit,
-    QFileDialog, QMessageBox, QScrollArea, QFrame, QDialog, QMenuBar, QMenu
+    QFileDialog, QMessageBox, QScrollArea, QFrame, QDialog, QMenuBar, QMenu,
+    QProgressDialog
 )
 from PySide6.QtCore import Qt, Signal, QThread, QSize
 from PySide6.QtGui import QFont, QColor, QPalette, QAction
+import subprocess
 
 from .component_database import (
     add_component_to_database,
@@ -45,6 +47,98 @@ from .dialogs_qt import (
 )
 
 from .styles import DARK_THEME, LIGHT_THEME
+
+
+class ComparisonWorker(QThread):
+    """Worker thread для сравнения BOM файлов"""
+    finished = Signal(str, bool)  # (message, success)
+    progress = Signal(str)  # progress message
+    
+    def __init__(self, file1: str, file2: str, output: str):
+        super().__init__()
+        self.file1 = file1
+        self.file2 = file2
+        self.output = output
+    
+    def run(self):
+        """Выполняет сравнение в отдельном потоке"""
+        try:
+            from .main import compare_bom_files
+            import sys
+            from io import StringIO
+            import codecs
+            
+            # Перехватываем stdout для получения прогресса с правильной кодировкой
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            
+            # Создаем StringIO который поддерживает Unicode
+            captured_output = StringIO()
+            
+            try:
+                # Используем UTF-8 для вывода
+                sys.stdout = captured_output
+                sys.stderr = captured_output
+                
+                # Отправляем начальное сообщение
+                self.progress.emit("⏳ Начинаем сравнение файлов...\n")
+                self.progress.emit(f"📄 Файл 1: {os.path.basename(self.file1)}\n")
+                self.progress.emit(f"📄 Файл 2: {os.path.basename(self.file2)}\n\n")
+                
+                # Сначала пытаемся сравнить как обработанные файлы
+                from .main import compare_processed_files, compare_bom_files
+                
+                self.progress.emit("🔍 Проверка формата файлов...\n")
+                
+                # Пытаемся сравнить как обработанные файлы
+                success = compare_processed_files(self.file1, self.file2, self.output)
+                
+                if not success:
+                    # Файлы не обработанные - показываем предупреждение
+                    self.progress.emit("\n⚠️ ВНИМАНИЕ: Файлы не являются обработанными BOM файлами!\n")
+                    self.progress.emit("   Обработанные файлы должны содержать листы с категориями:\n")
+                    self.progress.emit("   (Резисторы, Конденсаторы, Микросхемы и т.д.)\n\n")
+                    self.progress.emit("❌ Для сравнения необходимо:\n")
+                    self.progress.emit("   1. Сначала обработать исходные BOM файлы\n")
+                    self.progress.emit("   2. Затем сравнить полученные результаты\n\n")
+                    self.progress.emit("💡 Или используйте исходные (необработанные) файлы для сравнения\n")
+                    self.finished.emit(
+                        "⚠️ Ошибка: файлы не являются обработанными BOM файлами!\n\n"
+                        "Для сравнения используйте:\n"
+                        "• Обработанные файлы (с листами категорий)\n"
+                        "• Или исходные BOM файлы (.docx, .xlsx)", 
+                        False
+                    )
+                    return
+                
+                # Восстанавливаем stdout/stderr
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                
+                # Получаем вывод
+                output_text = captured_output.getvalue()
+                
+                # Фильтруем и очищаем вывод от проблемных символов
+                output_text = output_text.replace('\u2192', '->')  # Заменяем стрелку
+                output_text = output_text.encode('utf-8', errors='replace').decode('utf-8')
+                
+                if output_text:
+                    self.progress.emit(output_text)
+                
+                # Проверяем что файл создан
+                if os.path.exists(self.output):
+                    self.finished.emit(f"✅ Сравнение завершено!\nФайл сохранен: {self.output}", True)
+                else:
+                    self.finished.emit("⚠️ Файл результата не создан", False)
+                    
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
+                
+        except Exception as e:
+            import traceback
+            error_msg = f"❌ Ошибка при сравнении:\n{str(e)}\n\n{traceback.format_exc()}"
+            self.finished.emit(error_msg, False)
 
 
 def load_config() -> dict:
@@ -744,8 +838,115 @@ class BOMCategorizerMainWindow(QMainWindow):
 
     def on_compare_files(self):
         """Сравнение файлов"""
-        # TODO: Реализовать сравнение
-        QMessageBox.information(self, "В разработке", "Функция сравнения будет реализована")
+        file1 = self.compare_entry1.text().strip()
+        file2 = self.compare_entry2.text().strip()
+        output = self.compare_output_entry.text().strip()
+        
+        # Валидация
+        if not file1 or not file2:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                "Выберите оба файла для сравнения"
+            )
+            return
+        
+        if not output:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                "Укажите имя файла для результатов"
+            )
+            return
+        
+        # Проверяем существование файлов
+        if not os.path.exists(file1):
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Первый файл не найден:\n{file1}"
+            )
+            return
+        
+        if not os.path.exists(file2):
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Второй файл не найден:\n{file2}"
+            )
+            return
+        
+        # Очищаем лог
+        self.log_text.clear()
+        self.log_text.append("🔄 Сравнение файлов...")
+        self.log_text.append(f"  Первый:  {os.path.basename(file1)}")
+        self.log_text.append(f"  Второй:  {os.path.basename(file2)}")
+        self.log_text.append(f"  Результат: {os.path.basename(output)}\n")
+        
+        # Создаем progress dialog
+        self.progress_dialog = QProgressDialog(
+            "Сравнение файлов...",
+            "Отмена",
+            0, 0,
+            self
+        )
+        self.progress_dialog.setWindowTitle("Обработка")
+        self.progress_dialog.setWindowModality(Qt.WindowModal)
+        self.progress_dialog.setMinimumDuration(0)
+        self.progress_dialog.setCancelButton(None)  # Убираем кнопку отмены
+        self.progress_dialog.show()
+        
+        # Создаем и запускаем worker
+        self.comparison_worker = ComparisonWorker(file1, file2, output)
+        self.comparison_worker.progress.connect(self.on_comparison_progress)
+        self.comparison_worker.finished.connect(self.on_comparison_finished)
+        self.comparison_worker.start()
+    
+    def on_comparison_progress(self, message: str):
+        """Обработка прогресса сравнения"""
+        self.log_text.append(message)
+    
+    def on_comparison_finished(self, message: str, success: bool):
+        """Обработка завершения сравнения"""
+        # Закрываем progress dialog
+        if hasattr(self, 'progress_dialog'):
+            self.progress_dialog.close()
+        
+        # Добавляем сообщение в лог
+        self.log_text.append("\n" + message)
+        
+        # Показываем результат
+        if success:
+            output_file = self.compare_output_entry.text().strip()
+            reply = QMessageBox.question(
+                self,
+                "Готово",
+                f"{message}\n\nОткрыть файл?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes and os.path.exists(output_file):
+                try:
+                    # Открываем файл в системном приложении
+                    if platform.system() == 'Windows':
+                        os.startfile(output_file)
+                    elif platform.system() == 'Darwin':  # macOS
+                        subprocess.Popen(['open', output_file])
+                    else:  # Linux
+                        subprocess.Popen(['xdg-open', output_file])
+                except Exception as e:
+                    QMessageBox.warning(
+                        self,
+                        "Предупреждение",
+                        f"Не удалось открыть файл:\n{str(e)}"
+                    )
+        else:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                message
+            )
 
     def on_interactive_classify(self):
         """Интерактивная классификация"""
