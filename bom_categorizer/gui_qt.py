@@ -283,17 +283,18 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Кнопки управления файлами
         buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(6)
 
         add_btn = QPushButton("➕ Добавить файлы")
         add_btn.clicked.connect(self.on_add_files)
         self.lockable_widgets.append(add_btn)
-        buttons_layout.addWidget(add_btn)
+        buttons_layout.addWidget(add_btn, 1)  # stretch factor 1
 
         clear_btn = QPushButton("🗑️ Очистить список")
         clear_btn.setProperty("class", "danger")
         clear_btn.clicked.connect(self.on_clear_files)
         self.lockable_widgets.append(clear_btn)
-        buttons_layout.addWidget(clear_btn)
+        buttons_layout.addWidget(clear_btn, 1)  # stretch factor 1
 
         layout.addLayout(buttons_layout)
 
@@ -308,69 +309,90 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.lockable_widgets.append(self.files_list)
         layout.addWidget(self.files_list)
 
-        # Количество экземпляров
-        multiplier_layout = QHBoxLayout()
-        multiplier_layout.addWidget(QLabel("Количество экземпляров:"))
+        # Grid layout для выровненных полей
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)  # Растягиваем колонку с полями ввода
+        grid.setColumnMinimumWidth(0, 180)  # Минимальная ширина для меток
+        
+        row = 0
 
+        # Количество экземпляров
+        label = QLabel("Количество экземпляров:")
+        label.setMinimumWidth(180)
+        grid.addWidget(label, row, 0, Qt.AlignLeft)
+
+        mult_widget = QWidget()
+        mult_layout = QHBoxLayout(mult_widget)
+        mult_layout.setContentsMargins(0, 0, 0, 0)
+        mult_layout.setSpacing(6)
+        
         self.multiplier_spin = QSpinBox()
         self.multiplier_spin.setMinimum(1)
         self.multiplier_spin.setMaximum(999)
         self.multiplier_spin.setValue(1)
+        self.multiplier_spin.setMaximumWidth(80)
         self.lockable_widgets.append(self.multiplier_spin)
-        multiplier_layout.addWidget(self.multiplier_spin)
+        mult_layout.addWidget(self.multiplier_spin)
 
         apply_mult_btn = QPushButton("Применить")
+        apply_mult_btn.setFixedWidth(100)
         apply_mult_btn.clicked.connect(self.on_multiplier_changed)
         self.lockable_widgets.append(apply_mult_btn)
-        multiplier_layout.addWidget(apply_mult_btn)
+        mult_layout.addWidget(apply_mult_btn)
 
-        multiplier_layout.addWidget(QLabel("(выберите файл из списка)"))
-        multiplier_layout.addStretch()
-
-        layout.addLayout(multiplier_layout)
+        mult_layout.addWidget(QLabel("(выберите файл из списка)"))
+        mult_layout.addStretch()
+        
+        grid.addWidget(mult_widget, row, 1)
+        row += 1
 
         # Листы Excel
-        sheet_layout = QHBoxLayout()
-        sheet_layout.addWidget(QLabel("Листы (через запятую):"))
-
+        label = QLabel("Листы (через запятую):")
+        label.setMinimumWidth(180)
+        grid.addWidget(label, row, 0, Qt.AlignLeft)
+        
         self.sheet_entry = QLineEdit()
         self.sheet_entry.setPlaceholderText("Оставьте пустым для всех листов")
         self.lockable_widgets.append(self.sheet_entry)
-        sheet_layout.addWidget(self.sheet_entry)
-
-        layout.addLayout(sheet_layout)
+        grid.addWidget(self.sheet_entry, row, 1)
+        row += 1
 
         # Выходной файл XLSX
-        output_layout = QHBoxLayout()
-        output_layout.addWidget(QLabel("Выходной XLSX:"))
-
+        label = QLabel("Выходной XLSX:")
+        label.setMinimumWidth(180)
+        grid.addWidget(label, row, 0, Qt.AlignLeft)
+        
         self.output_entry = QLineEdit()
         self.output_entry.setText(self.output_xlsx)
         self.lockable_widgets.append(self.output_entry)
-        output_layout.addWidget(self.output_entry)
-
+        grid.addWidget(self.output_entry, row, 1)
+        
         pick_output_btn = QPushButton("Выбрать...")
+        pick_output_btn.setFixedWidth(100)
         pick_output_btn.clicked.connect(self.on_pick_output)
         self.lockable_widgets.append(pick_output_btn)
-        output_layout.addWidget(pick_output_btn)
-
-        layout.addLayout(output_layout)
+        grid.addWidget(pick_output_btn, row, 2)
+        row += 1
 
         # Папка для TXT
-        txt_layout = QHBoxLayout()
-        txt_layout.addWidget(QLabel("Папка для TXT:"))
-
+        label = QLabel("Папка для TXT:")
+        label.setMinimumWidth(180)
+        grid.addWidget(label, row, 0, Qt.AlignLeft)
+        
         self.txt_entry = QLineEdit()
         self.txt_entry.setPlaceholderText("Опционально")
         self.lockable_widgets.append(self.txt_entry)
-        txt_layout.addWidget(self.txt_entry)
-
+        grid.addWidget(self.txt_entry, row, 1)
+        
         pick_txt_btn = QPushButton("Выбрать...")
+        pick_txt_btn.setFixedWidth(100)
         pick_txt_btn.clicked.connect(self.on_pick_txt_dir)
         self.lockable_widgets.append(pick_txt_btn)
-        txt_layout.addWidget(pick_txt_btn)
-
-        layout.addLayout(txt_layout)
+        grid.addWidget(pick_txt_btn, row, 2)
+        
+        layout.addLayout(grid)
 
         # Чекбокс суммарной комплектации
         self.combine_check = QCheckBox("Суммарная комплектация")
@@ -383,17 +405,18 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Кнопки запуска
         action_layout = QHBoxLayout()
+        action_layout.setSpacing(6)
 
         run_btn = QPushButton("▶️ Запустить обработку")
         run_btn.setProperty("class", "accent")
         run_btn.clicked.connect(self.on_run)
         self.lockable_widgets.append(run_btn)
-        action_layout.addWidget(run_btn)
+        action_layout.addWidget(run_btn, 1)  # stretch factor 1
 
         interactive_btn = QPushButton("🔄 Интерактивная классификация")
         interactive_btn.clicked.connect(self.on_interactive_classify)
         self.lockable_widgets.append(interactive_btn)
-        action_layout.addWidget(interactive_btn)
+        action_layout.addWidget(interactive_btn, 1)  # stretch factor 1
 
         layout.addLayout(action_layout)
 
@@ -405,51 +428,64 @@ class BOMCategorizerMainWindow(QMainWindow):
         group = QGroupBox("Сравнение BOM файлов")
         layout = QVBoxLayout()
 
-        # Первый файл
-        file1_layout = QHBoxLayout()
-        file1_layout.addWidget(QLabel("Первый файл (базовый):"))
+        # Grid layout для выровненных полей
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(6)
+        grid.setColumnStretch(1, 1)  # Растягиваем колонку с полями ввода
+        grid.setColumnMinimumWidth(0, 180)  # Минимальная ширина для меток
+        
+        row = 0
 
+        # Первый файл
+        label = QLabel("Первый файл (базовый):")
+        label.setMinimumWidth(180)
+        grid.addWidget(label, row, 0, Qt.AlignLeft)
+        
         self.compare_entry1 = QLineEdit()
         self.lockable_widgets.append(self.compare_entry1)
-        file1_layout.addWidget(self.compare_entry1)
+        grid.addWidget(self.compare_entry1, row, 1)
 
         pick_file1_btn = QPushButton("Выбрать...")
+        pick_file1_btn.setFixedWidth(100)
         pick_file1_btn.clicked.connect(self.on_select_compare_file1)
         self.lockable_widgets.append(pick_file1_btn)
-        file1_layout.addWidget(pick_file1_btn)
-
-        layout.addLayout(file1_layout)
+        grid.addWidget(pick_file1_btn, row, 2)
+        row += 1
 
         # Второй файл
-        file2_layout = QHBoxLayout()
-        file2_layout.addWidget(QLabel("Второй файл (новый):"))
-
+        label = QLabel("Второй файл (новый):")
+        label.setMinimumWidth(180)
+        grid.addWidget(label, row, 0, Qt.AlignLeft)
+        
         self.compare_entry2 = QLineEdit()
         self.lockable_widgets.append(self.compare_entry2)
-        file2_layout.addWidget(self.compare_entry2)
+        grid.addWidget(self.compare_entry2, row, 1)
 
         pick_file2_btn = QPushButton("Выбрать...")
+        pick_file2_btn.setFixedWidth(100)
         pick_file2_btn.clicked.connect(self.on_select_compare_file2)
         self.lockable_widgets.append(pick_file2_btn)
-        file2_layout.addWidget(pick_file2_btn)
-
-        layout.addLayout(file2_layout)
+        grid.addWidget(pick_file2_btn, row, 2)
+        row += 1
 
         # Выходной файл
-        output_layout = QHBoxLayout()
-        output_layout.addWidget(QLabel("Файл результата:"))
-
+        label = QLabel("Файл результата:")
+        label.setMinimumWidth(180)
+        grid.addWidget(label, row, 0, Qt.AlignLeft)
+        
         self.compare_output_entry = QLineEdit()
         self.compare_output_entry.setText(self.compare_output)
         self.lockable_widgets.append(self.compare_output_entry)
-        output_layout.addWidget(self.compare_output_entry)
+        grid.addWidget(self.compare_output_entry, row, 1)
 
         pick_output_btn = QPushButton("Выбрать...")
+        pick_output_btn.setFixedWidth(100)
         pick_output_btn.clicked.connect(self.on_select_compare_output)
         self.lockable_widgets.append(pick_output_btn)
-        output_layout.addWidget(pick_output_btn)
-
-        layout.addLayout(output_layout)
+        grid.addWidget(pick_output_btn, row, 2)
+        
+        layout.addLayout(grid)
 
         # Кнопка сравнения
         compare_btn = QPushButton("⚡ Сравнить файлы")
@@ -565,9 +601,11 @@ class BOMCategorizerMainWindow(QMainWindow):
             location_label = QLabel("Локальная")
         info_layout.addWidget(location_label)
 
-        # Размер окна
-        self.size_label = QLabel(f"{self.width()}×{self.height()}")
-        self.size_label.mouseDoubleClickEvent = lambda event: self.on_show_size_menu(event)
+        # Размер окна (кликабельная метка)
+        self.size_label = QLabel(f"📐 {self.width()}×{self.height()}")
+        self.size_label.setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; } QLabel:hover { color: #74c7ec; }")
+        self.size_label.setCursor(Qt.PointingHandCursor)
+        self.size_label.mousePressEvent = lambda event: self.on_show_size_menu(event)
         info_layout.addWidget(self.size_label)
 
         layout.addLayout(info_layout)
@@ -1052,8 +1090,61 @@ class BOMCategorizerMainWindow(QMainWindow):
 
     def on_show_size_menu(self, event):
         """Показать меню размеров окна"""
-        # TODO: Реализовать меню размеров
-        pass
+        from PySide6.QtCore import QPoint
+        
+        menu = QMenu(self)
+        
+        # Предустановленные размеры
+        sizes = [
+            ("По умолчанию (620×800)", 620, 800),
+            ("Компактный (720×792)", 720, 792),
+            ("Средний (800×850)", 800, 850),
+            ("Большой (900×900)", 900, 900),
+            ("Широкий (1000×800)", 1000, 800),
+            ("HD (1280×720)", 1280, 720),
+        ]
+        
+        for label, w, h in sizes:
+            action = QAction(label, self)
+            action.triggered.connect(lambda checked=False, width=w, height=h: self.set_window_size(width, height))
+            menu.addAction(action)
+        
+        menu.addSeparator()
+        
+        save_action = QAction("📌 Сохранить текущий размер", self)
+        save_action.triggered.connect(self.save_current_window_size)
+        menu.addAction(save_action)
+        
+        # Показываем меню у метки размера окна
+        menu.exec(self.size_label.mapToGlobal(QPoint(0, self.size_label.height())))
+    
+    def set_window_size(self, width: int, height: int):
+        """Устанавливает размер окна"""
+        self.resize(width, height)
+        self.save_window_size_to_config(width, height)
+        QMessageBox.information(self, "Размер окна", f"Размер окна изменен на {width}×{height}")
+    
+    def save_current_window_size(self):
+        """Сохраняет текущий размер окна"""
+        width = self.width()
+        height = self.height()
+        self.save_window_size_to_config(width, height)
+        QMessageBox.information(self, "Размер сохранен", f"Текущий размер окна ({width}×{height}) сохранен в конфигурацию")
+    
+    def save_window_size_to_config(self, width: int, height: int):
+        """Сохраняет размер окна в конфигурационный файл"""
+        try:
+            self.cfg["window"] = {
+                "width": width,
+                "height": height,
+                "remember_size": True
+            }
+            
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.cfg, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ Не удалось сохранить размер окна: {e}")
 
     def lock_interface(self):
         """Блокировка интерфейса"""
@@ -1071,6 +1162,26 @@ class BOMCategorizerMainWindow(QMainWindow):
         super().resizeEvent(event)
         if hasattr(self, 'size_label'):
             self.size_label.setText(f"📐 {self.width()}×{self.height()}")
+    
+    def closeEvent(self, event):
+        """Обработка закрытия окна - сохранение настроек"""
+        try:
+            # Сохраняем размер окна
+            self.save_window_size_to_config(self.width(), self.height())
+            
+            # Сохраняем тему (уже сохраняется в save_theme_preference, но на всякий случай)
+            if "ui" not in self.cfg:
+                self.cfg["ui"] = {}
+            self.cfg["ui"]["theme"] = self.current_theme
+            
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.cfg, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"⚠️ Не удалось сохранить настройки: {e}")
+        
+        # Закрываем окно
+        event.accept()
 
     # =======================
     # Методы меню
