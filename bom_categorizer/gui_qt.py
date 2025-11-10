@@ -800,9 +800,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Добавление файлов"""
         files, _ = QFileDialog.getOpenFileNames(
             self,
-            "Выберите BOM файлы",
+            "Выберите файлы",
             "",
-            "BOM Files (*.xlsx *.docx *.txt);;All Files (*)"
+            "Документы Word (*.docx *.doc);;Excel (*.xlsx);;Текст (*.txt);;Все BOM файлы (*.xlsx *.docx *.doc *.txt);;Все файлы (*)"
         )
 
         if files:
