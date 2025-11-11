@@ -31,6 +31,9 @@ venv/          # macOS
 ENV/
 env/
 
+# Offline packages (too large for GitHub, but kept in local archives)
+offline-packages-linux/
+
 # IDE
 .vscode/
 .idea/
