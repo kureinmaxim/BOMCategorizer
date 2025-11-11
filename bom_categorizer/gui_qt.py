@@ -284,6 +284,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.create_txt = False
         self.current_file_multiplier = 1
         self.selected_file_index: Optional[int] = None
+        self.processing_dialog_ref = None  # Ссылка на диалог обработки (для плавного перехода)
 
         # Сравнение файлов
         self.compare_file1 = ""
@@ -508,7 +509,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         mult_layout = QHBoxLayout(mult_widget)
         mult_layout.setContentsMargins(0, 0, 0, 0)
         mult_layout.setSpacing(6)
-        
+
         self.multiplier_spin = QSpinBox()
         self.multiplier_spin.setMinimum(1)
         self.multiplier_spin.setMaximum(999)
@@ -525,7 +526,7 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         mult_layout.addWidget(QLabel("(выберите файл из списка)"))
         mult_layout.addStretch()
-        
+
         grid.addWidget(mult_widget, row, 1)
         row += 1
 
@@ -533,7 +534,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         label = QLabel("Листы (через запятую):")
         label.setMinimumWidth(180)
         grid.addWidget(label, row, 0, Qt.AlignLeft)
-        
+
         self.sheet_entry = QLineEdit()
         self.sheet_entry.setPlaceholderText("Оставьте пустым для всех листов")
         self.lockable_widgets.append(self.sheet_entry)
@@ -544,12 +545,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         label = QLabel("Выходной XLSX:")
         label.setMinimumWidth(180)
         grid.addWidget(label, row, 0, Qt.AlignLeft)
-        
+
         self.output_entry = QLineEdit()
         self.output_entry.setText(self.output_xlsx)
         self.lockable_widgets.append(self.output_entry)
         grid.addWidget(self.output_entry, row, 1)
-        
+
         pick_output_btn = QPushButton("Выбрать...")
         pick_output_btn.setFixedWidth(100)
         pick_output_btn.clicked.connect(self.on_pick_output)
@@ -561,18 +562,18 @@ class BOMCategorizerMainWindow(QMainWindow):
         label = QLabel("Папка для TXT:")
         label.setMinimumWidth(180)
         grid.addWidget(label, row, 0, Qt.AlignLeft)
-        
+
         self.txt_entry = QLineEdit()
         self.txt_entry.setPlaceholderText("Опционально")
         self.lockable_widgets.append(self.txt_entry)
         grid.addWidget(self.txt_entry, row, 1)
-        
+
         pick_txt_btn = QPushButton("Выбрать...")
         pick_txt_btn.setFixedWidth(100)
         pick_txt_btn.clicked.connect(self.on_pick_txt_dir)
         self.lockable_widgets.append(pick_txt_btn)
         grid.addWidget(pick_txt_btn, row, 2)
-        
+
         layout.addLayout(grid)
 
         # Чекбокс суммарной комплектации
@@ -622,7 +623,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         label = QLabel("Первый файл (базовый):")
         label.setMinimumWidth(180)
         grid.addWidget(label, row, 0, Qt.AlignLeft)
-        
+
         self.compare_entry1 = QLineEdit()
         self.lockable_widgets.append(self.compare_entry1)
         grid.addWidget(self.compare_entry1, row, 1)
@@ -638,7 +639,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         label = QLabel("Второй файл (новый):")
         label.setMinimumWidth(180)
         grid.addWidget(label, row, 0, Qt.AlignLeft)
-        
+
         self.compare_entry2 = QLineEdit()
         self.lockable_widgets.append(self.compare_entry2)
         grid.addWidget(self.compare_entry2, row, 1)
@@ -654,7 +655,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         label = QLabel("Файл результата:")
         label.setMinimumWidth(180)
         grid.addWidget(label, row, 0, Qt.AlignLeft)
-        
+
         self.compare_output_entry = QLineEdit()
         self.compare_output_entry.setText(self.compare_output)
         self.lockable_widgets.append(self.compare_output_entry)
@@ -665,7 +666,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         pick_output_btn.clicked.connect(self.on_select_compare_output)
         self.lockable_widgets.append(pick_output_btn)
         grid.addWidget(pick_output_btn, row, 2)
-        
+
         layout.addLayout(grid)
 
         # Кнопка сравнения
@@ -685,7 +686,11 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(80)
+        self.log_text.setMaximumHeight(160)  # Увеличено в 2 раза с 80 до 160
+        # Добавляем обработчик двойного клика для открытия в текстовом редакторе
+        self.log_text.mouseDoubleClickEvent = lambda event: self.on_log_double_click(event)
+        self.log_text.setCursor(Qt.PointingHandCursor)
+        self.log_text.setToolTip("Двойной клик - открыть в текстовом редакторе")
         layout.addWidget(self.log_text)
 
         group.setLayout(layout)
@@ -764,9 +769,25 @@ class BOMCategorizerMainWindow(QMainWindow):
         # БД статистика
         try:
             stats = get_database_stats()
-            db_version = stats.get('version', 'N/A')
-            total_components = stats.get('total_components', 0)
-            self.db_info_label = QLabel(f"БД: v{db_version} ({total_components} компонентов)")
+            metadata = stats.get('metadata', {})
+            db_version = metadata.get('version', 'N/A')
+            last_updated = metadata.get('last_updated', '')
+            total_components = stats.get('total', 0)
+            
+            # Форматируем дату для отображения
+            if last_updated and last_updated != 'N/A':
+                try:
+                    date_part = last_updated.split()[0]  # Берем только дату без времени
+                    version_text = f"{db_version} ({date_part})"
+                except:
+                    version_text = db_version
+            else:
+                version_text = db_version
+            
+            self.db_info_label = QLabel(f"БД: {version_text} ({total_components} компонентов)")
+            
+            # Добавляем tooltip с историей
+            self.update_database_tooltip()
         except Exception:
             self.db_info_label = QLabel("БД: Не загружена")
 
@@ -856,8 +877,11 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Автоматическое обновление имени выходного файла"""
         if len(self.input_files) == 1:
             file_path = list(self.input_files.keys())[0]
+            # Получаем путь к папке первого файла
+            folder_path = os.path.dirname(file_path)
             base_name = os.path.splitext(os.path.basename(file_path))[0]
-            self.output_xlsx = f"{base_name}_categorized.xlsx"
+            # Сохраняем в той же папке что и входной файл
+            self.output_xlsx = os.path.join(folder_path, f"{base_name}_categorized.xlsx")
             self.output_entry.setText(self.output_xlsx)
 
     def on_pick_output(self):
@@ -970,6 +994,13 @@ class BOMCategorizerMainWindow(QMainWindow):
         if not doc_files:
             return True  # Нет .doc файлов, продолжаем
         
+        # Логируем информацию о найденных .doc файлах
+        self.log_text.clear()
+        self.log_text.append(f"⚠️  Обнаружено .doc файлов: {len(doc_files)}\n")
+        for doc_file in doc_files:
+            self.log_text.append(f"   • {os.path.basename(doc_file)}")
+        self.log_text.append("\n")
+        
         # Показываем диалог конвертации
         dialog = DocConversionDialog(doc_files, self)
         result = dialog.exec()
@@ -977,20 +1008,209 @@ class BOMCategorizerMainWindow(QMainWindow):
         if result == QDialog.Rejected:
             return False  # Пользователь отменил
         
-        # Проверяем успешность конвертации
-        if dialog.converted_files:
-            # Заменяем .doc на .docx в списке файлов
-            for old_file, new_file in dialog.converted_files.items():
+        conversion_method = dialog.conversion_method
+        
+        if conversion_method == 'word':
+            # Конвертация через Word
+            self.log_text.append("🔄 Запуск конвертации через Microsoft Word...\n")
+            result = self._convert_doc_files_with_word(doc_files)
+            if result:
+                self.log_text.append("\n✅ Конвертация завершена успешно!")
+                self.log_text.append("⏭️  Переход к обработке файлов...\n")
+            return result
+        elif conversion_method == 'manual':
+            # Ручная конвертация - предупреждение и продолжение
+            QMessageBox.warning(
+                self,
+                "Ручная конвертация",
+                "Пожалуйста, сконвертируйте .doc файлы в .docx вручную\n"
+                "и добавьте их снова через 'Добавить файлы'.\n\n"
+                ".doc файлы будут пропущены при обработке."
+            )
+            # Удаляем .doc файлы из списка
+            for doc_file in doc_files:
+                if doc_file in self.input_files:
+                    del self.input_files[doc_file]
+            self.update_listbox()
+            
+            # Проверяем что остались файлы
+            if not self.input_files:
+                QMessageBox.critical(
+                    self,
+                    "Нет файлов",
+                    "После удаления .doc файлов не осталось файлов для обработки"
+                )
+                return False
+            
+            return True
+        
+        return False
+    
+    def _convert_doc_files_with_word(self, doc_files: list) -> bool:
+        """
+        Конвертирует .doc файлы в .docx используя Microsoft Word
+        
+        Args:
+            doc_files: Список путей к .doc файлам
+            
+        Returns:
+            True если конвертация успешна
+        """
+        try:
+            import win32com.client
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                "Не установлен pywin32!\n\n"
+                "Установите: pip install pywin32"
+            )
+            return False
+        
+        # Создаем прогресс-диалог
+        progress_dialog = QDialog(self)
+        progress_dialog.setWindowTitle("Конвертация .doc файлов")
+        progress_dialog.setMinimumSize(600, 400)
+        progress_dialog.setModal(True)
+        
+        layout = QVBoxLayout(progress_dialog)
+        
+        status_label = QLabel("Подготовка...")
+        status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(status_label)
+        
+        progress_text = QTextEdit()
+        progress_text.setReadOnly(True)
+        layout.addWidget(progress_text)
+        
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(progress_dialog.accept)
+        close_btn.setEnabled(False)
+        layout.addWidget(close_btn)
+        
+        progress_dialog.show()
+        QApplication.processEvents()
+        
+        # Таймер для автозакрытия
+        auto_close_timer = None
+        countdown_value = [3]  # Используем список для изменяемости в замыкании
+        
+        converted_files = []
+        success = True
+        
+        try:
+            status_label.setText("Запуск Microsoft Word...")
+            progress_text.append("Открытие Microsoft Word...\n")
+            QApplication.processEvents()
+            
+            word = win32com.client.Dispatch("Word.Application")
+            word.Visible = False
+            
+            for i, doc_file in enumerate(doc_files, 1):
+                status_label.setText(f"Конвертация {i}/{len(doc_files)}: {os.path.basename(doc_file)}")
+                progress_text.append(f"\n[{i}/{len(doc_files)}] {os.path.basename(doc_file)}")
+                QApplication.processEvents()
+                
+                doc_path = os.path.abspath(doc_file)
+                docx_path = doc_path.replace('.doc', '.docx')
+                
+                try:
+                    doc = word.Documents.Open(doc_path)
+                    doc.SaveAs(docx_path, FileFormat=16)  # 16 = wdFormatXMLDocument
+                    doc.Close()
+                    
+                    progress_text.append(f"  ✓ Создан: {os.path.basename(docx_path)}")
+                    converted_files.append((doc_file, docx_path))
+                    
+                except Exception as e:
+                    progress_text.append(f"  ✗ Ошибка: {str(e)}")
+                    success = False
+                
+                QApplication.processEvents()
+            
+            word.Quit()
+            status_label.setText("Готово!")
+            progress_text.append("\n✅ Конвертация завершена.")
+            progress_text.append("\n⏭️  Переход к обработке файлов...")
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка конвертации",
+                f"Не удалось запустить Word:\n{str(e)}"
+            )
+            success = False
+        
+        # Обновляем список файлов
+        if success and converted_files:
+            for old_file, new_file in converted_files:
                 if old_file in self.input_files:
                     count = self.input_files[old_file]
                     del self.input_files[old_file]
                     self.input_files[new_file] = count
             
             self.update_listbox()
-            return True
+            self.update_output_filename()
+            progress_text.append("\n✓ Список файлов обновлен")
         
-        return dialog.can_continue
-    
+        # Создаем диалог обработки заранее (но не показываем)
+        processing_dialog = QProgressDialog(
+            "Подготовка к обработке файлов...",
+            None,
+            0, 0,
+            self
+        )
+        processing_dialog.setWindowTitle("Обработка BOM файлов")
+        processing_dialog.setWindowModality(Qt.WindowModal)
+        processing_dialog.setMinimumDuration(0)
+        processing_dialog.setCancelButton(None)
+        processing_dialog.setAutoClose(False)
+        processing_dialog.setAutoReset(False)
+        
+        # Функция обратного отсчета
+        def update_countdown():
+            if countdown_value[0] > 1:
+                close_btn.setText(f"Закрыть (автозакрытие через {countdown_value[0]} сек)")
+                status_label.setText(f"Готово! Автопереход к обработке через {countdown_value[0]} сек...")
+                countdown_value[0] -= 1
+            elif countdown_value[0] == 1:
+                # За секунду до закрытия показываем диалог обработки
+                close_btn.setText(f"Закрыть (автозакрытие через {countdown_value[0]} сек)")
+                status_label.setText("Подготовка к обработке...")
+                progress_text.append("\n⏭️  Запуск обработки файлов...")
+                QApplication.processEvents()
+                
+                # Показываем диалог обработки ЕЩЕ ДО закрытия этого окна
+                processing_dialog.show()
+                processing_dialog.setLabelText("Анализ файлов...")
+                QApplication.processEvents()
+                
+                countdown_value[0] -= 1
+            else:
+                auto_close_timer.stop()
+                progress_dialog.accept()
+        
+        # Запускаем таймер автозакрытия
+        from PySide6.QtCore import QTimer
+        auto_close_timer = QTimer()
+        auto_close_timer.timeout.connect(update_countdown)
+        
+        # Сохраняем ссылку на диалог обработки
+        self.processing_dialog_ref = processing_dialog
+        
+        close_btn.setEnabled(True)
+        close_btn.setText(f"Закрыть (автозакрытие через {countdown_value[0]} сек)")
+        status_label.setText(f"Готово! Автопереход к обработке через {countdown_value[0]} сек...")
+        auto_close_timer.start(1000)  # Каждую секунду
+        
+        progress_dialog.exec()
+        
+        # Останавливаем таймер если пользователь закрыл вручную
+        if auto_close_timer.isActive():
+            auto_close_timer.stop()
+        
+        return success
+
     def on_run(self):
         """Запуск обработки"""
         if not self.input_files:
@@ -1002,28 +1222,44 @@ class BOMCategorizerMainWindow(QMainWindow):
             return
         
         # Проверяем и конвертируем .doc файлы
-        if not self.check_and_convert_doc_files():
+        conversion_result = self.check_and_convert_doc_files()
+        
+        if not conversion_result:
             return  # Пользователь отменил или нужна ручная конвертация
         
         args = self._build_args(self.output_entry.text())
         
-        # Очищаем лог
-        self.log_text.clear()
-        self.log_text.append(f"🚀 Запуск обработки BOM файлов...")
-        self.log_text.append(f"Команда: split_bom {' '.join(args)}\n")
+        # Обновляем лог (не очищаем если там уже есть информация о конвертации)
+        self.log_text.append(f"\n{'='*60}\n")
+        self.log_text.append(f"🚀 ЗАПУСК ОБРАБОТКИ BOM ФАЙЛОВ\n")
+        self.log_text.append(f"{'='*60}\n")
+        self.log_text.append(f"📋 Входных файлов: {len(self.input_files)}")
+        self.log_text.append(f"📄 Выходной файл: {os.path.basename(self.output_entry.text())}\n")
+        self.log_text.append(f"⚙️  Команда: split_bom {' '.join(args)}\n")
         
-        # Создаем progress dialog
-        self.progress_dialog = QProgressDialog(
-            "Обработка файлов...",
-            "Отмена",
-            0, 0,
-            self
-        )
-        self.progress_dialog.setWindowTitle("Обработка")
-        self.progress_dialog.setWindowModality(Qt.WindowModal)
-        self.progress_dialog.setMinimumDuration(0)
-        self.progress_dialog.setCancelButton(None)  # Убираем кнопку отмены
-        self.progress_dialog.show()
+        # Используем уже созданный диалог или создаем новый
+        if hasattr(self, 'processing_dialog_ref') and self.processing_dialog_ref:
+            self.progress_dialog = self.processing_dialog_ref
+            self.progress_dialog.setLabelText("Обработка файлов в процессе...")
+            self.processing_dialog_ref = None  # Очищаем ссылку
+        else:
+            # Создаем progress dialog если не было конвертации
+            self.progress_dialog = QProgressDialog(
+                "Подготовка к обработке...",
+                None,
+                0, 0,
+                self
+            )
+            self.progress_dialog.setWindowTitle("Обработка BOM файлов")
+            self.progress_dialog.setWindowModality(Qt.WindowModal)
+            self.progress_dialog.setMinimumDuration(0)
+            self.progress_dialog.setCancelButton(None)
+            self.progress_dialog.setAutoClose(False)
+            self.progress_dialog.setAutoReset(False)
+            self.progress_dialog.show()
+            self.progress_dialog.setLabelText("Обработка файлов в процессе...")
+        
+        QApplication.processEvents()
         
         # Создаем и запускаем worker
         self.processing_worker = ProcessingWorker(args)
@@ -1311,19 +1547,21 @@ class BOMCategorizerMainWindow(QMainWindow):
 
 
     def on_open_db_folder(self):
-        """Открыть папку с базой данных в проводнике"""
+        """Открыть папку с базой данных в проводнике с выделенным файлом"""
         try:
             db_path = get_database_path()
-            folder_path = os.path.dirname(db_path)
             
-            # Открываем в проводнике
-            import sys
-            if sys.platform == "win32":
-                os.startfile(folder_path)
-            elif sys.platform == "darwin":  # macOS
-                os.system(f'open "{folder_path}"')
+            # Открываем проводник с выделенным файлом базы данных
+            if platform.system() == 'Windows':
+                # /select открывает проводник и выделяет файл
+                subprocess.Popen(f'explorer /select,"{os.path.abspath(db_path)}"')
+            elif platform.system() == 'Darwin':  # macOS
+                # -R открывает Finder и выделяет файл
+                subprocess.Popen(['open', '-R', db_path])
             else:  # Linux
-                os.system(f'xdg-open "{folder_path}"')
+                # Открываем папку (в Linux нет стандартного способа выделить файл)
+                folder_path = os.path.dirname(db_path)
+                subprocess.Popen(['xdg-open', folder_path])
                 
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку:\n{str(e)}")
@@ -1442,14 +1680,16 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.log_text.append(f"   Новое количество компонентов: {new_count}")
             self.log_text.append(f"   Расположение: {current_db_path}\n")
             
+            # Обновляем футер после замены
+            self.update_database_info()
+            
             QMessageBox.information(
                 self,
                 "Успех",
                 f"✅ База данных успешно заменена!\n\n"
                 f"Компонентов в новой базе: {new_count}\n\n"
                 f"Резервная копия старой базы сохранена.\n\n"
-                f"Перезапустите приложение чтобы увидеть\n"
-                f"актуальные данные в футере."
+                f"Информация в футере обновлена!"
             )
             
         except Exception as e:
@@ -1516,6 +1756,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Импортируем компоненты
             import pandas as pd
+            from .component_database import load_component_database, save_component_database
             
             # Маппинг русских названий листов на ключи категорий
             SHEET_TO_CATEGORY = {
@@ -1533,6 +1774,13 @@ class BOMCategorizerMainWindow(QMainWindow):
                 'Наши разработки': 'our_developments',
                 'Другие': 'others',
             }
+            
+            # Загружаем текущую БД один раз
+            db = load_component_database()
+            initial_count = len(db)
+            
+            # Список добавленных компонентов для истории
+            added_component_names = []
             
             # Читаем файл Excel
             xl_file = pd.ExcelFile(output_file, engine='openpyxl')
@@ -1576,7 +1824,7 @@ class BOMCategorizerMainWindow(QMainWindow):
                 
                 sheet_added = 0
                 
-                # Добавляем каждый компонент в базу данных
+                # Собираем все компоненты в память
                 for idx, row in df.iterrows():
                     name = str(row[name_col]).strip() if pd.notna(row[name_col]) else ""
                     
@@ -1585,13 +1833,40 @@ class BOMCategorizerMainWindow(QMainWindow):
                         skipped_count += 1
                         continue
                     
-                    # Добавляем в базу данных
-                    add_component_to_database(name, category_key)
-                    added_count += 1
-                    sheet_added += 1
+                    # Добавляем в БД только если новый или категория изменилась
+                    if name not in db or db[name] != category_key:
+                        db[name] = category_key
+                        added_component_names.append(name)
+                        added_count += 1
+                        sheet_added += 1
                 
                 progress_text.append(f"✅ {sheet_name}: добавлено {sheet_added} компонентов")
                 QApplication.processEvents()
+            
+            # Сохраняем БД один раз со всеми изменениями
+            progress_text.append(f"\n💾 Сохранение изменений в базу данных...")
+            QApplication.processEvents()
+            
+            if added_count > 0:
+                # Есть новые компоненты - сохраняем с историей
+                save_component_database(
+                    db, 
+                    action="import_from_file", 
+                    source=os.path.basename(output_file),
+                    component_names=added_component_names[:50]  # Первые 50 для истории
+                )
+                progress_text.append(f"✅ База данных обновлена! Добавлено {added_count} новых компонентов.")
+            else:
+                # Нет новых компонентов, но обновляем метаданные (last_updated)
+                save_component_database(
+                    db, 
+                    action="update", 
+                    source=None,
+                    component_names=[]
+                )
+                progress_text.append(f"✅ Метаданные базы данных обновлены (новых компонентов не найдено).")
+            
+            QApplication.processEvents()
             
             progress_text.append(f"\n✅ Импорт завершен!\n")
             progress_text.append(f"📈 Статистика:")
@@ -1601,16 +1876,119 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Показываем обновленную статистику базы данных
             stats = get_database_stats()
+            metadata = stats.get('metadata', {})
             progress_text.append(f"📊 База данных после импорта:")
             progress_text.append(f"   Всего компонентов: {stats['total']}")
+            progress_text.append(f"   Версия БД: {metadata.get('version', 'N/A')}")
             
             close_btn.setEnabled(True)
             progress_dialog.exec()
+            
+            # Обновляем футер после импорта
+            self.update_database_info()
             
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось импортировать компоненты:\n{str(e)}")
             import traceback
             traceback.print_exc()
+
+    def update_database_info(self):
+        """Обновляет информацию о базе данных в футере"""
+        try:
+            stats = get_database_stats()
+            metadata = stats.get('metadata', {})
+            db_version = metadata.get('version', 'N/A')
+            last_updated = metadata.get('last_updated', '')
+            total_components = stats.get('total', 0)
+            
+            # Форматируем дату для отображения
+            if last_updated and last_updated != 'N/A':
+                try:
+                    date_part = last_updated.split()[0]  # Берем только дату без времени
+                    version_text = f"{db_version} ({date_part})"
+                except:
+                    version_text = db_version
+            else:
+                version_text = db_version
+            
+            self.db_info_label.setText(f"БД: {version_text} ({total_components} компонентов)")
+            
+            # Обновляем tooltip
+            self.update_database_tooltip()
+        except Exception as e:
+            self.db_info_label.setText("БД: Ошибка загрузки")
+            print(f"Ошибка обновления информации БД: {e}")
+    
+    def update_database_tooltip(self):
+        """Обновляет tooltip для информации о базе данных"""
+        try:
+            from .component_database import get_database_history
+            
+            stats = get_database_stats()
+            metadata = stats.get('metadata', {})
+            history = get_database_history()
+            
+            # Формируем tooltip
+            tooltip_lines = []
+            tooltip_lines.append(f"📊 База данных компонентов")
+            tooltip_lines.append(f"═══════════════════════════")
+            tooltip_lines.append(f"Версия: {metadata.get('version', 'N/A')}")
+            tooltip_lines.append(f"Всего компонентов: {stats.get('total', 0)}")
+            tooltip_lines.append(f"Последнее обновление: {metadata.get('last_updated', 'N/A')}")
+            
+            # Добавляем хэш для отладки
+            current_hash = metadata.get('current_hash', 'N/A')
+            if current_hash and current_hash != 'N/A':
+                tooltip_lines.append(f"Хэш: {current_hash[:16]}...")
+            
+            tooltip_lines.append(f"")
+            
+            # Добавляем историю последних изменений
+            if history and len(history) > 0:
+                tooltip_lines.append(f"📜 История последних изменений:")
+                tooltip_lines.append(f"─────────────────────────────")
+                
+                # Показываем последние 3 записи (новые записи добавляются в начало)
+                for entry in history[:3]:
+                    timestamp = entry.get('timestamp', 'N/A')
+                    action = entry.get('action', 'unknown')
+                    source = entry.get('source', 'N/A')
+                    comp_count = entry.get('components_added', 0)
+                    
+                    action_text = {
+                        'import_from_file': '📥 Импорт из файла',
+                        'import_from_excel': '📊 Импорт из Excel',
+                        'manual_add': '✍️ Ручное добавление',
+                        'update': '🔄 Обновление'
+                    }.get(action, action)
+                    
+                    tooltip_lines.append(f"")
+                    tooltip_lines.append(f"{timestamp}")
+                    tooltip_lines.append(f"  {action_text}")
+                    tooltip_lines.append(f"  Версия: {entry.get('version', 'N/A')}")
+                    if source != 'N/A':
+                        tooltip_lines.append(f"  Источник: {source}")
+                    tooltip_lines.append(f"  Добавлено: {comp_count} комп.")
+                    
+                    # Показываем хэш изменения
+                    entry_hash = entry.get('current_hash', '')
+                    if entry_hash:
+                        tooltip_lines.append(f"  Хэш: {entry_hash[:12]}...")
+                    
+                    # Показываем несколько компонентов
+                    if 'component_names' in entry and entry['component_names']:
+                        names = entry['component_names'][:2]  # Первые 2
+                        for name in names:
+                            tooltip_lines.append(f"    • {name}")
+                        if len(entry['component_names']) > 2:
+                            tooltip_lines.append(f"    ... и еще {len(entry['component_names']) - 2}")
+            else:
+                tooltip_lines.append(f"История изменений пуста")
+            
+            self.db_info_label.setToolTip('\n'.join(tooltip_lines))
+            
+        except Exception as e:
+            self.db_info_label.setToolTip(f"Информация о БД недоступна: {e}")
 
     def on_developer_double_click(self):
         """Двойной клик на имени разработчика - PIN диалог"""
@@ -1621,6 +1999,47 @@ class BOMCategorizerMainWindow(QMainWindow):
                 self.log_text.append("✅ Интерфейс разблокирован")
             else:
                 self.log_text.append("❌ Авторизация отменена")
+
+    def on_log_double_click(self, event):
+        """Обработчик двойного клика на логе - открывает лог в текстовом редакторе"""
+        try:
+            import tempfile
+            
+            # Получаем текст лога
+            log_content = self.log_text.toPlainText()
+            
+            if not log_content.strip():
+                QMessageBox.information(
+                    self,
+                    "Информация",
+                    "Лог выполнения пуст"
+                )
+                return
+            
+            # Создаем временный файл
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.txt', delete=False) as f:
+                f.write("=" * 80 + "\n")
+                f.write("BOM Categorizer - Лог выполнения\n")
+                f.write("=" * 80 + "\n\n")
+                f.write(log_content)
+                temp_file = f.name
+            
+            # Открываем в системном текстовом редакторе
+            if platform.system() == 'Windows':
+                os.startfile(temp_file)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.Popen(['open', temp_file])
+            else:  # Linux
+                subprocess.Popen(['xdg-open', temp_file])
+            
+            self.log_text.append(f"\n📄 Лог открыт в текстовом редакторе: {temp_file}\n")
+            
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                "Предупреждение",
+                f"Не удалось открыть лог в текстовом редакторе:\n{str(e)}"
+            )
 
     def on_show_size_menu(self, event):
         """Показать меню размеров окна"""
@@ -1778,7 +2197,7 @@ class BOMCategorizerMainWindow(QMainWindow):
                     # Копируем новый файл
                     shutil.copy2(file_path, db_path)
                     stats = get_database_stats()
-                    imported_count = stats.get('total_components', 0)
+                    imported_count = stats.get('total', 0)
                 elif file_path.endswith('.xlsx'):
                     # Создаем резервную копию
                     backup_database()
@@ -1792,12 +2211,16 @@ class BOMCategorizerMainWindow(QMainWindow):
                     )
                     return
 
+                # Обновляем футер после импорта
+                self.update_database_info()
+                
                 QMessageBox.information(
                     self,
                     "Импорт завершен",
                     f"✅ База данных успешно импортирована!\n\n"
                     f"Компонентов импортировано: {imported_count}\n"
-                    f"База данных: {get_database_path()}"
+                    f"База данных: {get_database_path()}\n\n"
+                    f"Информация в футере обновлена!"
                 )
             except Exception as e:
                 QMessageBox.critical(
@@ -1824,18 +2247,21 @@ class BOMCategorizerMainWindow(QMainWindow):
             )
 
     def open_database_folder(self):
-        """Открывает папку с базой данных в проводнике"""
+        """Открывает папку с базой данных в проводнике с выделенным файлом"""
         try:
             db_path = get_database_path()
-            db_dir = os.path.dirname(db_path)
 
-            # Открываем папку в системном проводнике
+            # Открываем проводник с выделенным файлом базы данных
             if platform.system() == 'Windows':
-                os.startfile(db_dir)
+                # /select открывает проводник и выделяет файл
+                subprocess.Popen(f'explorer /select,"{os.path.abspath(db_path)}"')
             elif platform.system() == 'Darwin':  # macOS
-                os.system(f'open "{db_dir}"')
+                # -R открывает Finder и выделяет файл
+                subprocess.Popen(['open', '-R', db_path])
             else:  # Linux
-                os.system(f'xdg-open "{db_dir}"')
+                # Открываем папку (в Linux нет стандартного способа выделить файл)
+                db_dir = os.path.dirname(db_path)
+                subprocess.Popen(['xdg-open', db_dir])
         except Exception as e:
             QMessageBox.critical(
                 self,

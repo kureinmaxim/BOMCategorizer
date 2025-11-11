@@ -124,22 +124,35 @@ def _calculate_database_hash(components: Dict[str, str]) -> str:
 
 def _increment_version(current_version: str) -> str:
     """
-    Инкрементирует версию БД (формат X.Y)
+    Инкрементирует версию БД (формат Build N)
     
     Args:
-        current_version: Текущая версия (например "1.5")
+        current_version: Текущая версия (например "Build 5" или старый формат "1.5")
         
     Returns:
-        Новая версия (например "1.6")
+        Новая версия (например "Build 6")
     """
     try:
-        parts = current_version.split('.')
-        major = int(parts[0])
-        minor = int(parts[1]) if len(parts) > 1 else 0
-        minor += 1
-        return f"{major}.{minor}"
+        # Обработка старого формата X.Y
+        if '.' in current_version and 'Build' not in current_version:
+            parts = current_version.split('.')
+            major = int(parts[0])
+            minor = int(parts[1]) if len(parts) > 1 else 0
+            # Конвертируем в Build (major * 100 + minor для сохранения истории)
+            build_num = major * 100 + minor + 1
+            return f"Build {build_num}"
+        
+        # Обработка формата Build N
+        if 'Build' in current_version:
+            build_str = current_version.replace('Build', '').strip()
+            build_num = int(build_str) + 1
+            return f"Build {build_num}"
+        
+        # Пытаемся распарсить как число
+        build_num = int(current_version) + 1
+        return f"Build {build_num}"
     except:
-        return "1.0"
+        return "Build 1"
 
 
 def _add_history_entry(structured_db: dict, action: str, source: Optional[str] = None, 
@@ -211,7 +224,7 @@ def load_component_database() -> Dict[str, str]:
         initial_hash = _calculate_database_hash(initial_components)
         structured_db = {
             "metadata": {
-                "version": "1.0",  # Двузначная версия
+                "version": "Build 1",
                 "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "total_components": len(initial_components),
@@ -220,7 +233,7 @@ def load_component_database() -> Dict[str, str]:
                 "current_hash": initial_hash
             },
             "history": [{
-                "version": "1.0",
+                "version": "Build 1",
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "action": "initial_creation",
                 "components_added": len(initial_components),
@@ -261,7 +274,7 @@ def load_component_database() -> Dict[str, str]:
                     current_hash = _calculate_database_hash(data)
                     structured_db = {
                         "metadata": {
-                            "version": "1.0",  # Двузначная версия
+                            "version": "Build 1",
                             "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "total_components": len(data),
@@ -270,7 +283,7 @@ def load_component_database() -> Dict[str, str]:
                             "current_hash": current_hash
                         },
                         "history": [{
-                            "version": "1.0",
+                            "version": "Build 1",
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "action": "conversion_from_old_format",
                             "components_added": len(data),
@@ -331,7 +344,7 @@ def save_component_database(database: Dict[str, str], action: str = "update",
                     old_hash = _calculate_database_hash(data) if data else ""
                     structured_db = {
                         "metadata": {
-                            "version": "1.0",
+                            "version": "Build 1",
                             "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "total_components": 0,
@@ -346,7 +359,7 @@ def save_component_database(database: Dict[str, str], action: str = "update",
         else:
             structured_db = {
                 "metadata": {
-                    "version": "1.0",
+                    "version": "Build 1",
                     "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "total_components": 0,
@@ -366,14 +379,12 @@ def save_component_database(database: Dict[str, str], action: str = "update",
     old_components = structured_db.get("components", {})
     components_added = len(database) - len(old_components)
     
-    # Если есть изменения, обновляем версию и хэши
-    if old_components != database and components_added > 0:
-        # Сохраняем предыдущий хэш
-        previous_hash = structured_db["metadata"].get("current_hash", "")
-        
-        # Вычисляем новый хэш
-        new_hash = _calculate_database_hash(database)
-        
+    # Вычисляем хэши для проверки изменений
+    previous_hash = structured_db["metadata"].get("current_hash", "")
+    new_hash = _calculate_database_hash(database)
+    
+    # Если хэш изменился (реальные изменения в данных), обновляем версию
+    if previous_hash != new_hash and new_hash:
         # Инкрементируем версию
         old_version = structured_db["metadata"].get("version", "1.0")
         new_version = _increment_version(old_version)
@@ -383,12 +394,12 @@ def save_component_database(database: Dict[str, str], action: str = "update",
         structured_db["metadata"]["previous_hash"] = previous_hash
         structured_db["metadata"]["current_hash"] = new_hash
     
-    # Обновляем компоненты и метаданные
+    # Обновляем компоненты и метаданные (всегда)
     structured_db["components"] = database
     structured_db["metadata"]["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     structured_db["metadata"]["total_components"] = len(database)
     
-    # Добавляем запись в историю если были изменения
+    # Добавляем запись в историю если были добавлены новые компоненты
     if components_added > 0:
         _add_history_entry(structured_db, action, source, components_added, component_names)
     
