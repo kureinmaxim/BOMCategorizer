@@ -1,6 +1,7 @@
 pandas
 openpyxl
 python-docx
-docx2txt
-chardet
-
+pytest
+pytest-html
+pytest-cov
+PySide6

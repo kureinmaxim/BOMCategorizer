@@ -3,9 +3,10 @@
 Скрипт для автоматической сборки инсталлятора BOM Categorizer
 
 Этот скрипт:
-1. Копирует все необходимые файлы в temp_installer/
-2. Запускает Inno Setup Compiler для создания .exe инсталлятора
-3. Очищает временные файлы после сборки
+1. Спрашивает какую версию собирать (Standard или Modern Edition)
+2. Копирует все необходимые файлы в temp_installer/
+3. Запускает Inno Setup Compiler для создания .exe инсталлятора
+4. Очищает временные файлы после сборки
 
 Использование:
     python build_installer.py
@@ -19,6 +20,28 @@ import sys
 # Конфигурация
 TEMP_DIR = "temp_installer"
 INNO_SETUP_PATH = r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+
+# Версии приложения
+EDITIONS = {
+    "1": {
+        "name": "Standard",
+        "version": "3.2.2",
+        "app_file": "app.py",
+        "config": "config.json",
+        "iss_file": "installer_clean.iss",
+        "output": "BOMCategorizerSetup.exe",
+        "description": "Tkinter GUI (стабильная версия)"
+    },
+    "2": {
+        "name": "Modern Edition",
+        "version": "4.0.0",
+        "app_file": "app_qt.py",
+        "config": "config_qt.json",
+        "iss_file": "installer_qt.iss",
+        "output": "BOMCategorizerModernSetup.exe",
+        "description": "PySide6 GUI (современный дизайн)"
+    }
+}
 
 # Файлы для копирования (в корне проекта)
 FILES_TO_COPY = [
@@ -118,7 +141,7 @@ def copy_iss_to_root():
         return False
 
 
-def run_inno_setup():
+def run_inno_setup_edition(iss_file, output_file):
     """Запускает Inno Setup Compiler"""
     if not os.path.exists(INNO_SETUP_PATH):
         print(f"\n[ERROR] Inno Setup не найден: {INNO_SETUP_PATH}")
@@ -128,7 +151,7 @@ def run_inno_setup():
     print(f"\nЗапуск Inno Setup Compiler...")
     try:
         result = subprocess.run(
-            [INNO_SETUP_PATH, "installer_clean.iss"],
+            [INNO_SETUP_PATH, iss_file],
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -139,8 +162,8 @@ def run_inno_setup():
             print("[OK] Инсталлятор успешно собран!")
             
             # Проверяем размер файла
-            if os.path.exists("BOMCategorizerSetup.exe"):
-                size_mb = os.path.getsize("BOMCategorizerSetup.exe") / (1024 * 1024)
+            if os.path.exists(output_file):
+                size_mb = os.path.getsize(output_file) / (1024 * 1024)
                 print(f"\nРазмер инсталлятора: {size_mb:.2f} MB")
             
             return True
@@ -158,9 +181,34 @@ def run_inno_setup():
         return False
 
 
+def select_edition():
+    """Диалог выбора версии для сборки"""
+    print("\n" + "="*60)
+    print("  ВЫБЕРИТЕ ВЕРСИЮ ДЛЯ СБОРКИ:")
+    print("="*60)
+    
+    for key, edition in EDITIONS.items():
+        print(f"\n  [{key}] {edition['name']} v{edition['version']}")
+        print(f"      {edition['description']}")
+        print(f"      Файл: {edition['output']}")
+    
+    print("\n" + "="*60)
+    
+    while True:
+        choice = input("\nВведите номер версии (1 или 2): ").strip()
+        if choice in EDITIONS:
+            return EDITIONS[choice]
+        print("[ERROR] Неверный выбор. Введите 1 или 2.")
+
+
 def main():
     """Главная функция"""
     print_step("Сборка инсталлятора BOM Categorizer")
+    
+    # Выбор версии
+    edition = select_edition()
+    
+    print_step(f"Выбрана версия: {edition['name']} v{edition['version']}")
     
     # Шаг 1: Очистка и создание temp_installer
     print_step("Шаг 1: Подготовка временной директории")
@@ -170,21 +218,37 @@ def main():
     print_step("Шаг 2: Копирование файлов проекта")
     copy_files()
     
+    # Копируем правильный конфигурационный файл
+    print(f"\nКопирую {edition['config']} -> config.json...")
+    shutil.copy2(edition['config'], os.path.join(TEMP_DIR, 'config.json'))
+    
+    # Копируем правильный файл запуска
+    print(f"Копирую {edition['app_file']} -> app.py...")
+    shutil.copy2(edition['app_file'], os.path.join(TEMP_DIR, 'app.py'))
+    
     # Шаг 3: Копирование .iss в корень
     print_step("Шаг 3: Подготовка скрипта Inno Setup")
-    if not copy_iss_to_root():
-        print("\n[FAIL] Не удалось подготовить скрипт установки")
+    
+    # Копируем правильный .iss файл
+    iss_source = edition['iss_file']
+    if os.path.exists(iss_source):
+        shutil.copy2(iss_source, os.path.join(TEMP_DIR, 'installer.iss'))
+        shutil.copy2(iss_source, 'installer_active.iss')
+        print(f"[OK] Скопирован {iss_source}")
+    else:
+        print(f"[ERROR] Не найден {iss_source}")
         return 1
     
     # Шаг 4: Запуск Inno Setup
     print_step("Шаг 4: Компиляция инсталлятора")
-    if not run_inno_setup():
+    if not run_inno_setup_edition('installer_active.iss', edition['output']):
         print("\n[FAIL] Не удалось собрать инсталлятор")
         return 1
     
     # Успех
-    print_step("УСПЕХ! Инсталлятор готов")
-    print("\nФайл: BOMCategorizerSetup.exe")
+    print_step(f"УСПЕХ! Инсталлятор готов")
+    print(f"\nВерсия: {edition['name']} v{edition['version']}")
+    print(f"Файл: {edition['output']}")
     print("\nВы можете распространять этот файл для установки на других компьютерах.")
     
     return 0

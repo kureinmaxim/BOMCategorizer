@@ -85,3 +85,9 @@ desktop.ini
 # Backup databases
 *_backup_*.json
 
+# Icons (keep source icon.png and generated .ico/.icns, ignore temp files)
+icon.iconset/
+!icon.png
+!icon.ico
+!icon.icns
+

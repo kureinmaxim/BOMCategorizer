@@ -1,18 +1,102 @@
 # 📦 BOM Categorizer
 
-**Версия:** 3.1.4 | **Дата:** 07.11.2025 | **Разработчик:** Куреин М.Н. / Kurein M.N.
+**Версия:** Standard 3.2.2 / Modern Edition 4.0.0 | **Дата:** 08.11.2025 | **Разработчик:** Куреин М.Н.
 
-> **🇷🇺 Категоризатор BOM файлов** - автоматическая классификация компонентов из спецификаций  
-> **🇬🇧 BOM Categorizer** - Automatic categorization tool for Bill of Materials files
+---
 
-**Возможности:**
-- 📋 Обработка файлов: XLSX, DOCX, DOC, TXT
-- 🤖 Автоматическая классификация компонентов
-- 🎨 Форматирование и сортировка по номиналам
-- 🗄️ База данных компонентов (v3.0.0+)
-- 🖥️ GUI с интерактивной классификацией
-- 🔒 PIN защита (по умолчанию: 1234)
+## 🎯 Что это?
+
+**Автоматическая сортировка компонентов из спецификаций (BOM файлов) по категориям.**
+
+Загружаете файл → Получаете Excel с разделением на: Резисторы, Конденсаторы, Микросхемы, Оптика, СВЧ модули и т.д.
+
+**Основные возможности:**
+- 📋 Читает: Excel, Word (.doc/.docx), текстовые файлы
+- 🤖 Автоматическая классификация по 14 категориям
+- 🎨 Форматирование: сортировка по номиналам, извлечение ТУ, нормализация допусков
+- 🗄️ База данных: компоненты запоминаются навсегда
+- 🖥️ Удобный GUI с PIN защитой (1234)
 - 💾 Экспорт в Excel и TXT
+
+## 🎨 Две версии приложения!
+
+Проект теперь доступен в **двух версиях**:
+
+| Версия | GUI | Дизайн | Статус |
+|--------|-----|--------|--------|
+| **Standard v3.2.2** | Tkinter | Классический | ✅ Стабильная |
+| **Modern Edition v4.0.0** | PySide6 (Qt) | Современный | 🔬 Экспериментальная |
+
+**✅ Обе версии:**
+- Используют одинаковую бизнес-логику и базу данных
+- Могут быть установлены параллельно на один компьютер
+- Создают идентичные выходные файлы
+
+### 📦 Точная картина инсталляторов
+
+#### Windows (2 инсталлятора)
+
+| Версия | Файл инсталлятора | Путь установки | Имя в меню Пуск |
+|--------|-------------------|----------------|-----------------|
+| **Standard v3.2.2** | `BOMCategorizerSetup.exe` | `%APPDATA%\BOMCategorizer` | "BOM Categorizer Standard" |
+| **Modern Edition v4.0.0** | `BOMCategorizerModernSetup.exe` | `%APPDATA%\BOMCategorizerModern` | "BOM Categorizer Modern Edition" |
+
+#### macOS (2 DMG образа)
+
+| Версия | Файл DMG | Имя приложения | Bundle ID |
+|--------|----------|----------------|-----------|
+| **Standard v3.2.2** | `BOMCategorizer-3.2.2-macOS-Standard.dmg` | "BOM Categorizer Standard.app" | `com.kurein.bomcategorizer` |
+| **Modern Edition v4.0.0** | `BOMCategorizer-4.0.0-macOS-Modern.dmg` | "BOM Categorizer Modern Edition.app" | `com.kurein.bomcategorizer.modern` |
+
+**Параллельная установка:**
+- ✅ Разные пути установки - не конфликтуют
+- ✅ Разные имена в системе - легко различить
+- ✅ Можно запустить обе версии одновременно
+- ⚠️ **Общая база данных** - не редактируйте БД в двух окнах одновременно
+
+📖 **Подробное сравнение:** [EDITIONS.md](EDITIONS.md)
+
+---
+
+## ⚡ Быстрый старт
+
+### 🎨 Выбор версии для запуска:
+
+**Standard Edition (Tkinter):**
+```bash
+# Windows
+start_gui.bat
+# или
+python app.py
+
+# macOS/Linux
+python3 app.py
+```
+
+**Modern Edition (PySide6):**
+```bash
+# Windows
+python app_qt.py
+
+# macOS/Linux
+python3 app_qt.py
+```
+
+> 💡 **Совет:** Попробуйте обе версии и выберите, какая вам больше нравится!
+
+### 🚀 BAT файлы (Windows):
+
+```cmd
+# Запуск Standard GUI
+start_gui.bat
+
+# Запуск CLI (командная строка)
+split_bom.bat --inputs "file.xlsx" --xlsx "output.xlsx" --combine
+```
+
+> 🔒 **PIN защита:** По умолчанию PIN: 1234 (настраивается в `config.json` / `config_qt.json`)
+
+📘 **Подробнее:** [docs/BAT_FILES.md](docs/BAT_FILES.md) | [docs/QUICK_START.md](docs/QUICK_START.md) | [EDITIONS.md](EDITIONS.md)
 
 ---
 
@@ -22,32 +106,11 @@ BOM Categorizer полностью поддерживает все популя�
 
 | Оболочка | Описание | Активация venv | Особенности |
 |----------|----------|----------------|-------------|
-| **PowerShell** 💙 | Современная оболочка (рекомендуется) | `.\.venv\Scripts\Activate.ps1` | Требует настройки `ExecutionPolicy` |
-| **CMD** 📟 | Классическая командная строка | `.venv\Scripts\activate.bat` | Простой синтаксис, проверенная стабильность |
-| **GitBash** 🐙 | Unix-подобная оболочка | `source .venv/Scripts/activate` | Путь `C:\` → `/c/`, слэши `/` вместо `\` |
+| **PowerShell** 💙 | Современная оболочка (рекомендуется) | `.\venv\Scripts\Activate.ps1` | Требует настройки `ExecutionPolicy` |
+| **CMD** 📟 | Классическая командная строка | `venv\Scripts\activate.bat` | Простой синтаксис, проверенная стабильность |
+| **GitBash** 🐙 | Unix-подобная оболочка | `source venv/Scripts/activate` | Путь `C:\` → `/c/`, слэши `/` вместо `\` |
 
 > 💡 **Совет:** BAT-файлы (`start_gui.bat`, `split_bom.bat`) работают одинаково во всех оболочках!
-
----
-
-## ⚡ Быстрый старт (Windows 11)
-
-### 🚀 Самый простой способ (BAT файлы):
-
-После установки зависимостей, используйте готовые bat-файлы (работают во всех оболочках):
-
-**PowerShell / CMD / GitBash:**
-```bash
-# Запуск GUI (графический интерфейс с PIN защитой)
-start_gui.bat
-
-# Запуск CLI (командная строка)
-split_bom.bat --inputs "file.xlsx" --xlsx "output.xlsx" --combine
-```
-
-> 🔒 **Новое в v1.7.5:** Графический интерфейс теперь защищен PIN-кодом (1234 по умолчанию)
-
-📘 **Подробнее:** [docs/BAT_FILES.md](docs/BAT_FILES.md) | [docs/QUICK_START.md](docs/QUICK_START.md)
 
 ---
 
@@ -63,32 +126,33 @@ split_bom.bat --inputs "file.xlsx" --xlsx "output.xlsx" --combine
 cd C:\Project\BOMCategorizer
 
 # 2) Создать виртуальное окружение (однажды)
-python -m venv .venv
+python -m venv venv
 
 # 3) Активировать окружение
-.\.venv\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1
 
-# 4) Обновить pip (если требуется)
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
+# 4) Обновить pip (ВАЖНО: используйте python -m pip на Windows!)
+python -m pip install --upgrade pip
 
 # 5) Установить зависимости
 pip install -r requirements.txt
 
-# 6) Запустить графический интерфейс
+# 6) Запустить Standard Edition
 python app.py
 
-# 7) (Опционально) Запуск без активации окружения
-.\.venv\Scripts\python.exe app.py
+# 7) Или запустить Modern Edition
+python app_qt.py
 
-# 8) Пример командной строки для разборки
-.\.venv\Scripts\python.exe split_bom.py --inputs all_25.xlsx "БЗ.doc" "Докупить в 2025.txt" --sheets 3,4 --xlsx categorized.xlsx --combine --interactive --assign-json rules.json
+# 8) (Опционально) Запуск без активации окружения
+.\venv\Scripts\python.exe app.py         # Standard
+.\venv\Scripts\python.exe app_qt.py      # Modern Edition
 ```
 
 **Проблемы активации PowerShell?**
 Если PowerShell запрещает выполнение скриптов:
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
+.\venv\Scripts\Activate.ps1
 ```
 
 </details>
@@ -101,25 +165,26 @@ REM 1) Перейти в папку проекта
 cd /d C:\Project\BOMCategorizer
 
 REM 2) Создать виртуальное окружение (однажды)
-python -m venv .venv
+python -m venv venv
 
 REM 3) Активировать окружение
-.venv\Scripts\activate.bat
+venv\Scripts\activate.bat
 
-REM 4) Обновить pip (если требуется)
-.venv\Scripts\python.exe -m pip install --upgrade pip
+REM 4) Обновить pip (ВАЖНО: используйте python -m pip на Windows!)
+python -m pip install --upgrade pip
 
 REM 5) Установить зависимости
 pip install -r requirements.txt
 
-REM 6) Запустить графический интерфейс
+REM 6) Запустить Standard Edition
 python app.py
 
-REM 7) (Опционально) Запуск без активации окружения
-.venv\Scripts\python.exe app.py
+REM 7) Или запустить Modern Edition
+python app_qt.py
 
-REM 8) Пример командной строки для разборки
-.venv\Scripts\python.exe split_bom.py --inputs all_25.xlsx "БЗ.doc" "Докупить в 2025.txt" --sheets 3,4 --xlsx categorized.xlsx --combine --interactive --assign-json rules.json
+REM 8) (Опционально) Запуск без активации окружения
+venv\Scripts\python.exe app.py           REM Standard
+venv\Scripts\python.exe app_qt.py        REM Modern Edition
 ```
 
 </details>
@@ -132,25 +197,26 @@ REM 8) Пример командной строки для разборки
 cd /c/Project/BOMCategorizer
 
 # 2) Создать виртуальное окружение (однажды)
-python -m venv .venv
+python -m venv venv
 
 # 3) Активировать окружение
-source .venv/Scripts/activate
+source venv/Scripts/activate
 
-# 4) Обновить pip (если требуется)
-.venv/Scripts/python.exe -m pip install --upgrade pip
+# 4) Обновить pip
+python -m pip install --upgrade pip
 
 # 5) Установить зависимости
 pip install -r requirements.txt
 
-# 6) Запустить графический интерфейс
+# 6) Запустить Standard Edition
 python app.py
 
-# 7) (Опционально) Запуск без активации окружения
-.venv/Scripts/python.exe app.py
+# 7) Или запустить Modern Edition
+python app_qt.py
 
-# 8) Пример командной строки для разборки
-.venv/Scripts/python.exe split_bom.py --inputs all_25.xlsx "БЗ.doc" "Докупить в 2025.txt" --sheets 3,4 --xlsx categorized.xlsx --combine --interactive --assign-json rules.json
+# 8) (Опционально) Запуск без активации окружения
+venv/Scripts/python.exe app.py           # Standard
+venv/Scripts/python.exe app_qt.py        # Modern Edition
 ```
 
 > 💡 **Примечание:** В GitBash пути Windows конвертируются: `C:\` → `/c/`, обратные слэши → прямые
@@ -159,16 +225,23 @@ python app.py
 
 ---
 
-## Быстрый старт (macOS/Linux)
+### Быстрый старт (macOS/Linux)
 
 ```bash
 cd /path/to/BOMCategorizer
 python3 -m venv venv
 source venv/bin/activate
-python3 -m pip install --upgrade pip
-pip install -r requirements.txt
+pip install --upgrade pip
+pip install -r requirements_macos.txt
+
+# Запуск Standard Edition
 python3 app.py
+
+# Или запуск Modern Edition
+python3 app_qt.py
 ```
+
+> 💡 **Важно для macOS:** Используйте `requirements_macos.txt` вместо `requirements.txt`, так как библиотека `pywin32` доступна только для Windows.
 
 ## Ключевые опции
 - `--inputs` — список входных файлов (XLSX/DOCX/DOC/TXT).
@@ -185,12 +258,10 @@ python3 app.py
 
 ### 1. GUI режим (рекомендуется) 🖥️
 
-**Все оболочки Windows (PowerShell / CMD / GitBash):**
 ```bash
-# Вариант 1: BAT файл (самый простой)
+# Windows
 start_gui.bat
-
-# Вариант 2: Прямой запуск Python
+# или
 python app.py
 ```
 
@@ -221,12 +292,12 @@ python app.py
 
 **PowerShell / CMD:**
 ```powershell
-.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
+venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
 ```
 
 **GitBash:**
 ```bash
-.venv/Scripts/python.exe interactive_classify.py --input "example/БЗ.doc"
+venv/Scripts/python.exe interactive_classify.py --input "example/БЗ.doc"
 ```
 
 </details>
@@ -265,17 +336,26 @@ venv/bin/python3 interactive_classify.py --input "example/БЗ.doc"
 
 **PowerShell:**
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+.\venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
 ```
 
 **CMD:**
 ```cmd
-.venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+venv\Scripts\python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
 ```
 
 **GitBash:**
 ```bash
-.venv/Scripts/python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+venv/Scripts/python.exe split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+venv/bin/python3 split_bom.py --inputs "Докупить в 2025.txt" --xlsx categorized_from_txt.xlsx --combine --loose
 ```
 
 </details>
@@ -289,28 +369,28 @@ venv/bin/python3 interactive_classify.py --input "example/БЗ.doc"
 **PowerShell:**
 ```powershell
 # Базовое использование
-.\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+.\venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
 
 # С несколькими входными файлами
-.\.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+.\venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
 ```
 
 **CMD:**
 ```cmd
 REM Базовое использование
-.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
 
 REM С несколькими входными файлами
-.venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+venv\Scripts\python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
 ```
 
 **GitBash:**
 ```bash
 # Базовое использование
-.venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
+venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
 
 # С несколькими входными файлами
-.venv/Scripts/python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
+venv/Scripts/python.exe split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xlsx --txt-dir output_txt
 ```
 
 </details>
@@ -333,247 +413,75 @@ venv/bin/python3 split_bom.py --inputs "file1.xlsx" "file2.doc" --xlsx output.xl
 - Каждый файл содержит список компонентов в удобочитаемом формате
 - Подробности в файле [TXT_EXPORT_GUIDE.md](docs/TXT_EXPORT_GUIDE.md)
 
-## Создание инсталлятора (Inno Setup)
+## Создание инсталлятора
 
 ### 🚀 Быстрый способ:
 
-<details>
-<summary><b>PowerShell (рекомендуется)</b></summary>
-
 ```powershell
-# Перейти в папку проекта
-cd C:\Project\BOMCategorizer
-
-# Обычная сборка (если окружение уже настроено)
+# Windows: сборка инсталлятора с выбором версии
 python build_installer.py
 
-# Или полная пересборка с чистым окружением (только при проблемах!)
+# macOS: сборка DMG с выбором версии
+chmod +x build_macos.sh  # Один раз
+./build_macos.sh
+```
+
+**При запуске появится диалог выбора:**
+```
+============================================================
+  ВЫБЕРИТЕ ВЕРСИЮ ДЛЯ СБОРКИ:
+============================================================
+
+  [1] Standard v3.2.2
+      Tkinter GUI (стабильная версия)
+
+  [2] Modern Edition v4.0.0
+      PySide6 GUI (современный дизайн)
+
+============================================================
+
+Введите номер версии (1 или 2): _
+```
+
+**Результат:**
+- **Standard:** `BOMCategorizerSetup.exe` (Windows) / `BOMCategorizer-3.2.2-macOS-Standard.dmg` (macOS)
+- **Modern Edition:** `BOMCategorizerModernSetup.exe` (Windows) / `BOMCategorizer-4.0.0-macOS-Modern.dmg` (macOS)
+
+### ⚠️ Полная пересборка (только при проблемах):
+
+```powershell
+# Windows: полная пересборка окружения
 .\rebuild_venv.ps1
 ```
 
-</details>
-
-<details>
-<summary><b>CMD</b></summary>
-
-```cmd
-REM Перейти в папку проекта
-cd /d C:\Project\BOMCategorizer
-
-REM Обычная сборка (если окружение уже настроено)
-python build_installer.py
-
-REM Или полная пересборка с чистым окружением (только при проблемах!)
-powershell -ExecutionPolicy Bypass -File .\rebuild_venv.ps1
-```
-
-</details>
-
-<details>
-<summary><b>GitBash</b></summary>
-
-```bash
-# Перейти в папку проекта
-cd /c/Project/BOMCategorizer
-
-# Обычная сборка (если окружение уже настроено)
-python build_installer.py
-
-# Или полная пересборка с чистым окружением (только при проблемах!)
-powershell.exe -ExecutionPolicy Bypass -File ./rebuild_venv.ps1
-```
-
-</details>
-
-**Скрипт `rebuild_venv.ps1` делает всё автоматически:**
-- 🔄 Пересоздаёт виртуальное окружение
-- 📦 Устанавливает зависимости
-- 🚀 Собирает инсталлятор `BOMCategorizerSetup.exe`
-
-### ⚠️ Когда использовать rebuild_venv.ps1:
-
-**НЕ нужно запускать каждый раз!** Используйте только в этих случаях:
-- 🆕 **Первая установка** - когда `.venv` еще не создан
-- 🔧 **Что-то сломалось** - окружение повреждено, ошибки при импорте
-- 📋 **Обновились зависимости** - изменился `requirements.txt`
-- 🐛 **Конфликты пакетов** - нужно пересоздать всё с нуля
-- 🎯 **Перед релизом** - чистая сборка для распространения
+**НЕ нужно запускать каждый раз!** Используйте только при:
+- 🆕 Первой установке (когда `venv` еще не создан)
+- 🔧 Повреждении окружения
+- 📋 Обновлении `requirements.txt`
+- 🎯 Подготовке к релизу
 
 ### ✅ Обычная работа (ежедневно):
 
-<details>
-<summary><b>PowerShell</b></summary>
-
-```powershell
-# 1. Активировать окружение (если еще не активно)
-.\.venv\Scripts\Activate.ps1
-
-# 2. Собрать инсталлятор
-python build_installer.py
-
-# 3. Или запустить приложение для тестирования
-python app.py
-```
-
-</details>
-
-<details>
-<summary><b>CMD</b></summary>
-
-```cmd
-REM 1. Активировать окружение (если еще не активно)
-.venv\Scripts\activate.bat
-
-REM 2. Собрать инсталлятор
-python build_installer.py
-
-REM 3. Или запустить приложение для тестирования
-python app.py
-```
-
-</details>
-
-<details>
-<summary><b>GitBash</b></summary>
-
 ```bash
-# 1. Активировать окружение (если еще не активно)
-source .venv/Scripts/activate
+# 1. Активировать окружение
+source venv/bin/activate      # macOS/Linux
+.\venv\Scripts\Activate.ps1   # Windows
 
 # 2. Собрать инсталлятор
-python build_installer.py
+python build_installer.py     # Windows
+./build_macos.sh              # macOS
 
-# 3. Или запустить приложение для тестирования
-python app.py
+# 3. Или запустить для тестирования
+python app.py                 # Standard
+python app_qt.py              # Modern Edition
 ```
-
-</details>
 
 **Требования:**
-- Установленный Python 3.10+
-- Inno Setup Compiler (`innosetup.com`)
+- Python 3.8+ (рекомендуется 3.13)
+- Windows: Inno Setup Compiler
+- macOS: py2app (устанавливается автоматически)
 
-📖 **Подробная инструкция:** [BUILD.md](BUILD.md)
-
----
-
-## 🎯 Практические примеры: Полный рабочий процесс
-
-Полный цикл работы от установки до обработки файла в разных оболочках Windows 11:
-
-<details>
-<summary><b>PowerShell - Полный пример</b></summary>
-
-```powershell
-# Шаг 1: Перейти в папку проекта
-cd C:\Project\BOMCategorizer
-
-# Шаг 2: Создать виртуальное окружение (только один раз!)
-python -m venv .venv
-
-# Шаг 3: Активировать окружение
-.\.venv\Scripts\Activate.ps1
-
-# Если ошибка выполнения скриптов:
-# Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-# .\.venv\Scripts\Activate.ps1
-
-# Шаг 4: Установить зависимости
-pip install -r requirements.txt
-
-# Шаг 5: Запустить GUI для обработки
-python app.py
-
-# ИЛИ использовать командную строку
-.\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
-
-# ИЛИ использовать интерактивный режим
-.\.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
-
-# Экспорт в TXT файлы
-.\.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
-```
-
-</details>
-
-<details>
-<summary><b>CMD - Полный пример</b></summary>
-
-```cmd
-REM Шаг 1: Перейти в папку проекта
-cd /d C:\Project\BOMCategorizer
-
-REM Шаг 2: Создать виртуальное окружение (только один раз!)
-python -m venv .venv
-
-REM Шаг 3: Активировать окружение
-.venv\Scripts\activate.bat
-
-REM Шаг 4: Установить зависимости
-pip install -r requirements.txt
-
-REM Шаг 5: Запустить GUI для обработки
-python app.py
-
-REM ИЛИ использовать командную строку
-.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
-
-REM ИЛИ использовать интерактивный режим
-.venv\Scripts\python.exe interactive_classify.py --input "example/БЗ.doc"
-
-REM Экспорт в TXT файлы
-.venv\Scripts\python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
-```
-
-</details>
-
-<details>
-<summary><b>GitBash - Полный пример</b></summary>
-
-```bash
-# Шаг 1: Перейти в папку проекта (обратите внимание на путь!)
-cd /c/Project/BOMCategorizer
-
-# Шаг 2: Создать виртуальное окружение (только один раз!)
-python -m venv .venv
-
-# Шаг 3: Активировать окружение (как в Linux!)
-source .venv/Scripts/activate
-
-# Шаг 4: Установить зависимости
-pip install -r requirements.txt
-
-# Шаг 5: Запустить GUI для обработки
-python app.py
-
-# ИЛИ использовать командную строку (обратите внимание на слэши!)
-.venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
-
-# ИЛИ использовать интерактивный режим
-.venv/Scripts/python.exe interactive_classify.py --input "example/БЗ.doc"
-
-# Экспорт в TXT файлы
-.venv/Scripts/python.exe split_bom.py --inputs "example/БЗ.doc" --xlsx categorized.xlsx --txt-dir categorized_txt --combine
-```
-
-</details>
-
-<details>
-<summary><b>🚀 Самый быстрый способ (все оболочки)</b></summary>
-
-После первой установки, просто используйте BAT-файлы:
-
-```bash
-# GUI режим
-start_gui.bat
-
-# CLI режим
-split_bom.bat --inputs "example/БЗ.doc" --xlsx output.xlsx --combine
-```
-
-**Работает одинаково в PowerShell, CMD и GitBash!** 🎉
-
-</details>
+📖 **Подробная инструкция:** [BUILD.md](BUILD.md) | [EDITIONS.md](EDITIONS.md)
 
 ---
 
@@ -723,14 +631,415 @@ git log --oneline                # GitBash
 > - Или сохранены в stash: `git stash`
 > - Иначе Git может не позволить переключить ветку или изменения будут потеряны
 
-> **Виртуальное окружение:** `.venv/` находится в `.gitignore`, поэтому при переключении веток окружение сохраняется. Но если зависимости изменились в другой ветке, выполните:
+> **Виртуальное окружение:** `venv/` находится в `.gitignore`, поэтому при переключении веток окружение сохраняется. Но если зависимости изменились в другой ветке, выполните:
 > ```bash
+> # Windows
 > pip install -r requirements.txt
+> 
+> # macOS/Linux
+> pip install -r requirements_macos.txt
 > ```
 
 ---
 
+## 🔐 Решение проблемы с постоянным запросом пароля Git
+
+### ⚠️ Проблема: Git постоянно запрашивает Username и Password
+
+```bash
+PS C:\Project\BOMCategorizer> git push -u origin main
+Username for 'https://github.com': kureinmaxim
+Password for 'https://kureinmaxim@github.com':
+```
+
+> **GitHub с августа 2021 года НЕ принимает обычные пароли для HTTPS!**  
+> Вместо пароля нужно использовать **Personal Access Token (PAT)**
+
+### ✅ Решение 1: Git Credential Manager (Рекомендуется для Windows)
+
+Git Credential Manager обычно уже установлен вместе с Git для Windows. Активируем его:
+
+```powershell
+# Включить Git Credential Manager
+git config --global credential.helper manager
+
+# Проверить настройку
+git config --global credential.helper
+```
+
+**После этого:**
+1. При следующем `git push` появится окно входа в GitHub
+2. Войдите через браузер или введите Personal Access Token
+3. Учетные данные сохранятся в Windows Credential Manager
+4. Больше не будет запрашивать!
+
+### ✅ Решение 2: Использовать SSH ключи (Более безопасно)
+
+#### Шаг 1: Создать SSH ключ
+
+```powershell
+# Создать новый SSH ключ
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# Нажмите Enter 3 раза (использовать путь по умолчанию, без passphrase)
+```
+
+#### Шаг 2: Скопировать публичный ключ
+
+```powershell
+# Показать публичный ключ (скопируйте весь вывод)
+cat ~/.ssh/id_ed25519.pub
+
+# Или открыть в блокноте
+notepad ~/.ssh/id_ed25519.pub
+```
+
+#### Шаг 3: Добавить SSH ключ на GitHub
+
+1. Откройте https://github.com/settings/keys
+2. Нажмите **"New SSH key"**
+3. Вставьте скопированный ключ
+4. Сохраните
+
+#### Шаг 4: Переключить репозиторий на SSH
+
+```powershell
+# Проверить текущий URL
+git remote -v
+
+# Если показывает https://github.com/... - меняем на SSH
+git remote set-url origin git@github.com:username/BOMCategorizer.git
+
+# Проверить изменения
+git remote -v
+```
+
+**Теперь `git push` будет работать БЕЗ запроса пароля!** 🎉
+
+### ✅ Решение 3: Personal Access Token (если нужен HTTPS)
+
+#### Шаг 1: Создать Personal Access Token
+
+1. Откройте https://github.com/settings/tokens
+2. **"Generate new token"** → **"Generate new token (classic)"**
+3. Имя: `BOMCategorizer Development`
+4. Срок действия: 90 дней (или больше)
+5. Права: ✅ `repo` (полный доступ к репозиториям)
+6. **"Generate token"**
+7. **ВАЖНО:** Скопируйте токен - он показывается только один раз!
+
+#### Шаг 2: Использовать токен вместо пароля
+
+```powershell
+# При следующем git push вводите:
+# Username: ваш_username
+# Password: [вставьте ваш Personal Access Token]
+
+# Настроить сохранение учетных данных
+git config --global credential.helper store
+
+# Теперь выполните push - введите токен
+git push -u origin main
+```
+
+### 📋 Сравнение методов
+
+| Метод | Безопасность | Удобство | Рекомендация |
+|-------|--------------|----------|--------------|
+| **Git Credential Manager** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ✅ Лучший для Windows |
+| **SSH ключи** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ✅ Универсальный, безопасный |
+| **credential.helper store + PAT** | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⚠️ Токен в открытом виде |
+
+---
+
+## ⚠️ Решение типичных проблем
+
+### Проблема: Ошибка при обновлении pip на Windows
+
+**Ситуация:** При попытке обновить pip командой `pip install --upgrade pip` получаете ошибку:
+
+```powershell
+(venv) PS C:\Project\BOMCategorizer> pip install --upgrade pip
+
+ERROR: To modify pip, please run the following command:
+C:\Project\BOMCategorizer\venv\Scripts\python.exe -m pip install --upgrade pip
+```
+
+**Причина:** Windows блокирует обновление pip.exe, когда он запущен.
+
+**✅ Решение:**
+
+<details>
+<summary><b>PowerShell / CMD / GitBash</b></summary>
+
+Используйте `python -m pip` вместо просто `pip`:
+
+**PowerShell:**
+```powershell
+# НЕПРАВИЛЬНО (вызывает ошибку на Windows):
+pip install --upgrade pip
+
+# ПРАВИЛЬНО:
+python -m pip install --upgrade pip
+
+# Или полный путь (как подсказывает сама ошибка):
+.\venv\Scripts\python.exe -m pip install --upgrade pip
+```
+
+**CMD:**
+```cmd
+REM ПРАВИЛЬНО:
+python -m pip install --upgrade pip
+
+REM Или полный путь:
+venv\Scripts\python.exe -m pip install --upgrade pip
+```
+
+**GitBash:**
+```bash
+# ПРАВИЛЬНО:
+python -m pip install --upgrade pip
+
+# Или полный путь:
+venv/Scripts/python.exe -m pip install --upgrade pip
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+На macOS/Linux обычно проблем нет, но рекомендуется тот же подход:
+
+```bash
+# Рекомендуется:
+python3 -m pip install --upgrade pip
+
+# Или:
+pip install --upgrade pip
+```
+
+</details>
+
+**💡 Правило:**
+> На **Windows** всегда используйте `python -m pip` для установки/обновления пакетов.  
+> Это избегает проблем с блокировкой файлов Windows.
+
+**Пример полной установки на Windows:**
+```powershell
+# 1. Создать виртуальное окружение
+python -m venv venv
+
+# 2. Активировать
+.\venv\Scripts\Activate.ps1
+
+# 3. Обновить pip (ПРАВИЛЬНО!)
+python -m pip install --upgrade pip
+
+# 4. Установить зависимости
+python -m pip install -r requirements.txt
+
+# ИЛИ можно использовать просто pip для установки пакетов (но не для обновления pip):
+pip install -r requirements.txt
+```
+
+---
+
+## 🌐 Работа при плохом интернете
+
+### Использование PySide6 из глобального окружения
+
+Если у вас **плохой интернет** или **медленная загрузка**, но PySide6 уже установлен глобально, можно **временно** использовать его без установки в виртуальное окружение.
+
+> ⚠️ **Важно:** Это временное решение для разработки! Для продакшна всегда используйте виртуальное окружение.
+
+### Вариант 1: Запуск без виртуального окружения (самый быстрый)
+
+```bash
+# Проверить, установлен ли PySide6 глобально
+python -c "import PySide6; print(PySide6.__version__)"
+
+# Если установлен, можно запускать напрямую
+python app_qt.py
+```
+
+**Плюсы:**
+- ✅ Мгновенный запуск, не нужно качать пакеты
+- ✅ Работает при любом качестве интернета
+
+**Минусы:**
+- ⚠️ Не изолировано от системных пакетов
+- ⚠️ Могут быть конфликты версий
+
+---
+
+### Вариант 2: Виртуальное окружение с доступом к системным пакетам
+
+Создать виртуальное окружение, которое имеет доступ к глобальным пакетам:
+
+<details>
+<summary><b>Windows (PowerShell / CMD / GitBash)</b></summary>
+
+```powershell
+# 1. Создать venv с доступом к системным пакетам
+python -m venv venv --system-site-packages
+
+# 2. Активировать окружение
+# PowerShell:
+.\venv\Scripts\Activate.ps1
+
+# CMD:
+venv\Scripts\activate.bat
+
+# GitBash:
+source venv/Scripts/activate
+
+# 3. Установить только недостающие пакеты (легкие)
+pip install openpyxl pandas python-docx pywin32
+
+# 4. Запустить приложение
+python app_qt.py
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+# 1. Создать venv с доступом к системным пакетам
+python3 -m venv venv --system-site-packages
+
+# 2. Активировать окружение
+source venv/bin/activate
+
+# 3. Установить только недостающие пакеты (легкие)
+# Вариант A: Из файла (рекомендуется)
+pip install -r requirements_macos.txt
+
+# Вариант B: Вручную (если нужны только базовые пакеты)
+# pip install openpyxl pandas python-docx
+
+# 4. Запустить приложение
+python3 app_qt.py
+```
+
+</details>
+
+**Преимущества:**
+- ✅ Использует глобальный PySide6 (~300MB не нужно качать!)
+- ✅ Изоляция для остальных пакетов
+- ✅ Быстрая установка легких зависимостей
+
+---
+
+### Вариант 3: Установка PySide6 глобально (для постоянного использования)
+
+Если часто работаете с Qt приложениями, установите PySide6 глобально один раз:
+
+<details>
+<summary><b>Windows</b></summary>
+
+**PowerShell (от администратора):**
+```powershell
+# Установить PySide6 глобально
+python -m pip install PySide6
+
+# Проверить установку
+python -c "import PySide6; print('PySide6', PySide6.__version__)"
+```
+
+</details>
+
+<details>
+<summary><b>macOS/Linux</b></summary>
+
+```bash
+# Установить PySide6 глобально
+sudo python3 -m pip install PySide6
+
+# Или без sudo (в user site-packages)
+python3 -m pip install --user PySide6
+
+# Проверить установку
+python3 -c "import PySide6; print('PySide6', PySide6.__version__)"
+```
+
+</details>
+
+---
+
+### Вариант 4: Офлайн установка из локального кеша pip
+
+Если у вас уже есть скачанный PySide6 в кеше pip на другой машине:
+
+**Windows:**
+```powershell
+# 1. На машине с интернетом: скачать все пакеты
+pip download -r requirements.txt -d offline_packages
+
+# 2. Перенести папку offline_packages на машину без интернета
+
+# 3. На машине без интернета: установить из локальной папки
+pip install --no-index --find-links=offline_packages -r requirements.txt
+```
+
+**macOS/Linux:**
+```bash
+# 1. На машине с интернетом: скачать все пакеты
+pip download -r requirements_macos.txt -d offline_packages_macos
+
+# 2. Перенести папку offline_packages_macos на машину без интернета
+
+# 3. На машине без интернета: установить из локальной папки
+pip install --no-index --find-links=offline_packages_macos -r requirements_macos.txt
+```
+
+> 💡 **Совет:** В проекте уже есть папка `offline_packages` с предустановленными пакетами для Windows!
+
+---
+
+### Сравнение подходов при плохом интернете
+
+| Метод | Скорость | Изоляция | Когда использовать |
+|-------|----------|----------|-------------------|
+| **Без venv** | ⚡⚡⚡⚡⚡ | ❌ | Быстрый тест, демонстрация |
+| **venv --system-site-packages** | ⚡⚡⚡⚡ | ⚡⚡⚡ | Разработка при плохом интернете |
+| **Глобальный PySide6** | ⚡⚡⚡⚡ | ⚡⚡ | Постоянная работа с Qt |
+| **Офлайн установка** | ⚡⚡⚡ | ⚡⚡⚡⚡⚡ | Полная изоляция без интернета |
+| **Обычный venv** | ⚡ | ⚡⚡⚡⚡⚡ | Продакшн, чистая среда |
+
+---
+
+### 📝 Практический пример: Быстрый старт Modern Edition при плохом интернете
+
+```powershell
+# Ситуация: PySide6 установлен глобально, интернет медленный
+
+# Шаг 1: Проверить глобальный PySide6
+python -c "import PySide6; print('OK:', PySide6.__version__)"
+
+# Шаг 2: Создать venv с доступом к системным пакетам
+python -m venv venv --system-site-packages
+
+# Шаг 3: Активировать
+.\venv\Scripts\Activate.ps1
+
+# Шаг 4: Установить только легкие зависимости (~10MB вместо ~300MB)
+pip install openpyxl pandas python-docx pywin32
+
+# Шаг 5: Запустить Modern Edition
+python app_qt.py
+
+# ✅ Готово! Запуск через 1-2 минуты вместо 20-30 минут!
+```
+
+---
+
 ## 📚 Документация
+
+### О версиях приложения:
+- 📦 **[EDITIONS.md](EDITIONS.md)** - **Сравнение Standard и Modern Edition** - инсталляторы, параллельная установка, когда какую использовать
 
 ### Для пользователей:
 - 📘 [QUICK_START.md](docs/QUICK_START.md) - Подробное руководство для начинающих
@@ -739,15 +1048,47 @@ git log --oneline                # GitBash
 - 🎯 [INTERACTIVE_MODE_GUIDE.md](docs/INTERACTIVE_MODE_GUIDE.md) - Интерактивная классификация компонентов
 - 📝 [TXT_EXPORT_GUIDE.md](docs/TXT_EXPORT_GUIDE.md) - Экспорт результатов в текстовые файлы
 - 📋 [CLASSIFICATION_RULES.md](docs/CLASSIFICATION_RULES.md) - Полный справочник правил классификации компонентов
-- 🗄️ [DATABASE_MANAGEMENT_GUIDE.md](docs/DATABASE_MANAGEMENT_GUIDE.md) - **Управление базой данных: всё в одном руководстве (НОВОЕ v3.1.2!)**
+- 🗄️ [DATABASE_MANAGEMENT_GUIDE.md](docs/DATABASE_MANAGEMENT_GUIDE.md) - Управление базой данных: всё в одном руководстве
 
 ### Для разработчиков:
-- 🔧 [BUILD.md](BUILD.md) - Сборка инсталлятора
+- 🔧 [BUILD.md](BUILD.md) - Сборка инсталлятора (Windows и macOS, обе версии)
 - 📦 [OFFLINE_INSTALLER.md](docs/OFFLINE_INSTALLER.md) - Офлайн инсталлятор
 - 📁 [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) - Структура проекта
 - 🔧 [REPAIR_INSTALLATION.md](docs/REPAIR_INSTALLATION.md) - Восстановление после установки (работает БЕЗ интернета)
+- 📊 [ANALYSIS_PROJECT.md](ANALYSIS_PROJECT.md) - Детальный анализ кодовой базы
+- 📜 [CHANGELOG.md](CHANGELOG.md) - История изменений
 
-## 🆕 Что нового в v3.1.2
+## 🆕 Что нового в v3.2.2 / v4.0.0
+
+### 🎊 Главное: Две версии приложения!
+
+Проект теперь поддерживает **две параллельные версии**:
+
+#### ✅ Standard v3.2.2 (Tkinter)
+- Классический проверенный интерфейс
+- Стабильная работа
+- Меньший размер установщика
+- Все функции v3.1.2
+
+#### ✨ Modern Edition v4.0.0 (PySide6)
+- Современный Material-inspired дизайн
+- Приглушенная цветовая палитра (комфорт для глаз)
+- Увеличенные шрифты (13-14pt) для лучшей читаемости
+- QSS стили (аналог CSS для Qt)
+- Hover-эффекты и плавные переходы
+- Лучшая поддержка HiDPI/Retina дисплеев
+
+**📦 Сборка инсталляторов:**
+- Windows: `build_installer.py` - диалог выбора версии
+- macOS: `build_macos.sh` - диалог выбора версии
+- Создаются отдельные инсталляторы для каждой версии
+- Можно установить обе версии параллельно!
+
+📖 **Подробное сравнение:** [EDITIONS.md](EDITIONS.md)
+
+---
+
+## 🆕 Что нового в v3.1.2 (базовые функции обеих версий)
 
 ### 🗄️ Система управления базой данных компонентов в GUI (НОВОЕ!)
 - **⬇️ Кнопка импорта из выходного файла** - добавьте все проверенные компоненты в базу данных одним кликом!

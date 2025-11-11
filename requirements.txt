@@ -5,3 +5,4 @@ pywin32
 pytest
 pytest-html
 pytest-cov
+PySide6
