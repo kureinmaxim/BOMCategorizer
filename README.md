@@ -232,7 +232,7 @@ cd /path/to/BOMCategorizer
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements_macos.txt
 
 # Запуск Standard Edition
 python3 app.py
@@ -240,6 +240,8 @@ python3 app.py
 # Или запуск Modern Edition
 python3 app_qt.py
 ```
+
+> 💡 **Важно для macOS:** Используйте `requirements_macos.txt` вместо `requirements.txt`, так как библиотека `pywin32` доступна только для Windows.
 
 ## Ключевые опции
 - `--inputs` — список входных файлов (XLSX/DOCX/DOC/TXT).
@@ -631,7 +633,11 @@ git log --oneline                # GitBash
 
 > **Виртуальное окружение:** `venv/` находится в `.gitignore`, поэтому при переключении веток окружение сохраняется. Но если зависимости изменились в другой ветке, выполните:
 > ```bash
+> # Windows
 > pip install -r requirements.txt
+> 
+> # macOS/Linux
+> pip install -r requirements_macos.txt
 > ```
 
 ---
@@ -908,7 +914,11 @@ python3 -m venv venv --system-site-packages
 source venv/bin/activate
 
 # 3. Установить только недостающие пакеты (легкие)
-pip install openpyxl pandas python-docx
+# Вариант A: Из файла (рекомендуется)
+pip install -r requirements_macos.txt
+
+# Вариант B: Вручную (если нужны только базовые пакеты)
+# pip install openpyxl pandas python-docx
 
 # 4. Запустить приложение
 python3 app_qt.py
@@ -963,6 +973,7 @@ python3 -c "import PySide6; print('PySide6', PySide6.__version__)"
 
 Если у вас уже есть скачанный PySide6 в кеше pip на другой машине:
 
+**Windows:**
 ```powershell
 # 1. На машине с интернетом: скачать все пакеты
 pip download -r requirements.txt -d offline_packages
@@ -971,6 +982,17 @@ pip download -r requirements.txt -d offline_packages
 
 # 3. На машине без интернета: установить из локальной папки
 pip install --no-index --find-links=offline_packages -r requirements.txt
+```
+
+**macOS/Linux:**
+```bash
+# 1. На машине с интернетом: скачать все пакеты
+pip download -r requirements_macos.txt -d offline_packages_macos
+
+# 2. Перенести папку offline_packages_macos на машину без интернета
+
+# 3. На машине без интернета: установить из локальной папки
+pip install --no-index --find-links=offline_packages_macos -r requirements_macos.txt
 ```
 
 > 💡 **Совет:** В проекте уже есть папка `offline_packages` с предустановленными пакетами для Windows!
