@@ -40,6 +40,7 @@
 
 import json
 import os
+import shutil
 import hashlib
 from typing import Optional, Dict, List
 from datetime import datetime
@@ -122,37 +123,129 @@ def _calculate_database_hash(components: Dict[str, str]) -> str:
     return hashlib.sha256(data_str.encode('utf-8')).hexdigest()[:16]  # Первые 16 символов
 
 
-def _increment_version(current_version: str) -> str:
+def _increment_version(current_version: str, manual_add: bool = False) -> str:
     """
-    Инкрементирует версию БД (формат Build N)
+    Инкрементирует версию БД (формат X.Y)
     
     Args:
-        current_version: Текущая версия (например "Build 5" или старый формат "1.5")
+        current_version: Текущая версия (например "1.5")
+        manual_add: True если ручное добавление (увеличивает Y), False если из файла (увеличивает X)
         
     Returns:
-        Новая версия (например "Build 6")
+        Новая версия (например "2.5" если из файла, или "1.6" если ручное)
     """
     try:
-        # Обработка старого формата X.Y
-        if '.' in current_version and 'Build' not in current_version:
+        # Обработка формата Build N (старый формат)
+        if 'Build' in current_version:
+            build_str = current_version.replace('Build', '').strip()
+            build_num = int(build_str)
+            # Конвертируем в новый формат X.Y
+            if manual_add:
+                return "1.1"  # Первое ручное добавление после конвертации
+            else:
+                return "2.0"  # Первый импорт из файла после конвертации
+        
+        # Обработка формата X.Y
+        if '.' in current_version:
             parts = current_version.split('.')
             major = int(parts[0])
             minor = int(parts[1]) if len(parts) > 1 else 0
-            # Конвертируем в Build (major * 100 + minor для сохранения истории)
-            build_num = major * 100 + minor + 1
-            return f"Build {build_num}"
-        
-        # Обработка формата Build N
-        if 'Build' in current_version:
-            build_str = current_version.replace('Build', '').strip()
-            build_num = int(build_str) + 1
-            return f"Build {build_num}"
+            
+            # Специальная обработка версии 0.0 (пустая база после очистки)
+            if major == 0 and minor == 0:
+                if manual_add:
+                    # Первое ручное добавление: 0.0 → 0.1
+                    return "0.1"
+                else:
+                    # Первый импорт из файла: 0.0 → 1.0
+                    return "1.0"
+            
+            if manual_add:
+                # Ручное добавление - увеличиваем Y
+                minor += 1
+            else:
+                # Импорт из файла - увеличиваем X, сбрасываем Y
+                major += 1
+                minor = 0
+            
+            return f"{major}.{minor}"
         
         # Пытаемся распарсить как число
-        build_num = int(current_version) + 1
-        return f"Build {build_num}"
+        num = int(current_version)
+        if manual_add:
+            return f"1.{num + 1}"
+        else:
+            return f"{num + 1}.0"
     except:
-        return "Build 1"
+        return "1.0"
+
+
+def set_database_version(new_version: str) -> bool:
+    """
+    Устанавливает версию БД вручную
+    
+    Args:
+        new_version: Новая версия в формате "X.Y"
+        
+    Returns:
+        True если успешно, False в случае ошибки
+    """
+    db_path = get_database_path()
+    
+    # Проверяем формат версии
+    if not new_version or '.' not in new_version:
+        print(f"❌ Неверный формат версии: {new_version}. Ожидается формат X.Y")
+        return False
+    
+    try:
+        parts = new_version.split('.')
+        major = int(parts[0])
+        minor = int(parts[1]) if len(parts) > 1 else 0
+        
+        if major < 0 or minor < 0:
+            print(f"❌ Версия должна быть >= 0.0")
+            return False
+        
+        # Загружаем базу данных
+        if not os.path.exists(db_path):
+            print(f"❌ База данных не найдена")
+            return False
+        
+        with open(db_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        old_version = data.get("metadata", {}).get("version", "1.0")
+        
+        # Обновляем версию
+        data["metadata"]["version"] = new_version
+        data["metadata"]["last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Добавляем запись в историю
+        history_entry = {
+            "version": new_version,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "action": "manual_version_change",
+            "components_added": 0,
+            "source": f"Ручная смена версии: {old_version} → {new_version}",
+            "previous_hash": data["metadata"].get("current_hash", ""),
+            "current_hash": data["metadata"].get("current_hash", ""),
+            "component_names": []
+        }
+        
+        if "history" not in data:
+            data["history"] = []
+        data["history"].insert(0, history_entry)
+        
+        # Сохраняем
+        with open(db_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        
+        print(f"✅ Версия БД изменена: {old_version} → {new_version}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка при изменении версии: {e}")
+        return False
 
 
 def _add_history_entry(structured_db: dict, action: str, source: Optional[str] = None, 
@@ -224,7 +317,7 @@ def load_component_database() -> Dict[str, str]:
         initial_hash = _calculate_database_hash(initial_components)
         structured_db = {
             "metadata": {
-                "version": "Build 1",
+                "version": "1.0",
                 "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "total_components": len(initial_components),
@@ -233,7 +326,7 @@ def load_component_database() -> Dict[str, str]:
                 "current_hash": initial_hash
             },
             "history": [{
-                "version": "Build 1",
+                "version": "1.0",
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "action": "initial_creation",
                 "components_added": len(initial_components),
@@ -274,7 +367,7 @@ def load_component_database() -> Dict[str, str]:
                     current_hash = _calculate_database_hash(data)
                     structured_db = {
                         "metadata": {
-                            "version": "Build 1",
+                            "version": "1.0",
                             "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "total_components": len(data),
@@ -283,7 +376,7 @@ def load_component_database() -> Dict[str, str]:
                             "current_hash": current_hash
                         },
                         "history": [{
-                            "version": "Build 1",
+                            "version": "1.0",
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "action": "conversion_from_old_format",
                             "components_added": len(data),
@@ -344,7 +437,7 @@ def save_component_database(database: Dict[str, str], action: str = "update",
                     old_hash = _calculate_database_hash(data) if data else ""
                     structured_db = {
                         "metadata": {
-                            "version": "Build 1",
+                            "version": "1.0",
                             "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "total_components": 0,
@@ -359,7 +452,7 @@ def save_component_database(database: Dict[str, str], action: str = "update",
         else:
             structured_db = {
                 "metadata": {
-                    "version": "Build 1",
+                    "version": "1.0",
                     "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "total_components": 0,
@@ -387,7 +480,9 @@ def save_component_database(database: Dict[str, str], action: str = "update",
     if previous_hash != new_hash and new_hash:
         # Инкрементируем версию
         old_version = structured_db["metadata"].get("version", "1.0")
-        new_version = _increment_version(old_version)
+        # Определяем тип инкремента: manual_add если ручное добавление, иначе импорт из файла
+        is_manual_add = (action == "manual_add")
+        new_version = _increment_version(old_version, manual_add=is_manual_add)
         
         # Обновляем метаданные
         structured_db["metadata"]["version"] = new_version
@@ -541,6 +636,63 @@ def format_history_tooltip() -> str:
         lines.append(f"\n... и еще {len(history) - 10} записей")
     
     return '\n'.join(lines)
+
+
+def clear_database() -> bool:
+    """
+    Очищает базу данных компонентов (создает новую пустую базу)
+    
+    Returns:
+        True если очистка успешна, False в случае ошибки
+    """
+    db_path = get_database_path()
+    
+    try:
+        # Создаем резервную копию перед очисткой
+        if os.path.exists(db_path):
+            backup_dir = os.path.join(os.path.dirname(db_path), "backups")
+            os.makedirs(backup_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = os.path.join(backup_dir, f"component_database_before_clear_{timestamp}.json")
+            shutil.copy2(db_path, backup_path)
+            print(f"✅ Резервная копия создана: {backup_path}")
+        
+        # Создаем новую пустую базу
+        empty_db = {
+            "metadata": {
+                "version": "0.0",
+                "created": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "total_components": 0,
+                "description": "База данных компонентов для BOM классификатора",
+                "previous_hash": "",
+                "current_hash": ""
+            },
+            "components": {},
+            "history": [
+                {
+                    "version": "0.0",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "action": "database_cleared",
+                    "components_added": 0,
+                    "source": "manual_clear",
+                    "previous_hash": "",
+                    "current_hash": "",
+                    "component_names": []
+                }
+            ]
+        }
+        
+        # Сохраняем пустую базу
+        with open(db_path, 'w', encoding='utf-8') as f:
+            json.dump(empty_db, f, ensure_ascii=False, indent=2)
+        
+        print(f"✅ База данных очищена: {db_path}")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка при очистке базы данных: {e}")
+        return False
 
 
 def get_database_stats() -> dict:

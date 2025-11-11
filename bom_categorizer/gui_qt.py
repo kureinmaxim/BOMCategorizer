@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QGridLayout, QGroupBox, QPushButton, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QSpinBox, QCheckBox, QTextEdit,
     QFileDialog, QMessageBox, QScrollArea, QFrame, QDialog, QMenuBar, QMenu,
-    QProgressDialog
+    QProgressDialog, QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PySide6.QtCore import Qt, Signal, QThread, QSize
 from PySide6.QtGui import QFont, QColor, QPalette, QAction
@@ -30,9 +30,12 @@ from .component_database import (
     add_component_to_database,
     get_database_path,
     get_database_stats,
+    get_database_history,
     export_database_to_excel,
     import_database_from_excel,
     backup_database,
+    clear_database,
+    set_database_version,
     is_first_run,
     initialize_database_from_template,
     format_history_tooltip
@@ -405,6 +408,23 @@ class BOMCategorizerMainWindow(QMainWindow):
         folder_action = QAction("📁 Открыть папку БД", self)
         folder_action.triggered.connect(self.open_database_folder)
         db_menu.addAction(folder_action)
+        
+        db_menu.addSeparator()
+        
+        # Посмотреть базу
+        view_action = QAction("👁️ Посмотреть базу", self)
+        view_action.triggered.connect(self.on_view_database)
+        db_menu.addAction(view_action)
+        
+        # Изменить версию БД
+        version_action = QAction("🔢 Изменить версию БД", self)
+        version_action.triggered.connect(self.on_change_database_version)
+        db_menu.addAction(version_action)
+        
+        # Очистить базу данных
+        clear_action = QAction("🗑️ Очистить базу данных", self)
+        clear_action.triggered.connect(self.on_clear_database)
+        db_menu.addAction(clear_action)
         
         db_menu.addSeparator()
         
@@ -1936,10 +1956,18 @@ class BOMCategorizerMainWindow(QMainWindow):
             tooltip_lines.append(f"Всего компонентов: {stats.get('total', 0)}")
             tooltip_lines.append(f"Последнее обновление: {metadata.get('last_updated', 'N/A')}")
             
-            # Добавляем хэш для отладки
-            current_hash = metadata.get('current_hash', 'N/A')
-            if current_hash and current_hash != 'N/A':
-                tooltip_lines.append(f"Хэш: {current_hash[:16]}...")
+            # Добавляем структуру по категориям
+            by_category = stats.get('by_category', {})
+            category_names = stats.get('category_names', {})
+            if by_category:
+                tooltip_lines.append(f"")
+                tooltip_lines.append(f"📋 Структура по категориям:")
+                tooltip_lines.append(f"─────────────────────────────")
+                # Сортируем по количеству (от большего к меньшему)
+                sorted_categories = sorted(by_category.items(), key=lambda x: x[1], reverse=True)
+                for cat_key, count in sorted_categories:
+                    cat_name = category_names.get(cat_key, cat_key)
+                    tooltip_lines.append(f"  {cat_name}: {count}")
             
             tooltip_lines.append(f"")
             
@@ -1959,7 +1987,11 @@ class BOMCategorizerMainWindow(QMainWindow):
                         'import_from_file': '📥 Импорт из файла',
                         'import_from_excel': '📊 Импорт из Excel',
                         'manual_add': '✍️ Ручное добавление',
-                        'update': '🔄 Обновление'
+                        'update': '🔄 Обновление',
+                        'manual_version_change': '🔢 Смена версии',
+                        'database_cleared': '🗑️ Очистка БД',
+                        'initial_creation': '🆕 Создание БД',
+                        'conversion_from_old_format': '🔄 Конвертация'
                     }.get(action, action)
                     
                     tooltip_lines.append(f"")
@@ -2151,6 +2183,243 @@ class BOMCategorizerMainWindow(QMainWindow):
                 "Ошибка",
                 f"Не удалось показать статистику базы данных:\n{str(e)}"
             )
+
+    def on_view_database(self):
+        """Показывает содержимое базы данных с историей формирования"""
+        try:
+            from .component_database import load_component_database
+            
+            # Загружаем базу данных
+            db = load_component_database()
+            stats = get_database_stats()
+            history = get_database_history()
+            metadata = stats.get('metadata', {})
+            
+            # Создаем диалог
+            dialog = QDialog(self)
+            dialog.setWindowTitle("👁️ Просмотр базы данных")
+            dialog.resize(900, 700)
+            
+            layout = QVBoxLayout()
+            
+            # Информация о базе данных
+            info_label = QLabel()
+            info_label.setProperty("class", "bold")
+            info_text = f"""
+            <h3>📊 Информация о базе данных</h3>
+            <p><b>Версия:</b> {metadata.get('version', 'N/A')}</p>
+            <p><b>Последнее обновление:</b> {metadata.get('last_updated', 'N/A')}</p>
+            <p><b>Всего компонентов:</b> {stats.get('total', 0)}</p>
+            <p><b>Путь:</b> {get_database_path()}</p>
+            """
+            info_label.setText(info_text)
+            layout.addWidget(info_label)
+            
+            # История формирования
+            history_group = QGroupBox("📜 История формирования базы данных")
+            history_layout = QVBoxLayout()
+            
+            if history:
+                # Создаем таблицу для истории
+                history_table = QTableWidget()
+                history_table.setColumnCount(5)
+                history_table.setHorizontalHeaderLabels(["Версия", "Дата/Время", "Действие", "Источник", "Добавлено"])
+                history_table.horizontalHeader().setStretchLastSection(False)
+                history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+                history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+                history_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+                history_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
+                history_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+                
+                # Маппинг действий на русские названия
+                action_names = {
+                    "initial_creation": "Создание БД",
+                    "conversion_from_old_format": "Конвертация из старого формата",
+                    "manual_add": "Ручное добавление",
+                    "import_from_file": "Импорт из файла",
+                    "import_from_excel": "Импорт из Excel",
+                    "update": "Обновление",
+                    "database_cleared": "Очистка БД",
+                    "manual_version_change": "Смена версии"
+                }
+                
+                # Заполняем таблицу
+                history_table.setRowCount(len(history))
+                for i, entry in enumerate(history):
+                    version_item = QTableWidgetItem(str(entry.get('version', 'N/A')))
+                    timestamp_item = QTableWidgetItem(entry.get('timestamp', ''))
+                    action = action_names.get(entry.get('action', ''), entry.get('action', ''))
+                    action_item = QTableWidgetItem(action)
+                    source_item = QTableWidgetItem(entry.get('source', '-'))
+                    added_item = QTableWidgetItem(str(entry.get('components_added', 0)))
+                    
+                    history_table.setItem(i, 0, version_item)
+                    history_table.setItem(i, 1, timestamp_item)
+                    history_table.setItem(i, 2, action_item)
+                    history_table.setItem(i, 3, source_item)
+                    history_table.setItem(i, 4, added_item)
+                
+                history_layout.addWidget(history_table)
+            else:
+                no_history_label = QLabel("История пуста")
+                history_layout.addWidget(no_history_label)
+            
+            history_group.setLayout(history_layout)
+            layout.addWidget(history_group)
+            
+            # Кнопки
+            button_layout = QHBoxLayout()
+            
+            export_btn = QPushButton("📤 Экспорт в Excel")
+            export_btn.clicked.connect(lambda: self.export_database())
+            button_layout.addWidget(export_btn)
+            
+            button_layout.addStretch()
+            
+            close_btn = QPushButton("Закрыть")
+            close_btn.clicked.connect(dialog.accept)
+            button_layout.addWidget(close_btn)
+            
+            layout.addLayout(button_layout)
+            dialog.setLayout(layout)
+            
+            dialog.exec()
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось открыть базу данных:\n{str(e)}"
+            )
+
+    def on_clear_database(self):
+        """Очищает базу данных компонентов"""
+        # Получаем текущую статистику
+        stats = get_database_stats()
+        total = stats.get('total', 0)
+        
+        # Подтверждение
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение очистки",
+            f"⚠️ Вы уверены, что хотите очистить базу данных?\n\n"
+            f"Текущее количество компонентов: {total}\n\n"
+            f"❗ Это действие создаст резервную копию старой базы,\n"
+            f"но все компоненты будут удалены из основной базы.\n\n"
+            f"Продолжить?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            try:
+                # Очищаем базу данных
+                success = clear_database()
+                
+                if success:
+                    # Обновляем информацию в футере
+                    self.update_database_info()
+                    
+                    self.log_text.append("\n✅ База данных успешно очищена!")
+                    self.log_text.append("   Резервная копия сохранена в папке backups\n")
+                    
+                    QMessageBox.information(
+                        self,
+                        "Успех",
+                        f"✅ База данных успешно очищена!\n\n"
+                        f"Удалено компонентов: {total}\n\n"
+                        f"Резервная копия старой базы сохранена в папке:\n"
+                        f"{os.path.join(os.path.dirname(get_database_path()), 'backups')}\n\n"
+                        f"Информация в футере обновлена!"
+                    )
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Ошибка",
+                        "❌ Не удалось очистить базу данных.\nПодробности в логе."
+                    )
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Ошибка",
+                    f"Не удалось очистить базу данных:\n{str(e)}"
+                )
+
+    def on_change_database_version(self):
+        """Диалог для ручного изменения версии БД"""
+        from PySide6.QtWidgets import QInputDialog, QLineEdit
+        
+        # Получаем текущую версию
+        stats = get_database_stats()
+        current_version = stats.get('metadata', {}).get('version', '1.0')
+        
+        # Показываем диалог ввода
+        text, ok = QInputDialog.getText(
+            self,
+            "Изменить версию БД",
+            f"Текущая версия: {current_version}\n\n"
+            f"Введите новую версию в формате X.Y:\n"
+            f"(X увеличивается при импорте из файлов,\n"
+            f"Y увеличивается при ручном добавлении элементов)\n"
+            f"Версия 0.0 означает пустую базу после очистки.",
+            QLineEdit.Normal,
+            current_version
+        )
+        
+        if ok and text:
+            # Проверяем формат
+            if '.' not in text:
+                QMessageBox.warning(
+                    self,
+                    "Неверный формат",
+                    "Версия должна быть в формате X.Y (например, 2.5)"
+                )
+                return
+            
+            try:
+                parts = text.split('.')
+                major = int(parts[0])
+                minor = int(parts[1]) if len(parts) > 1 else 0
+                
+                if major < 0 or minor < 0:
+                    QMessageBox.warning(
+                        self,
+                        "Неверное значение",
+                        "Версия должна быть >= 0.0"
+                    )
+                    return
+                
+                # Устанавливаем новую версию
+                success = set_database_version(text)
+                
+                if success:
+                    # Обновляем информацию в футере
+                    self.update_database_info()
+                    
+                    self.log_text.append(f"\n✅ Версия БД изменена: {current_version} → {text}\n")
+                    
+                    QMessageBox.information(
+                        self,
+                        "Успех",
+                        f"✅ Версия БД успешно изменена!\n\n"
+                        f"Старая версия: {current_version}\n"
+                        f"Новая версия: {text}\n\n"
+                        f"Запись добавлена в историю БД.\n"
+                        f"Информация в футере обновлена!"
+                    )
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Ошибка",
+                        "❌ Не удалось изменить версию БД.\nПодробности в логе."
+                    )
+                    
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Неверный формат",
+                    "Версия должна содержать числа (например, 2.5)"
+                )
 
     def export_database(self):
         """Экспорт базы данных в Excel"""

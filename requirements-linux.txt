@@ -1,0 +1,8 @@
+pandas
+openpyxl
+python-docx
+pytest
+pytest-html
+pytest-cov
+PySide6
+
