@@ -58,6 +58,8 @@ component_database.xlsx
 
 # Temporary files
 temp_installer/
+installer_active.iss
+TODO_PYSIDE6.md
 temp_for_classification.xlsx
 *.tmp
 *.temp
