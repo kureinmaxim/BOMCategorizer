@@ -13,17 +13,20 @@ import os
 import json
 import sys
 import platform
-from typing import Dict, Optional
+import re
+from datetime import datetime
+from typing import Dict, Optional, List
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QPushButton, QLabel, QLineEdit,
-    QListWidget, QListWidgetItem, QSpinBox, QCheckBox, QTextEdit,
+    QListWidget, QListWidgetItem, QSpinBox, QCheckBox, QTextEdit, QTextBrowser,
     QFileDialog, QMessageBox, QScrollArea, QFrame, QDialog, QMenuBar, QMenu,
-    QProgressDialog, QTableWidget, QTableWidgetItem, QHeaderView
+    QProgressDialog, QTableWidget, QTableWidgetItem, QHeaderView,
+    QAbstractItemView
 )
-from PySide6.QtCore import Qt, Signal, QThread, QSize
-from PySide6.QtGui import QFont, QColor, QPalette, QAction
+from PySide6.QtCore import Qt, Signal, QThread, QSize, QUrl
+from PySide6.QtGui import QFont, QColor, QPalette, QAction, QActionGroup, QKeySequence, QDragEnterEvent, QDropEvent, QCursor
 import subprocess
 
 from .component_database import (
@@ -264,6 +267,9 @@ class BOMCategorizerMainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        # Сохраняем ссылку на QApplication для масштабирования
+        self.app = QApplication.instance()
+
         # Загружаем конфигурацию
         self.cfg = load_config()
         ver = self.cfg.get("app_info", {}).get("version", "dev")
@@ -303,6 +309,30 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Тема интерфейса
         self.current_theme = self.cfg.get("ui", {}).get("theme", "dark")  # "dark" или "light"
 
+        # Настройки отображения
+        self.base_font_size = 12
+        self.scale_levels: List[float] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25]
+        ui_settings = self.cfg.get("ui", {})
+        self.scale_factor = ui_settings.get("scale_factor", 0.8)  # По умолчанию 80%
+        if self.scale_factor not in self.scale_levels:
+            self.scale_factor = 0.8  # По умолчанию 80%
+
+        self.current_view_mode = ui_settings.get("view_mode", "advanced")
+        if self.current_view_mode not in ("simple", "advanced", "expert"):
+            self.current_view_mode = "advanced"
+
+        # Дополнительные опции отображения
+        self.log_with_timestamps = bool(ui_settings.get("log_timestamps", False)) if self.current_view_mode == "expert" else False
+        self.auto_open_output = bool(ui_settings.get("auto_open_output", False)) if self.current_view_mode == "expert" else False
+
+        # Плейсхолдеры для элементов меню и секций
+        self.scale_actions: Dict[float, QAction] = {}
+        self.view_mode_actions: Dict[str, QAction] = {}
+        self.db_menu: Optional[QMenu] = None
+        self.mode_label: Optional[QLabel] = None
+        self.timestamp_checkbox: Optional[QCheckBox] = None
+        self.auto_open_output_checkbox: Optional[QCheckBox] = None
+
         # Применяем стили
         self._setup_styles()
 
@@ -312,17 +342,20 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Создаем меню
         self._create_menu()
 
+        # Применяем масштаб после создания всех виджетов
+        self.apply_scale_factor()
+
+        # Включаем поддержку Drag & Drop
+        self.setAcceptDrops(True)
+
         # Применяем блокировку интерфейса при необходимости
         if self.require_pin:
             self.lock_interface()
 
     def _setup_styles(self):
         """Настраивает стили приложения с поддержкой темной и светлой темы"""
-        # Устанавливаем системный шрифт с увеличенным размером
-        font = QFont(get_system_font(), 12)
-        self.setFont(font)
-
-        # Применяем тему
+        # Применяем масштаб (будет применен после создания UI)
+        # Тема применяется сразу
         self.apply_theme()
 
     def apply_theme(self):
@@ -353,26 +386,110 @@ class BOMCategorizerMainWindow(QMainWindow):
 
     def save_theme_preference(self):
         """Сохраняет выбор темы в конфигурационный файл"""
-        cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
-        try:
-            # Обновляем конфиг в памяти
-            if "ui" not in self.cfg:
-                self.cfg["ui"] = {}
-            self.cfg["ui"]["theme"] = self.current_theme
-            
-            # Сохраняем в файл
-            with open(cfg_path, "w", encoding="utf-8") as f:
-                json.dump(self.cfg, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Не удалось сохранить настройку темы: {e}")
+        self.save_ui_preferences()
 
     def _create_menu(self):
         """Создает меню приложения"""
         menubar = self.menuBar()
         
+        # Меню "Файл"
+        file_menu = menubar.addMenu("Файл")
+        
+        # Открыть файлы
+        open_action = QAction("📂 Открыть файлы", self)
+        open_action.setShortcut(QKeySequence("Ctrl+O"))
+        open_action.triggered.connect(self.on_add_files)
+        file_menu.addAction(open_action)
+        
+        file_menu.addSeparator()
+        
+        # Запустить обработку
+        run_action = QAction("🚀 Запустить обработку", self)
+        run_action.setShortcut(QKeySequence("Ctrl+R"))
+        run_action.triggered.connect(self.on_run)
+        file_menu.addAction(run_action)
+        
+        file_menu.addSeparator()
+        
+        # Выход
+        exit_action = QAction("🚪 Выход", self)
+        exit_action.setShortcut(QKeySequence("Ctrl+Q"))
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+        
         # Меню "Вид"
         view_menu = menubar.addMenu("Вид")
         
+        # Подменю масштаба
+        scale_menu = view_menu.addMenu("Масштабирование интерфейса")
+        scale_group = QActionGroup(self)
+        scale_group.setExclusive(True)
+
+        scale_labels = {
+            0.7: "Масштаб 70%",
+            0.8: "Масштаб 80% (по умолчанию)",
+            0.9: "Масштаб 90%",
+            1.0: "Масштаб 100%",
+            1.1: "Масштаб 110%",
+            1.25: "Масштаб 125%",
+        }
+
+        self.scale_actions.clear()
+        for factor in self.scale_levels:
+            label = scale_labels.get(factor, f"Масштаб {int(factor * 100)}%")
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked, f=factor: self.set_scale_factor(f))
+            scale_menu.addAction(action)
+            scale_group.addAction(action)
+            self.scale_actions[factor] = action
+
+        view_menu.addSeparator()
+
+        zoom_in_action = QAction("Увеличить масштаб", self)
+        zoom_in_action.setShortcuts([QKeySequence.ZoomIn, QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")])
+        zoom_in_action.triggered.connect(self.on_zoom_in)
+        view_menu.addAction(zoom_in_action)
+
+        zoom_out_action = QAction("Уменьшить масштаб", self)
+        # Используем несколько вариантов для надежности
+        zoom_out_action.setShortcuts([
+            QKeySequence.ZoomOut,  # Стандартная комбинация Qt
+            QKeySequence("Ctrl+-"),  # Прямое указание
+            QKeySequence("Ctrl+Minus"),  # Именованная клавиша
+        ])
+        zoom_out_action.triggered.connect(self.on_zoom_out)
+        view_menu.addAction(zoom_out_action)
+
+        reset_zoom_action = QAction("Сбросить масштаб (Ctrl+0)", self)
+        reset_zoom_action.setShortcut(QKeySequence("Ctrl+0"))
+        reset_zoom_action.triggered.connect(self.reset_scale)
+        view_menu.addAction(reset_zoom_action)
+
+        view_menu.addSeparator()
+
+        # Подменю режимов работы
+        mode_menu = view_menu.addMenu("Режим работы")
+        mode_group = QActionGroup(self)
+        mode_group.setExclusive(True)
+
+        mode_definitions = [
+            ("simple", "Простой режим (для начинающих)"),
+            ("advanced", "Расширенный режим (все функции)"),
+            ("expert", "Экспертный режим (дополнительные настройки)"),
+        ]
+
+        self.view_mode_actions.clear()
+        for key, label in mode_definitions:
+            action = QAction(label, self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda checked, m=key: self.set_view_mode(m))
+            mode_menu.addAction(action)
+            mode_group.addAction(action)
+            self.view_mode_actions[key] = action
+
+        view_menu.addSeparator()
+
         # Пункт переключения темы
         theme_action = QAction("🌓 Переключить тему", self)
         theme_action.setShortcut("Ctrl+T")
@@ -380,71 +497,89 @@ class BOMCategorizerMainWindow(QMainWindow):
         view_menu.addAction(theme_action)
         
         # Меню "База данных"
-        db_menu = menubar.addMenu("База данных")
+        self.db_menu = menubar.addMenu("База данных")
         
         # Статистика БД
         stats_action = QAction("📊 Статистика", self)
         stats_action.triggered.connect(self.show_database_stats)
-        db_menu.addAction(stats_action)
+        self.db_menu.addAction(stats_action)
         
         # Экспорт БД
         export_action = QAction("📤 Экспорт в Excel", self)
         export_action.triggered.connect(self.export_database)
-        db_menu.addAction(export_action)
+        self.db_menu.addAction(export_action)
         
         # Импорт БД
         import_action = QAction("📥 Импорт из Excel", self)
         import_action.triggered.connect(self.import_database)
-        db_menu.addAction(import_action)
+        self.db_menu.addAction(import_action)
         
-        db_menu.addSeparator()
+        self.db_menu.addSeparator()
         
         # Резервное копирование
         backup_action = QAction("💾 Резервное копирование", self)
         backup_action.triggered.connect(self.backup_database)
-        db_menu.addAction(backup_action)
+        self.db_menu.addAction(backup_action)
         
         # Открыть папку БД
         folder_action = QAction("📁 Открыть папку БД", self)
         folder_action.triggered.connect(self.open_database_folder)
-        db_menu.addAction(folder_action)
+        self.db_menu.addAction(folder_action)
         
-        db_menu.addSeparator()
+        self.db_menu.addSeparator()
         
         # Посмотреть базу
         view_action = QAction("👁️ Посмотреть базу", self)
         view_action.triggered.connect(self.on_view_database)
-        db_menu.addAction(view_action)
+        self.db_menu.addAction(view_action)
         
         # Изменить версию БД
         version_action = QAction("🔢 Изменить версию БД", self)
         version_action.triggered.connect(self.on_change_database_version)
-        db_menu.addAction(version_action)
+        self.db_menu.addAction(version_action)
         
         # Очистить базу данных
         clear_action = QAction("🗑️ Очистить базу данных", self)
         clear_action.triggered.connect(self.on_clear_database)
-        db_menu.addAction(clear_action)
+        self.db_menu.addAction(clear_action)
         
-        db_menu.addSeparator()
+        self.db_menu.addSeparator()
         
         # Заменить БД
         replace_action = QAction("🔄 Заменить БД", self)
         replace_action.triggered.connect(self.on_replace_database)
-        db_menu.addAction(replace_action)
+        self.db_menu.addAction(replace_action)
         
         # Добавить все из выходного файла
         import_output_action = QAction("📋 Добавить из выходного файла", self)
         import_output_action.triggered.connect(self.on_import_from_output)
-        db_menu.addAction(import_output_action)
+        self.db_menu.addAction(import_output_action)
         
         # Меню "Помощь"
         help_menu = menubar.addMenu("Помощь")
+        
+        # Контекстная помощь
+        context_help_action = QAction("❓ Контекстная помощь", self)
+        context_help_action.setShortcut(QKeySequence("F1"))
+        context_help_action.triggered.connect(self.show_context_help)
+        help_menu.addAction(context_help_action)
+        
+        # База знаний
+        knowledge_base_action = QAction("📚 База знаний", self)
+        knowledge_base_action.triggered.connect(self.show_knowledge_base)
+        help_menu.addAction(knowledge_base_action)
+        
+        help_menu.addSeparator()
         
         # О программе
         about_action = QAction("ℹ️ О программе", self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
+        
+        # Системная информация
+        system_info_action = QAction("💻 Системная информация", self)
+        system_info_action.triggered.connect(self.show_system_info)
+        help_menu.addAction(system_info_action)
 
     def _create_ui(self):
         """Создает элементы интерфейса"""
@@ -468,10 +603,18 @@ class BOMCategorizerMainWindow(QMainWindow):
         scroll_layout.setSpacing(8)
 
         # Добавляем секции
-        scroll_layout.addWidget(self._create_main_section())
-        scroll_layout.addWidget(self._create_comparison_section())
-        scroll_layout.addWidget(self._create_log_section())
-        # scroll_layout.addWidget(self._create_database_section())  # Перенесено в меню
+        self.main_section = self._create_main_section()
+        scroll_layout.addWidget(self.main_section)
+
+        self.comparison_section = self._create_comparison_section()
+        scroll_layout.addWidget(self.comparison_section)
+
+        self.log_section = self._create_log_section()
+        scroll_layout.addWidget(self.log_section)
+
+        self.expert_section = self._create_expert_tools_section()
+        scroll_layout.addWidget(self.expert_section)
+
         scroll_layout.addStretch()
         scroll_layout.addWidget(self._create_footer())
 
@@ -488,6 +631,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         buttons_layout.setSpacing(6)
 
         add_btn = QPushButton("➕ Добавить файлы")
+        add_btn.setToolTip("Добавить BOM файлы для обработки (F1 - справка)")
         add_btn.clicked.connect(self.on_add_files)
         self.lockable_widgets.append(add_btn)
         buttons_layout.addWidget(add_btn, 1)  # stretch factor 1
@@ -702,6 +846,17 @@ class BOMCategorizerMainWindow(QMainWindow):
     def _create_log_section(self) -> QGroupBox:
         """Создает секцию лога выполнения"""
         group = QGroupBox("Лог выполнения")
+        # Добавляем подсказку для заголовка группы
+        group.setToolTip(
+            "📝 <b>Лог выполнения</b><br><br>"
+            "Область для отображения информации о процессе обработки файлов.<br><br>"
+            "<b>Функции:</b><br>"
+            "• Показывает прогресс обработки<br>"
+            "• Отображает ошибки и предупреждения<br>"
+            "• Двойной клик открывает лог в текстовом редакторе<br>"
+            "• В экспертном режиме можно включить временные метки<br><br>"
+            "<b>Справка:</b> Наведите курсор на область лога и нажмите <b>F1</b> для получения подробной информации"
+        )
         layout = QVBoxLayout()
 
         self.log_text = QTextEdit()
@@ -710,10 +865,61 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Добавляем обработчик двойного клика для открытия в текстовом редакторе
         self.log_text.mouseDoubleClickEvent = lambda event: self.on_log_double_click(event)
         self.log_text.setCursor(Qt.PointingHandCursor)
-        self.log_text.setToolTip("Двойной клик - открыть в текстовом редакторе")
+        # Подробная подсказка с информацией о функциях и F1
+        self.log_text.setToolTip(
+            "📝 <b>Лог выполнения</b><br><br>"
+            "Отображает информацию о процессе обработки файлов:<br>"
+            "• Прогресс обработки<br>"
+            "• Ошибки и предупреждения<br>"
+            "• Результаты операций<br><br>"
+            "<b>Действия:</b><br>"
+            "• <b>Двойной клик</b> - открыть лог в текстовом редакторе<br>"
+            "• <b>F1</b> - получить подробную справку"
+        )
+
+        original_append = self.log_text.append
+
+        def append_with_mode(message):
+            text = "" if message is None else str(message)
+            if getattr(self, "log_with_timestamps", False) and text.strip():
+                leading_newlines = len(text) - len(text.lstrip('\n'))
+                prefix = "\n" * leading_newlines
+                body = text.lstrip('\n')
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                formatted_body = f"[{timestamp}] {body}" if body else f"[{timestamp}]"
+                original_append(prefix + formatted_body)
+            else:
+                original_append(text)
+
+        self._log_append_original = original_append
+        self.log_text.append = append_with_mode
+
         layout.addWidget(self.log_text)
 
         group.setLayout(layout)
+        return group
+
+    def _create_expert_tools_section(self) -> QGroupBox:
+        """Создает секцию экспертных инструментов"""
+        group = QGroupBox("Экспертные инструменты")
+        layout = QVBoxLayout()
+
+        description = QLabel("Дополнительные настройки для опытных пользователей.")
+        description.setWordWrap(True)
+        layout.addWidget(description)
+
+        self.timestamp_checkbox = QCheckBox("Добавлять временные метки в лог")
+        self.timestamp_checkbox.setToolTip("При включении все сообщения лога будут помечены временем.")
+        self.timestamp_checkbox.stateChanged.connect(self.on_toggle_log_timestamps)
+        layout.addWidget(self.timestamp_checkbox)
+
+        self.auto_open_output_checkbox = QCheckBox("Автоматически открывать папку результата после успешной обработки")
+        self.auto_open_output_checkbox.setToolTip("После удачной обработки BOM-файлов будет автоматически открыт проводник с результатом.")
+        self.auto_open_output_checkbox.stateChanged.connect(self.on_toggle_auto_open_output)
+        layout.addWidget(self.auto_open_output_checkbox)
+
+        group.setLayout(layout)
+        group.setVisible(False)
         return group
 
     def _create_database_section(self) -> QGroupBox:
@@ -808,19 +1014,34 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Добавляем tooltip с историей
             self.update_database_tooltip()
+            
+            # Делаем метку кликабельной для показа полной истории
+            self.db_info_label.setCursor(Qt.PointingHandCursor)
+            self.db_info_label.mousePressEvent = lambda event: self.on_view_database()
         except Exception:
             self.db_info_label = QLabel("БД: Не загружена")
 
         info_layout.addWidget(self.db_info_label)
 
+        # Индикатор режима
+        self.mode_label = QLabel()
+        self.mode_label.setStyleSheet("QLabel { color: #a6e3a1; font-weight: bold; }")
+        info_layout.addWidget(self.mode_label)
+
         info_layout.addStretch()
 
-        # Информация о расположении
+        # Информация о расположении (кликабельная метка)
         db_path = get_database_path()
         if "%APPDATA%" in db_path or "AppData" in db_path:
             location_label = QLabel("Установка (%APPDATA%)")
+            location_label.setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; } QLabel:hover { color: #74c7ec; }")
         else:
             location_label = QLabel("Локальная")
+            location_label.setStyleSheet("QLabel { color: #f9e2af; font-weight: bold; } QLabel:hover { color: #f9e2af; }")
+        
+        location_label.setCursor(Qt.PointingHandCursor)
+        location_label.setToolTip("Нажмите для открытия папки с выделенным файлом базы данных")
+        location_label.mousePressEvent = lambda event: self.on_open_db_folder()
         info_layout.addWidget(location_label)
 
         # Размер окна (кликабельная метка)
@@ -858,7 +1079,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Очистка списка файлов"""
         self.input_files.clear()
         self.update_listbox()
-        self.output_entry.setText("categorized.xlsx")
+        # Сбрасываем на имя по умолчанию (без пути)
+        self.output_xlsx = "categorized.xlsx"
+        self.output_entry.setText(self.output_xlsx)
+        # Сбрасываем количество экземпляров в 1
+        if hasattr(self, 'multiplier_spin'):
+            self.multiplier_spin.setValue(1)
 
     def on_file_selected(self):
         """Обработка выбора файла из списка"""
@@ -895,14 +1121,38 @@ class BOMCategorizerMainWindow(QMainWindow):
 
     def update_output_filename(self):
         """Автоматическое обновление имени выходного файла"""
+        if not self.input_files:
+            return
+        
+        # Получаем путь к папке первого файла
+        first_file_path = list(self.input_files.keys())[0]
+        folder_path = os.path.dirname(first_file_path)
+        
         if len(self.input_files) == 1:
-            file_path = list(self.input_files.keys())[0]
-            # Получаем путь к папке первого файла
-            folder_path = os.path.dirname(file_path)
-            base_name = os.path.splitext(os.path.basename(file_path))[0]
-            # Сохраняем в той же папке что и входной файл
-            self.output_xlsx = os.path.join(folder_path, f"{base_name}_categorized.xlsx")
-            self.output_entry.setText(self.output_xlsx)
+            # Для одного файла: {имя_файла}_categorized.xlsx
+            base_name = os.path.splitext(os.path.basename(first_file_path))[0]
+            output_name = f"{base_name}_categorized.xlsx"
+        else:
+            # Для нескольких файлов: categorized.xlsx
+            output_name = "categorized.xlsx"
+        
+        # Полный путь к выходному файлу
+        output_path = os.path.join(folder_path, output_name)
+        
+        # Проверяем существование файла и добавляем _1, _2, и т.д.
+        if os.path.exists(output_path):
+            base_name = os.path.splitext(output_name)[0]
+            ext = os.path.splitext(output_name)[1]
+            counter = 1
+            while True:
+                new_output_path = os.path.join(folder_path, f"{base_name}_{counter}{ext}")
+                if not os.path.exists(new_output_path):
+                    output_path = new_output_path
+                    break
+                counter += 1
+        
+        self.output_xlsx = output_path
+        self.output_entry.setText(self.output_xlsx)
 
     def on_pick_output(self):
         """Выбор выходного файла"""
@@ -1311,6 +1561,11 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Проверяем наличие нераспределенных элементов
             if output_file:
                 self.check_and_offer_interactive_classification(output_file)
+                if self.auto_open_output and os.path.exists(output_file):
+                    if self.reveal_in_file_manager(output_file, select=True):
+                        self.log_text.append("📂 Автоматически открыт проводник с результатом")
+                    else:
+                        self.log_text.append("⚠️ Не удалось автоматически открыть папку результата")
         else:
             QMessageBox.critical(
                 self,
@@ -1570,19 +1825,8 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Открыть папку с базой данных в проводнике с выделенным файлом"""
         try:
             db_path = get_database_path()
-            
-            # Открываем проводник с выделенным файлом базы данных
-            if platform.system() == 'Windows':
-                # /select открывает проводник и выделяет файл
-                subprocess.Popen(f'explorer /select,"{os.path.abspath(db_path)}"')
-            elif platform.system() == 'Darwin':  # macOS
-                # -R открывает Finder и выделяет файл
-                subprocess.Popen(['open', '-R', db_path])
-            else:  # Linux
-                # Открываем папку (в Linux нет стандартного способа выделить файл)
-                folder_path = os.path.dirname(db_path)
-                subprocess.Popen(['xdg-open', folder_path])
-                
+            if not self.reveal_in_file_manager(db_path, select=True):
+                raise RuntimeError("Не удалось открыть проводник.")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку:\n{str(e)}")
 
@@ -1935,6 +2179,11 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Обновляем tooltip
             self.update_database_tooltip()
+            
+            # Устанавливаем курсор и обработчик клика (если еще не установлены)
+            if not self.db_info_label.cursor().shape() == Qt.PointingHandCursor:
+                self.db_info_label.setCursor(Qt.PointingHandCursor)
+                self.db_info_label.mousePressEvent = lambda event: self.on_view_database()
         except Exception as e:
             self.db_info_label.setText("БД: Ошибка загрузки")
             print(f"Ошибка обновления информации БД: {e}")
@@ -2153,15 +2402,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         try:
             # Сохраняем размер окна
             self.save_window_size_to_config(self.width(), self.height())
-            
-            # Сохраняем тему (уже сохраняется в save_theme_preference, но на всякий случай)
-            if "ui" not in self.cfg:
-                self.cfg["ui"] = {}
-            self.cfg["ui"]["theme"] = self.current_theme
-            
-            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.cfg, f, ensure_ascii=False, indent=2)
+            self.save_ui_preferences()
         except Exception as e:
             print(f"⚠️ Не удалось сохранить настройки: {e}")
         
@@ -2172,11 +2413,65 @@ class BOMCategorizerMainWindow(QMainWindow):
     # Методы меню
     # =======================
 
+    def on_show_db_stats(self):
+        """Показывает статистику базы данных"""
+        self.show_database_stats()
+
     def show_database_stats(self):
         """Показывает статистику базы данных"""
         try:
-            dialog = DatabaseStatsDialog(self)
+            stats = get_database_stats()
+            db_path = get_database_path()
+            
+            # Формируем текст статистики
+            metadata = stats.get("metadata", {})
+            by_category = stats.get("by_category", {})
+            category_names = stats.get("category_names", {})
+            
+            stats_text = f"""📊 СТАТИСТИКА БАЗЫ ДАННЫХ
+
+📁 Расположение:
+{db_path}
+
+ℹ️ Общая информация:
+• Версия БД: {metadata.get('version', 'N/A')}
+• Создана: {metadata.get('created', 'N/A')}
+• Обновлена: {metadata.get('last_updated', 'N/A')}
+• Всего компонентов: {metadata.get('total_components', 0)}
+
+📦 Распределение по категориям:
+"""
+            
+            # Добавляем статистику по категориям
+            if by_category:
+                for cat_id, count in sorted(by_category.items(), key=lambda x: x[1], reverse=True):
+                    cat_name = category_names.get(cat_id, cat_id)
+                    stats_text += f"• {cat_name}: {count}\n"
+            else:
+                stats_text += "• Нет данных\n"
+            
+            # Создаем диалог
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Статистика базы данных")
+            dialog.resize(600, 500)
+            
+            layout = QVBoxLayout()
+            
+            # Текстовое поле с прокруткой
+            text_widget = QTextEdit()
+            text_widget.setReadOnly(True)
+            text_widget.setPlainText(stats_text)
+            text_widget.setFont(QFont("Consolas", 10))
+            layout.addWidget(text_widget)
+            
+            # Кнопка закрытия
+            close_btn = QPushButton("Закрыть")
+            close_btn.clicked.connect(dialog.accept)
+            layout.addWidget(close_btn)
+            
+            dialog.setLayout(layout)
             dialog.exec()
+            
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -2194,14 +2489,25 @@ class BOMCategorizerMainWindow(QMainWindow):
             stats = get_database_stats()
             history = get_database_history()
             metadata = stats.get('metadata', {})
-            
+
+            current_hash = metadata.get('current_hash', '') or ''
+            if current_hash:
+                formatted_hash = ' '.join(current_hash[i:i+16] for i in range(0, len(current_hash), 16))
+            else:
+                formatted_hash = '—'
+            previous_hash = metadata.get('previous_hash', '') or ''
+            if previous_hash:
+                formatted_prev_hash = ' '.join(previous_hash[i:i+16] for i in range(0, len(previous_hash), 16))
+            else:
+                formatted_prev_hash = '—'
+
             # Создаем диалог
             dialog = QDialog(self)
             dialog.setWindowTitle("👁️ Просмотр базы данных")
             dialog.resize(900, 700)
-            
+
             layout = QVBoxLayout()
-            
+
             # Информация о базе данных
             info_label = QLabel()
             info_label.setProperty("class", "bold")
@@ -2211,14 +2517,16 @@ class BOMCategorizerMainWindow(QMainWindow):
             <p><b>Последнее обновление:</b> {metadata.get('last_updated', 'N/A')}</p>
             <p><b>Всего компонентов:</b> {stats.get('total', 0)}</p>
             <p><b>Путь:</b> {get_database_path()}</p>
+            <p><b>Текущий хэш:</b> <code>{formatted_hash}</code></p>
+            <p><b>Предыдущий хэш:</b> <code>{formatted_prev_hash}</code></p>
             """
             info_label.setText(info_text)
             layout.addWidget(info_label)
-            
+
             # История формирования
             history_group = QGroupBox("📜 История формирования базы данных")
             history_layout = QVBoxLayout()
-            
+
             if history:
                 # Создаем таблицу для истории
                 history_table = QTableWidget()
@@ -2230,7 +2538,44 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
                 history_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Stretch)
                 history_table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-                
+                history_table.horizontalHeader().setHighlightSections(False)
+                history_table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+
+                history_table.verticalHeader().setVisible(False)
+                history_table.verticalHeader().setDefaultSectionSize(28)
+                history_table.setAlternatingRowColors(True)
+                history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+                history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+                history_table.setSelectionMode(QAbstractItemView.SingleSelection)
+                history_table.setFocusPolicy(Qt.NoFocus)
+                history_table.setWordWrap(False)
+                history_table.setShowGrid(False)
+                history_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+                history_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+                history_table.setStyleSheet("""
+                    QTableWidget {
+                        background-color: #1f2335;
+                        alternate-background-color: #262a3d;
+                        color: #cdd6f4;
+                        border: 1px solid #2e3247;
+                        gridline-color: #2e3247;
+                    }
+                    QHeaderView::section {
+                        background-color: #313244;
+                        color: #f5e0dc;
+                        padding: 6px 8px;
+                        border: none;
+                        font-weight: 600;
+                    }
+                    QTableWidget::item {
+                        padding: 4px 6px;
+                    }
+                    QTableWidget::item:selected {
+                        background-color: #3b4376;
+                        color: #f8faff;
+                    }
+                """)
+
                 # Маппинг действий на русские названия
                 action_names = {
                     "initial_creation": "Создание БД",
@@ -2242,31 +2587,36 @@ class BOMCategorizerMainWindow(QMainWindow):
                     "database_cleared": "Очистка БД",
                     "manual_version_change": "Смена версии"
                 }
-                
+
                 # Заполняем таблицу
                 history_table.setRowCount(len(history))
                 for i, entry in enumerate(history):
                     version_item = QTableWidgetItem(str(entry.get('version', 'N/A')))
+                    version_item.setTextAlignment(Qt.AlignCenter)
                     timestamp_item = QTableWidgetItem(entry.get('timestamp', ''))
+                    timestamp_item.setTextAlignment(Qt.AlignCenter)
                     action = action_names.get(entry.get('action', ''), entry.get('action', ''))
                     action_item = QTableWidgetItem(action)
-                    source_item = QTableWidgetItem(entry.get('source', '-'))
+                    source_value = entry.get('source', '-')
+                    source_item = QTableWidgetItem(source_value)
+                    source_item.setToolTip(source_value)
                     added_item = QTableWidgetItem(str(entry.get('components_added', 0)))
-                    
+                    added_item.setTextAlignment(Qt.AlignCenter)
+
                     history_table.setItem(i, 0, version_item)
                     history_table.setItem(i, 1, timestamp_item)
                     history_table.setItem(i, 2, action_item)
                     history_table.setItem(i, 3, source_item)
                     history_table.setItem(i, 4, added_item)
-                
+
                 history_layout.addWidget(history_table)
             else:
                 no_history_label = QLabel("История пуста")
                 history_layout.addWidget(no_history_label)
-            
+
             history_group.setLayout(history_layout)
             layout.addWidget(history_group)
-            
+
             # Кнопки
             button_layout = QHBoxLayout()
             
@@ -2519,24 +2869,10 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Открывает папку с базой данных в проводнике с выделенным файлом"""
         try:
             db_path = get_database_path()
-
-            # Открываем проводник с выделенным файлом базы данных
-            if platform.system() == 'Windows':
-                # /select открывает проводник и выделяет файл
-                subprocess.Popen(f'explorer /select,"{os.path.abspath(db_path)}"')
-            elif platform.system() == 'Darwin':  # macOS
-                # -R открывает Finder и выделяет файл
-                subprocess.Popen(['open', '-R', db_path])
-            else:  # Linux
-                # Открываем папку (в Linux нет стандартного способа выделить файл)
-                db_dir = os.path.dirname(db_path)
-                subprocess.Popen(['xdg-open', db_dir])
+            if not self.reveal_in_file_manager(db_path, select=True):
+                raise RuntimeError("Не удалось открыть проводник.")
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Ошибка",
-                f"Не удалось открыть папку:\n{str(e)}"
-            )
+            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку:\n{str(e)}")
 
     def show_about(self):
         """Показывает информацию о программе"""
@@ -2547,28 +2883,873 @@ class BOMCategorizerMainWindow(QMainWindow):
 <h2>BOM Categorizer {edition}</h2>
 <p><b>Версия:</b> {ver}</p>
 <p><b>Разработчик:</b> Куреин М.Н. / Kurein M.N.</p>
-<p><b>Дата:</b> 08.11.2025</p>
+<p><b>Дата выпуска:</b> {self.cfg.get('app_info', {}).get('release_date', 'N/A')}</p>
 
 <p><b>Возможности:</b></p>
 <ul>
 <li>📋 Обработка файлов: XLSX, DOCX, TXT</li>
 <li>🤖 Автоматическая классификация компонентов</li>
 <li>🎨 Форматирование и сортировка</li>
-<li>🗄️ База данных компонентов</li>
+<li>🗄️ База данных компонентов с версионированием</li>
 <li>🖥️ Современный темный/светлый интерфейс</li>
 <li>🔒 PIN защита</li>
 <li>💾 Экспорт в Excel и TXT</li>
+<li>📊 Сравнение BOM файлов</li>
+<li>🔍 Контекстная помощь (F1)</li>
 </ul>
 
 <p><b>Горячие клавиши:</b></p>
 <ul>
-<li>Ctrl+T - Переключить тему</li>
+<li><b>Ctrl+O</b> - Открыть файлы</li>
+<li><b>Ctrl+R</b> - Запустить обработку</li>
+<li><b>Ctrl+Q</b> - Выход</li>
+<li><b>F1</b> - Контекстная помощь</li>
+<li><b>Ctrl+T</b> - Переключить тему</li>
+<li><b>Ctrl+Plus/Minus</b> - Изменить масштаб</li>
+<li><b>Ctrl+0</b> - Сбросить масштаб</li>
 </ul>
+
+<p><b>Drag & Drop:</b></p>
+<p>Перетащите файлы (XLSX, DOCX, DOC, TXT) прямо в окно приложения для быстрого добавления.</p>
+
+<p><b>Лицензия:</b></p>
+<p style="font-size: 10pt;">
+Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
+Все права защищены.<br><br>
+Данное программное обеспечение предоставляется "как есть", без каких-либо явных или подразумеваемых гарантий, включая, но не ограничиваясь гарантиями товарной пригодности, пригодности для определенной цели и отсутствия нарушений прав.<br><br>
+В случае возникновения вопросов или проблем обращайтесь к разработчику.
+</p>
 
 <p style="color: #7287fd;"><b>Modern Edition</b> на основе PySide6 (Qt)</p>
         """
 
-        QMessageBox.about(self, "О программе", about_text)
+        # Создаем кастомный диалог для поддержки кликабельных ссылок
+        dialog = QDialog(self)
+        dialog.setWindowTitle("О программе")
+        dialog.resize(600, 650)
+        
+        layout = QVBoxLayout()
+        
+        # Текстовая область (QTextBrowser поддерживает ссылки по умолчанию)
+        text_widget = QTextBrowser()
+        text_widget.setOpenExternalLinks(True)  # Разрешаем открытие внешних ссылок
+        text_widget.setHtml(about_text)
+        layout.addWidget(text_widget)
+        
+        # GitHub ссылка
+        github_layout = QHBoxLayout()
+        github_label = QLabel('<a href="https://github.com/kureinmaxim/BOMCategorizer" style="color: #0066cc; font-weight: bold; font-size: 14px; text-decoration: underline;">🔗 GitHub репозиторий</a>')
+        github_label.setOpenExternalLinks(True)
+        github_label.setTextInteractionFlags(Qt.LinksAccessibleByMouse | Qt.LinksAccessibleByKeyboard)
+        github_layout.addStretch()
+        github_layout.addWidget(github_label)
+        github_layout.addStretch()
+        layout.addLayout(github_layout)
+        
+        # Кнопка закрытия
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        layout.addWidget(close_btn)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+
+    def show_context_help(self):
+        """Показывает контекстную помощь для текущего элемента"""
+        # Определяем виджет под курсором мыши (более точный способ)
+        cursor_pos = QCursor.pos()
+        widget_under_cursor = QApplication.widgetAt(cursor_pos)
+        
+        # Если виджет под курсором не найден, пробуем виджет с фокусом
+        if widget_under_cursor is None:
+            widget_under_cursor = self.focusWidget()
+        
+        # Если все еще нет, пробуем найти родительский виджет
+        if widget_under_cursor is None:
+            widget_under_cursor = self
+        
+        help_text = self._get_context_help(widget_under_cursor)
+        
+        if help_text:
+            QMessageBox.information(
+                self,
+                "Контекстная помощь",
+                help_text
+            )
+        else:
+            # Общая справка, если не найдена помощь для элемента
+            QMessageBox.information(
+                self,
+                "Контекстная помощь",
+                "📖 <b>Контекстная помощь</b><br><br>"
+                "Наведите курсор на элемент интерфейса и нажмите <b>F1</b> для получения справки.<br><br>"
+                "Или выберите элемент и нажмите <b>F1</b> для получения подробной информации.<br><br>"
+                "<b>Доступные элементы с помощью:</b><br>"
+                "• Кнопки (Добавить файлы, Запустить обработку, и т.д.)<br>"
+                "• Поля ввода<br>"
+                "• Списки файлов<br>"
+                "• Область лога<br>"
+                "• Меню и пункты меню"
+            )
+    
+    def _get_context_help(self, widget) -> str:
+        """Возвращает текст помощи для конкретного виджета"""
+        if widget is None:
+            return ""
+        
+        widget_type = type(widget).__name__
+        widget_text = ""
+        widget_object_name = widget.objectName() if hasattr(widget, 'objectName') else ""
+        
+        # Пытаемся получить текст из виджета разными способами
+        if hasattr(widget, 'text'):
+            widget_text = widget.text()
+        elif hasattr(widget, 'toolTip'):
+            widget_text = widget.toolTip()
+        elif hasattr(widget, 'windowTitle'):
+            widget_text = widget.windowTitle()
+        elif hasattr(widget, 'placeholderText'):
+            widget_text = widget.placeholderText()
+        
+        # Если текст пустой, пробуем получить из родительского виджета (для кнопок в меню)
+        if not widget_text and hasattr(widget, 'parent'):
+            parent = widget.parent()
+            if parent and hasattr(parent, 'text'):
+                widget_text = parent.text()
+        
+        # Нормализуем текст (убираем эмодзи и лишние пробелы)
+        widget_text_clean = widget_text.strip()
+        # Убираем эмодзи для поиска
+        widget_text_clean = re.sub(r'[^\w\s]', '', widget_text_clean).strip()
+        
+        # База знаний для различных элементов
+        help_map = {
+            'QPushButton': {
+                'Добавить файлы': '📂 <b>Добавить файлы</b><br><br>'
+                    'Добавляет BOM файлы для обработки. Поддерживаются форматы:<br>'
+                    '• Excel (.xlsx) - основной формат<br>'
+                    '• Word (.docx, .doc) - автоматически конвертируется<br>'
+                    '• Текст (.txt) - простой текстовый формат<br><br>'
+                    'Можно выбрать несколько файлов одновременно.<br>'
+                    'Также можно перетащить файлы прямо в окно приложения.<br><br>'
+                    '<b>Горячая клавиша:</b> Ctrl+O',
+                '➕ Добавить файлы': '📂 <b>Добавить файлы</b><br><br>'
+                    'Добавляет BOM файлы для обработки. Поддерживаются форматы:<br>'
+                    '• Excel (.xlsx) - основной формат<br>'
+                    '• Word (.docx, .doc) - автоматически конвертируется<br>'
+                    '• Текст (.txt) - простой текстовый формат<br><br>'
+                    'Можно выбрать несколько файлов одновременно.<br>'
+                    'Также можно перетащить файлы прямо в окно приложения.<br><br>'
+                    '<b>Горячая клавиша:</b> Ctrl+O',
+                '🗑️ Очистить список': '🗑️ <b>Очистить список</b><br><br>'
+                    'Удаляет все файлы из списка обработки.<br>'
+                    'Количество экземпляров для каждого файла сбрасывается.',
+                'Очистить список': '🗑️ <b>Очистить список</b><br><br>'
+                    'Удаляет все файлы из списка обработки.<br>'
+                    'Количество экземпляров для каждого файла сбрасывается.',
+                '▶️ Запустить обработку': '🚀 <b>Запустить обработку</b><br><br>'
+                    'Начинает обработку выбранных BOM файлов с автоматической классификацией компонентов.<br><br>'
+                    '<b>Процесс:</b><br>'
+                    '1. Конвертация .doc файлов в .docx (если нужно)<br>'
+                    '2. Парсинг BOM файлов<br>'
+                    '3. Автоматическая классификация по базе данных<br>'
+                    '4. Создание выходного Excel файла с категориями<br><br>'
+                    '<b>Горячая клавиша:</b> Ctrl+R',
+                '🚀 Запустить обработку': '🚀 <b>Запустить обработку</b><br><br>'
+                    'Начинает обработку выбранных BOM файлов с автоматической классификацией компонентов.<br><br>'
+                    '<b>Процесс:</b><br>'
+                    '1. Конвертация .doc файлов в .docx (если нужно)<br>'
+                    '2. Парсинг BOM файлов<br>'
+                    '3. Автоматическая классификация по базе данных<br>'
+                    '4. Создание выходного Excel файла с категориями<br><br>'
+                    '<b>Горячая клавиша:</b> Ctrl+R',
+                'Запустить обработку': '🚀 <b>Запустить обработку</b><br><br>'
+                    'Начинает обработку выбранных BOM файлов с автоматической классификацией компонентов.<br><br>'
+                    '<b>Процесс:</b><br>'
+                    '1. Конвертация .doc файлов в .docx (если нужно)<br>'
+                    '2. Парсинг BOM файлов<br>'
+                    '3. Автоматическая классификация по базе данных<br>'
+                    '4. Создание выходного Excel файла с категориями<br><br>'
+                    '<b>Горячая клавиша:</b> Ctrl+R',
+                '🔄 Интерактивная классификация': '🎯 <b>Интерактивная классификация</b><br><br>'
+                    'Открывает диалог для ручной классификации нераспределенных компонентов.<br><br>'
+                    '<b>Использование:</b><br>'
+                    '1. Выберите компонент из списка<br>'
+                    '2. Выберите категорию<br>'
+                    '3. Компонент будет добавлен в базу данных<br>'
+                    '4. Повторите для всех нераспределенных компонентов',
+                'Интерактивная классификация': '🎯 <b>Интерактивная классификация</b><br><br>'
+                    'Открывает диалог для ручной классификации нераспределенных компонентов.<br><br>'
+                    '<b>Использование:</b><br>'
+                    '1. Выберите компонент из списка<br>'
+                    '2. Выберите категорию<br>'
+                    '3. Компонент будет добавлен в базу данных<br>'
+                    '4. Повторите для всех нераспределенных компонентов',
+                '⚡ Сравнить файлы': '🔍 <b>Сравнить файлы</b><br><br>'
+                    'Сравнивает два BOM файла и показывает различия.<br><br>'
+                    '<b>Требования:</b><br>'
+                    '• Оба файла должны быть уже обработаны (с категориями)<br>'
+                    '• Если файлы не обработаны, появится предупреждение<br><br>'
+                    'Результат покажет добавленные, удаленные и измененные компоненты.',
+                'Сравнить файлы': '🔍 <b>Сравнить файлы</b><br><br>'
+                    'Сравнивает два BOM файла и показывает различия.<br><br>'
+                    '<b>Требования:</b><br>'
+                    '• Оба файла должны быть уже обработаны (с категориями)<br>'
+                    '• Если файлы не обработаны, появится предупреждение<br><br>'
+                    'Результат покажет добавленные, удаленные и измененные компоненты.',
+                'Выбрать': '📁 <b>Выбрать файл</b><br><br>'
+                    'Открывает диалог выбора файла для сохранения результата обработки.',
+            },
+            'QLineEdit': {
+                'Выходной файл': '📄 <b>Выходной файл</b><br><br>'
+                    'Имя файла для сохранения результата обработки.<br><br>'
+                    '<b>По умолчанию:</b><br>'
+                    '• Для одного файла: {имя_файла}_categorized.xlsx<br>'
+                    '• Для нескольких файлов: categorized.xlsx<br>'
+                    '• Сохраняется в папке первого входного файла<br>'
+                    '• Если файл существует, добавляется _1, _2 и т.д.',
+            },
+            'QListWidget': {
+                '': '📋 <b>Список файлов</b><br><br>'
+                    'Список выбранных файлов для обработки.<br><br>'
+                    '<b>Действия:</b><br>'
+                    '• Выберите файл для изменения количества экземпляров<br>'
+                    '• Двойной клик открывает диалог изменения количества<br>'
+                    '• Файлы можно удалить через контекстное меню',
+            },
+            'QTextEdit': {
+                'Лог выполнения': '📝 <b>Лог выполнения</b><br><br>'
+                    'Отображает информацию о процессе обработки файлов.<br><br>'
+                    '<b>Функции:</b><br>'
+                    '• Показывает прогресс обработки<br>'
+                    '• Отображает ошибки и предупреждения<br>'
+                    '• Двойной клик открывает лог в текстовом редакторе<br>'
+                    '• В экспертном режиме можно включить временные метки',
+            },
+            'QTextBrowser': {
+                '': '📖 <b>Текстовая область</b><br><br>'
+                    'Область для отображения текстовой информации с поддержкой HTML и ссылок.',
+            },
+            'QLabel': {
+                '': '🏷️ <b>Метка</b><br><br>'
+                    'Текстовая метка для отображения информации или подсказок.',
+            },
+        }
+        
+        # Ищем помощь для конкретного виджета по тексту
+        if widget_type in help_map:
+            # Сначала ищем по полному тексту
+            if widget_text in help_map[widget_type]:
+                return help_map[widget_type][widget_text]
+            # Затем ищем по очищенному тексту
+            if widget_text_clean in help_map[widget_type]:
+                return help_map[widget_type][widget_text_clean]
+            # Ищем частичное совпадение
+            for key, value in help_map[widget_type].items():
+                if key and (key.lower() in widget_text.lower() or widget_text.lower() in key.lower()):
+                    return value
+            # Если есть общая помощь для типа виджета
+            if '' in help_map[widget_type]:
+                return help_map[widget_type]['']
+        
+        # Проверяем, является ли это кнопкой меню
+        if widget_type == 'QAction':
+            action_text = widget.text() if hasattr(widget, 'text') else ""
+            if action_text:
+                # Ищем в базе знаний по тексту действия
+                for key, value in help_map.get('QPushButton', {}).items():
+                    if key.lower() in action_text.lower() or action_text.lower() in key.lower():
+                        return value
+        
+        # Общая помощь по типу виджета
+        general_help = {
+            'QPushButton': '🔘 <b>Кнопка</b><br><br>Кнопка для выполнения действия. Нажмите для активации.',
+            'QLineEdit': '📝 <b>Поле ввода</b><br><br>Поле ввода текста. Введите значение или используйте кнопку "Выбрать..." для выбора файла.',
+            'QSpinBox': '🔢 <b>Числовое поле</b><br><br>Поле для ввода числового значения. Используйте стрелки или введите значение вручную.',
+            'QCheckBox': '☑️ <b>Флажок</b><br><br>Флажок для включения/выключения опции.',
+            'QListWidget': '📋 <b>Список</b><br><br>Список элементов. Выберите элемент для работы с ним.',
+            'QTextEdit': '📄 <b>Текстовое поле</b><br><br>Текстовое поле для отображения и редактирования информации.',
+            'QMenu': '📋 <b>Меню</b><br><br>Меню для доступа к функциям приложения.',
+            'QMenuBar': '📋 <b>Строка меню</b><br><br>Главное меню приложения с разделами: Файл, Вид, База данных, Помощь.',
+        }
+        
+        if widget_type in general_help:
+            return general_help[widget_type]
+        
+        # Если ничего не найдено, возвращаем информацию о виджете
+        widget_info = f"<b>{widget_type}</b>"
+        if widget_text:
+            widget_info += f"<br><b>Текст:</b> {widget_text}"
+        if widget_object_name:
+            widget_info += f"<br><b>Имя:</b> {widget_object_name}"
+        widget_info += "<br><br>Для этого элемента пока нет подробной справки."
+        
+        return widget_info
+    
+    def show_knowledge_base(self):
+        """Показывает базу знаний с поиском"""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("📚 База знаний")
+        dialog.resize(800, 600)
+        
+        layout = QVBoxLayout()
+        
+        # Поле поиска
+        search_layout = QHBoxLayout()
+        search_label = QLabel("🔍 Поиск:")
+        search_input = QLineEdit()
+        search_input.setPlaceholderText("Введите ключевое слово для поиска...")
+        search_button = QPushButton("Найти")
+        
+        search_layout.addWidget(search_label)
+        search_layout.addWidget(search_input)
+        search_layout.addWidget(search_button)
+        layout.addLayout(search_layout)
+        
+        # Область с результатами
+        results_text = QTextEdit()
+        results_text.setReadOnly(True)
+        results_text.setFont(QFont("Consolas", 10))
+        layout.addWidget(results_text)
+        
+        # Кнопки
+        button_layout = QHBoxLayout()
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        button_layout.addStretch()
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+        
+        # База знаний
+        knowledge_base = {
+            'обработка': {
+                'title': 'Обработка BOM файлов',
+                'content': '''
+<b>Как обработать BOM файлы:</b>
+1. Нажмите "➕ Добавить файлы" и выберите файлы (XLSX, DOCX, TXT)
+2. Укажите количество экземпляров для каждого файла (если нужно)
+3. Выберите выходной файл (по умолчанию сохраняется в папке первого файла)
+4. Нажмите "🚀 Запустить обработку"
+
+<b>Поддерживаемые форматы:</b>
+• Excel (.xlsx) - основной формат
+• Word (.docx, .doc) - автоматически конвертируется
+• Текст (.txt) - простой текстовый формат
+
+<b>Результат:</b>
+Создается Excel файл с листами по категориям компонентов.
+'''
+            },
+            'классификация': {
+                'title': 'Классификация компонентов',
+                'content': '''
+<b>Автоматическая классификация:</b>
+Компоненты автоматически классифицируются по базе данных.
+
+<b>Интерактивная классификация:</b>
+Если есть нераспределенные компоненты:
+1. После обработки откроется диалог
+2. Выберите компонент из списка
+3. Выберите категорию
+4. Компонент будет добавлен в базу данных
+
+<b>Категории:</b>
+• Резисторы, Конденсаторы, Индуктивности
+• Микросхемы, Диоды, Транзисторы
+• Разъемы, Механика, Прочее
+'''
+            },
+            'база данных': {
+                'title': 'База данных компонентов',
+                'content': '''
+<b>Управление базой данных:</b>
+• <b>Статистика</b> - просмотр информации о БД
+• <b>Экспорт в Excel</b> - сохранение БД для редактирования
+• <b>Импорт из Excel</b> - загрузка БД из файла
+• <b>Резервное копирование</b> - создание бэкапа
+• <b>Посмотреть базу</b> - просмотр истории изменений
+• <b>Очистить базу</b> - удаление всех компонентов
+
+<b>Версионирование:</b>
+База данных использует версионирование X.Y:
+• X увеличивается при импорте из файлов
+• Y увеличивается при ручном добавлении
+'''
+            },
+            'сравнение': {
+                'title': 'Сравнение BOM файлов',
+                'content': '''
+<b>Как сравнить файлы:</b>
+1. Выберите первый файл (базовый)
+2. Выберите второй файл (новый)
+3. Укажите файл результата
+4. Нажмите "⚡ Сравнить файлы"
+
+<b>Результат:</b>
+Создается Excel файл с листами:
+• "Добавлено" - новые компоненты
+• "Удалено" - удаленные компоненты
+• "Изменено" - измененные компоненты
+'''
+            },
+            'масштаб': {
+                'title': 'Масштабирование интерфейса',
+                'content': '''
+<b>Изменение масштаба:</b>
+• Меню "Вид" → "Масштабирование интерфейса"
+• Горячие клавиши: Ctrl+Plus, Ctrl+Minus, Ctrl+0
+
+<b>Доступные масштабы:</b>
+70%, 80%, 90%, 100%, 110%, 125%
+
+Масштаб сохраняется в настройках.
+'''
+            },
+            'режимы': {
+                'title': 'Режимы работы',
+                'content': '''
+<b>Простой режим:</b>
+Упрощенный интерфейс для начинающих.
+Скрыты: сравнение файлов, лог, меню базы данных.
+
+<b>Расширенный режим:</b>
+Все функции доступны (по умолчанию).
+
+<b>Экспертный режим:</b>
+Дополнительные настройки:
+• Временные метки в логе
+• Автоматическое открытие папки результата
+'''
+            },
+        }
+        
+        def update_results(query=""):
+            """Обновляет результаты поиска"""
+            if not query.strip():
+                # Показываем все статьи
+                html = "<h2>📚 База знаний</h2><br>"
+                html += "<p>Введите запрос в поле поиска или выберите тему ниже:</p><br>"
+                for key, article in knowledge_base.items():
+                    html += f'<h3>{article["title"]}</h3>'
+                    html += f'<p>{article["content"]}</p>'
+                    html += "<hr>"
+            else:
+                # Поиск по ключевым словам
+                query_lower = query.lower()
+                html = f"<h2>🔍 Результаты поиска: '{query}'</h2><br>"
+                found = False
+                for key, article in knowledge_base.items():
+                    if query_lower in key.lower() or query_lower in article['title'].lower() or query_lower in article['content'].lower():
+                        found = True
+                        html += f'<h3>{article["title"]}</h3>'
+                        html += f'<p>{article["content"]}</p>'
+                        html += "<hr>"
+                if not found:
+                    html += "<p>Ничего не найдено. Попробуйте другие ключевые слова.</p>"
+            
+            results_text.setHtml(html)
+        
+        def on_search():
+            update_results(search_input.text())
+        
+        search_button.clicked.connect(on_search)
+        search_input.returnPressed.connect(on_search)
+        
+        # Показываем все статьи при открытии
+        update_results()
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+    
+    def show_system_info(self):
+        """Показывает системную информацию для диагностики"""
+        import sys
+        import platform
+        
+        # Собираем информацию о системе
+        system_info = f"""
+<h2>💻 Системная информация</h2>
+
+<h3>Операционная система:</h3>
+<p><b>Платформа:</b> {platform.system()} {platform.release()}</p>
+<p><b>Версия:</b> {platform.version()}</p>
+<p><b>Архитектура:</b> {platform.machine()}</p>
+<p><b>Процессор:</b> {platform.processor()}</p>
+
+<h3>Python:</h3>
+<p><b>Версия:</b> {sys.version.split()[0]}</p>
+<p><b>Путь к интерпретатору:</b> {sys.executable}</p>
+<p><b>Платформа Python:</b> {platform.python_implementation()} {platform.python_version()}</p>
+
+<h3>Приложение:</h3>
+<p><b>Версия:</b> {self.cfg.get('app_info', {}).get('version', 'N/A')}</p>
+<p><b>Редакция:</b> {self.cfg.get('app_info', {}).get('edition', 'N/A')}</p>
+<p><b>Тема:</b> {self.current_theme}</p>
+<p><b>Масштаб:</b> {int(self.scale_factor * 100)}%</p>
+<p><b>Режим:</b> {self.current_view_mode}</p>
+
+<h3>База данных:</h3>
+"""
+        try:
+            stats = get_database_stats()
+            metadata = stats.get('metadata', {})
+            system_info += f"""
+<p><b>Версия БД:</b> {metadata.get('version', 'N/A')}</p>
+<p><b>Компонентов:</b> {stats.get('total', 0)}</p>
+<p><b>Путь:</b> {get_database_path()}</p>
+"""
+        except:
+            system_info += "<p>Не удалось загрузить информацию о БД</p>"
+        
+        system_info += f"""
+<h3>Интерфейс:</h3>
+<p><b>Размер окна:</b> {self.width()}×{self.height()}</p>
+<p><b>Шрифт:</b> {get_system_font()}</p>
+<p><b>Размер шрифта:</b> {int(self.base_font_size * self.scale_factor)}</p>
+
+<h3>Ресурсы:</h3>
+<p><b>GitHub:</b> <a href="https://github.com/kureinmaxim/BOMCategorizer" style="color: #0066cc; font-weight: bold; font-size: 14px; text-decoration: underline;">https://github.com/kureinmaxim/BOMCategorizer</a></p>
+"""
+        
+        # Создаем диалог
+        dialog = QDialog(self)
+        dialog.setWindowTitle("💻 Системная информация")
+        dialog.resize(700, 600)
+        
+        layout = QVBoxLayout()
+        
+        text_widget = QTextBrowser()
+        text_widget.setOpenExternalLinks(True)  # Разрешаем открытие внешних ссылок
+        text_widget.setHtml(system_info)
+        text_widget.setFont(QFont("Consolas", 9))
+        layout.addWidget(text_widget)
+        
+        button_layout = QHBoxLayout()
+        copy_btn = QPushButton("📋 Копировать в буфер обмена")
+        copy_btn.clicked.connect(lambda: self._copy_to_clipboard(system_info))
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        
+        button_layout.addWidget(copy_btn)
+        button_layout.addStretch()
+        button_layout.addWidget(close_btn)
+        layout.addLayout(button_layout)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+    
+    def _copy_to_clipboard(self, text: str):
+        """Копирует текст в буфер обмена"""
+        from PySide6.QtGui import QClipboard
+        clipboard = QApplication.clipboard()
+        # Удаляем HTML теги для чистого текста
+        import re
+        plain_text = re.sub('<[^<]+?>', '', text)
+        clipboard.setText(plain_text)
+        QMessageBox.information(self, "Скопировано", "Информация скопирована в буфер обмена!")
+    
+    def keyPressEvent(self, event):
+        """Обработка нажатий клавиш для контекстной помощи и масштабирования"""
+        if event.key() == Qt.Key_F1:
+            self.show_context_help()
+        elif event.key() == Qt.Key_Minus and event.modifiers() == Qt.ControlModifier:
+            # Обработка Ctrl+- для уменьшения масштаба
+            self.on_zoom_out()
+        elif event.key() == Qt.Key_Plus and event.modifiers() == Qt.ControlModifier:
+            # Обработка Ctrl++ для увеличения масштаба (на случай если не работает через QAction)
+            self.on_zoom_in()
+        elif event.key() == Qt.Key_0 and event.modifiers() == Qt.ControlModifier:
+            # Обработка Ctrl+0 для сброса масштаба
+            self.reset_scale()
+        else:
+            super().keyPressEvent(event)
+    
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        """Обработка входа перетаскиваемого объекта"""
+        if event.mimeData().hasUrls():
+            # Проверяем, что это файлы с поддерживаемыми расширениями
+            urls = event.mimeData().urls()
+            supported_extensions = ['.xlsx', '.docx', '.doc', '.txt']
+            has_supported_file = False
+            
+            for url in urls:
+                file_path = url.toLocalFile()
+                if file_path:
+                    ext = os.path.splitext(file_path)[1].lower()
+                    if ext in supported_extensions:
+                        has_supported_file = True
+                        break
+            
+            if has_supported_file:
+                event.acceptProposedAction()
+            else:
+                event.ignore()
+        else:
+            event.ignore()
+    
+    def dropEvent(self, event: QDropEvent):
+        """Обработка сброса файлов"""
+        if event.mimeData().hasUrls():
+            urls = event.mimeData().urls()
+            supported_extensions = ['.xlsx', '.docx', '.doc', '.txt']
+            files_added = 0
+            
+            for url in urls:
+                file_path = url.toLocalFile()
+                if file_path and os.path.isfile(file_path):
+                    ext = os.path.splitext(file_path)[1].lower()
+                    if ext in supported_extensions:
+                        if file_path not in self.input_files:
+                            self.input_files[file_path] = 1
+                            files_added += 1
+            
+            if files_added > 0:
+                self.update_listbox()
+                self.update_output_filename()
+                # Показываем уведомление
+                QMessageBox.information(
+                    self,
+                    "Файлы добавлены",
+                    f"Добавлено файлов: {files_added}\n\n"
+                    f"Используйте Ctrl+R для запуска обработки."
+                )
+            else:
+                QMessageBox.warning(
+                    self,
+                    "Неподдерживаемый формат",
+                    "Поддерживаются только файлы:\n"
+                    "XLSX, DOCX, DOC, TXT"
+                )
+            
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    # ==================== Управление представлением ====================
+
+    def apply_scale_factor(self):
+        """Применяет текущий коэффициент масштабирования"""
+        font_size = max(8, int(round(self.base_font_size * self.scale_factor)))
+        font = QFont(get_system_font(), font_size)
+        
+        # Применяем масштаб глобально через QApplication (для всех новых виджетов)
+        if self.app:
+            self.app.setFont(font)
+        
+        # Применяем к главному окну
+        self.setFont(font)
+        
+        # Применяем рекурсивно ко всем дочерним виджетам
+        self._apply_font_recursive(self, font)
+        
+        # Обновляем размеры виджетов, заданные в пикселях
+        self._update_widget_sizes()
+        
+        self.update_scale_actions()
+    
+    def _apply_font_recursive(self, widget, font):
+        """Рекурсивно применяет шрифт ко всем дочерним виджетам"""
+        # Применяем к текущему виджету
+        current_font = widget.font()
+        # Сохраняем семейство шрифта, если оно было специально задано
+        if current_font.family() != font.family() and current_font.family() != get_system_font():
+            # Используем существующее семейство, но обновляем размер
+            current_font.setPointSize(font.pointSize())
+            widget.setFont(current_font)
+        else:
+            widget.setFont(font)
+        
+        # Применяем рекурсивно ко всем дочерним виджетам
+        for child in widget.findChildren(QWidget):
+            child_font = child.font()
+            if child_font.family() != font.family() and child_font.family() != get_system_font():
+                # Сохраняем специальное семейство шрифта, но обновляем размер
+                child_font.setPointSize(font.pointSize())
+                child.setFont(child_font)
+            else:
+                child.setFont(font)
+    
+    def _update_widget_sizes(self):
+        """Обновляет размеры виджетов в соответствии с масштабом"""
+        # Базовые размеры (для масштаба 1.0)
+        base_sizes = {
+            'files_list_height': 100,
+            'log_text_height': 160,
+        }
+        
+        # Обновляем высоту списка файлов
+        if hasattr(self, 'files_list') and self.files_list:
+            scaled_height = int(base_sizes['files_list_height'] * self.scale_factor)
+            self.files_list.setMaximumHeight(scaled_height)
+        
+        # Обновляем высоту лога
+        if hasattr(self, 'log_text') and self.log_text:
+            scaled_height = int(base_sizes['log_text_height'] * self.scale_factor)
+            self.log_text.setMaximumHeight(scaled_height)
+
+    def update_scale_actions(self):
+        """Обновляет состояние пунктов меню масштаба"""
+        if not self.scale_actions:
+            return
+        for factor, action in self.scale_actions.items():
+            if action is None:
+                continue
+            blocked = action.blockSignals(True)
+            action.setChecked(abs(self.scale_factor - factor) < 0.001)
+            action.blockSignals(blocked)
+
+    def set_scale_factor(self, factor: float):
+        """Устанавливает масштаб интерфейса"""
+        if factor not in self.scale_levels:
+            factor = min(self.scale_levels, key=lambda x: abs(x - factor))
+        if abs(self.scale_factor - factor) < 0.001:
+            self.update_scale_actions()
+            return
+        self.scale_factor = factor
+        self.apply_scale_factor()
+        self.save_ui_preferences()
+
+    def _current_scale_index(self) -> int:
+        if self.scale_factor in self.scale_levels:
+            return self.scale_levels.index(self.scale_factor)
+        closest = min(range(len(self.scale_levels)), key=lambda i: abs(self.scale_levels[i] - self.scale_factor))
+        self.scale_factor = self.scale_levels[closest]
+        return closest
+
+    def on_zoom_in(self):
+        index = self._current_scale_index()
+        if index < len(self.scale_levels) - 1:
+            self.set_scale_factor(self.scale_levels[index + 1])
+
+    def on_zoom_out(self):
+        index = self._current_scale_index()
+        if index > 0:
+            self.set_scale_factor(self.scale_levels[index - 1])
+
+    def reset_scale(self):
+        self.set_scale_factor(0.8)  # Сброс на масштаб по умолчанию (80%)
+
+    def update_view_mode_actions(self):
+        if not self.view_mode_actions:
+            return
+        for key, action in self.view_mode_actions.items():
+            blocked = action.blockSignals(True)
+            action.setChecked(key == self.current_view_mode)
+            action.blockSignals(blocked)
+
+    def set_view_mode(self, mode: str):
+        if mode not in ("simple", "advanced", "expert"):
+            return
+        if mode == self.current_view_mode:
+            self.update_view_mode_actions()
+            return
+        self.current_view_mode = mode
+        if mode != "expert":
+            self.log_with_timestamps = False
+            self.auto_open_output = False
+        self.apply_view_mode()
+
+    def apply_view_mode(self, initial: bool = False):
+        simple = self.current_view_mode == "simple"
+        expert = self.current_view_mode == "expert"
+
+        if hasattr(self, "comparison_section") and self.comparison_section:
+            self.comparison_section.setVisible(not simple)
+        if hasattr(self, "log_section") and self.log_section:
+            self.log_section.setVisible(not simple)
+        if hasattr(self, "expert_section") and self.expert_section:
+            self.expert_section.setVisible(expert)
+
+        if self.db_menu is not None:
+            self.db_menu.menuAction().setVisible(not simple)
+
+        if self.mode_label is not None:
+            mode_titles = {
+                "simple": ("Режим: Простой", "#fab387"),
+                "advanced": ("Режим: Расширенный", "#89b4fa"),
+                "expert": ("Режим: Эксперт", "#f38ba8"),
+            }
+            text, color = mode_titles.get(self.current_view_mode, ("Режим: Неизвестно", "#cdd6f4"))
+            self.mode_label.setText(text)
+            self.mode_label.setStyleSheet(f"QLabel {{ color: {color}; font-weight: bold; }}")
+
+        if self.timestamp_checkbox is not None:
+            self.timestamp_checkbox.blockSignals(True)
+            self.timestamp_checkbox.setEnabled(expert)
+            self.timestamp_checkbox.setChecked(self.log_with_timestamps if expert else False)
+            self.timestamp_checkbox.blockSignals(False)
+
+        if self.auto_open_output_checkbox is not None:
+            self.auto_open_output_checkbox.blockSignals(True)
+            self.auto_open_output_checkbox.setEnabled(expert)
+            self.auto_open_output_checkbox.setChecked(self.auto_open_output if expert else False)
+            self.auto_open_output_checkbox.blockSignals(False)
+
+        self.update_view_mode_actions()
+
+        if not initial:
+            self.save_ui_preferences()
+
+    def on_toggle_log_timestamps(self, state: int):
+        self.log_with_timestamps = bool(state)
+        self.save_ui_preferences()
+        if self.log_text:
+            message = "🕒 Временные метки лога включены" if self.log_with_timestamps else "🕒 Временные метки лога отключены"
+            self.log_text.append(message)
+
+    def on_toggle_auto_open_output(self, state: int):
+        self.auto_open_output = bool(state)
+        self.save_ui_preferences()
+        if self.log_text:
+            message = "📂 Автооткрытие папки результата включено" if self.auto_open_output else "📂 Автооткрытие папки результата отключено"
+            self.log_text.append(message)
+
+    def save_ui_preferences(self):
+        try:
+            if "ui" not in self.cfg:
+                self.cfg["ui"] = {}
+            ui_settings = self.cfg["ui"]
+            ui_settings["theme"] = self.current_theme
+            ui_settings["scale_factor"] = round(self.scale_factor, 2)
+            ui_settings["view_mode"] = self.current_view_mode
+            ui_settings["log_timestamps"] = bool(self.log_with_timestamps if self.current_view_mode == "expert" else False)
+            ui_settings["auto_open_output"] = bool(self.auto_open_output if self.current_view_mode == "expert" else False)
+
+            cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Не удалось сохранить настройки интерфейса: {e}")
+
+    def reveal_in_file_manager(self, target_path: str, select: bool = True) -> bool:
+        """Открывает системный проводник и при необходимости выделяет файл."""
+        if not target_path:
+            return False
+
+        try:
+            abs_path = os.path.abspath(target_path)
+            system = platform.system()
+
+            if system == 'Windows':
+                if select and os.path.isfile(abs_path):
+                    subprocess.Popen(f'explorer /select,"{abs_path}"')
+                else:
+                    folder = abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
+                    subprocess.Popen(['explorer', folder])
+            elif system == 'Darwin':
+                if select and os.path.isfile(abs_path):
+                    subprocess.Popen(['open', '-R', abs_path])
+                else:
+                    folder = abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
+                    subprocess.Popen(['open', folder])
+            else:
+                folder = abs_path if os.path.isdir(abs_path) else os.path.dirname(abs_path)
+                subprocess.Popen(['xdg-open', folder])
+
+            return True
+        except Exception as e:
+            print(f"⚠️ Не удалось открыть проводник: {e}")
+            return False
 
 
 def main():

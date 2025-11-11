@@ -45,6 +45,8 @@ import hashlib
 from typing import Optional, Dict, List
 from datetime import datetime
 
+from openpyxl.utils import get_column_letter
+
 
 # Путь к файлу базы данных (в папке с данными пользователя)
 def get_database_path() -> str:
@@ -802,6 +804,51 @@ def export_database_to_excel(output_path: str = "component_database_export.xlsx"
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
             meta_df.to_excel(writer, sheet_name='Информация', index=False, header=False)
             df.to_excel(writer, sheet_name='Компоненты', index=False)
+
+            workbook = writer.book
+            info_sheet = writer.sheets['Информация']
+            components_sheet = writer.sheets['Компоненты']
+
+            def adjust_sheet_columns(ws, dataframe, include_header=True, min_width=12, max_width=80, extra_padding=4):
+                """
+                Автоматическая подстройка ширины столбцов под содержимое DataFrame.
+                """
+                if dataframe is None or dataframe.shape[1] == 0:
+                    return
+
+                # Перебираем все столбцы DataFrame
+                for col_idx in range(dataframe.shape[1]):
+                    column_letter = get_column_letter(col_idx + 1)
+                    max_length = 0
+
+                    # Учитываем заголовок
+                    if include_header:
+                        header_value = str(dataframe.columns[col_idx])
+                        if header_value and header_value != 'None':
+                            max_length = len(header_value)
+
+                    # Учитываем содержимое ячеек
+                    for cell_value in dataframe.iloc[:, col_idx]:
+                        if pd.isna(cell_value):
+                            cell_text = ""
+                        else:
+                            cell_text = str(cell_value)
+
+                        if len(cell_text) > max_length:
+                            max_length = len(cell_text)
+
+                    # Применяем ограничения и отступ
+                    desired_width = max_length + extra_padding
+                    desired_width = max(min_width, min(desired_width, max_width))
+
+                    ws.column_dimensions[column_letter].width = desired_width
+
+            # Настраиваем ширины столбцов для обоих листов
+            adjust_sheet_columns(info_sheet, meta_df, include_header=False, min_width=16, max_width=80, extra_padding=6)
+            adjust_sheet_columns(components_sheet, df, include_header=True, min_width=20, max_width=80, extra_padding=6)
+
+            # Немного увеличим высоту первой строки листа "Компоненты" для header
+            components_sheet.row_dimensions[1].height = 24
         
         print(f"✅ База данных экспортирована: {output_path}")
         print(f"   Компонентов: {len(db)}")

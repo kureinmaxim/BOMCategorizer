@@ -12,6 +12,7 @@ Tkinter-интерфейс с поддержкой:
 import os
 import json
 import threading
+import subprocess
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import sys
@@ -710,8 +711,9 @@ class BOMCategorizerApp(tk.Tk):
         Автоматически формирует имя выходного файла на основе входных файлов
         
         Логика:
-        - Если один файл: имя_файла_out.xlsx в папке входного файла
-        - Если несколько файлов: out.xlsx в папке первого файла
+        - Если один файл: имя_файла_categorized.xlsx в папке входного файла
+        - Если несколько файлов: categorized.xlsx в папке первого файла
+        - Если файл существует: автоматически добавляется _1, _2 и т.д.
         - Если нет файлов: categorized.xlsx (по умолчанию)
         """
         if not self.input_files:
@@ -723,14 +725,28 @@ class BOMCategorizerApp(tk.Tk):
         file_dir = os.path.dirname(first_file)
         
         if len(self.input_files) == 1:
-            # Один файл: имя_файла_out.xlsx
+            # Один файл: имя_файла_categorized.xlsx
             base_name = os.path.basename(first_file)
             name_without_ext = os.path.splitext(base_name)[0]
-            output_name = f"{name_without_ext}_out.xlsx"
-            output_path = os.path.join(file_dir, output_name)
+            output_name = f"{name_without_ext}_categorized.xlsx"
         else:
-            # Несколько файлов: out.xlsx
-            output_path = os.path.join(file_dir, "out.xlsx")
+            # Несколько файлов: categorized.xlsx
+            output_name = "categorized.xlsx"
+        
+        # Полный путь к выходному файлу
+        output_path = os.path.join(file_dir, output_name)
+        
+        # Проверяем существование файла и добавляем _1, _2, и т.д.
+        if os.path.exists(output_path):
+            base_name = os.path.splitext(output_name)[0]
+            ext = os.path.splitext(output_name)[1]
+            counter = 1
+            while True:
+                new_output_path = os.path.join(file_dir, f"{base_name}_{counter}{ext}")
+                if not os.path.exists(new_output_path):
+                    output_path = new_output_path
+                    break
+                counter += 1
         
         self.output_xlsx.set(output_path)
     
@@ -1652,34 +1668,40 @@ class BOMCategorizerApp(tk.Tk):
             messagebox.showerror("Ошибка", f"Не удалось импортировать базу данных:\n{str(e)}")
     
     def on_open_db_folder(self):
-        """Открыть папку с базой данных в проводнике"""
+        """Открыть папку с базой данных в проводнике с выделенным файлом"""
         try:
             db_path = get_database_path()
-            folder_path = os.path.dirname(db_path)
             
-            # Открываем в проводнике Windows
+            # Открываем проводник с выделенным файлом базы данных
             if sys.platform == "win32":
-                os.startfile(folder_path)
+                # /select открывает проводник и выделяет файл
+                subprocess.Popen(f'explorer /select,"{os.path.abspath(db_path)}"')
             elif sys.platform == "darwin":  # macOS
-                os.system(f'open "{folder_path}"')
+                # -R открывает Finder и выделяет файл
+                subprocess.Popen(['open', '-R', db_path])
             else:  # Linux
+                # Открываем папку (в Linux нет стандартного способа выделить файл)
+                folder_path = os.path.dirname(db_path)
                 os.system(f'xdg-open "{folder_path}"')
                 
         except Exception as e:
             messagebox.showerror("Ошибка", f"Не удалось открыть папку:\n{str(e)}")
     
     def on_open_db_folder_from_footer(self):
-        """Открыть папку с базой данных из футера (без сообщений об успехе)"""
+        """Открыть папку с базой данных из футера с выделенным файлом (без сообщений об ошибке)"""
         try:
             db_path = get_database_path()
-            folder_path = os.path.dirname(db_path)
             
-            # Открываем в проводнике Windows
+            # Открываем проводник с выделенным файлом базы данных
             if sys.platform == "win32":
-                os.startfile(folder_path)
+                # /select открывает проводник и выделяет файл
+                subprocess.Popen(f'explorer /select,"{os.path.abspath(db_path)}"')
             elif sys.platform == "darwin":  # macOS
-                os.system(f'open "{folder_path}"')
+                # -R открывает Finder и выделяет файл
+                subprocess.Popen(['open', '-R', db_path])
             else:  # Linux
+                # Открываем папку (в Linux нет стандартного способа выделить файл)
+                folder_path = os.path.dirname(db_path)
                 os.system(f'xdg-open "{folder_path}"')
                 
         except Exception as e:
