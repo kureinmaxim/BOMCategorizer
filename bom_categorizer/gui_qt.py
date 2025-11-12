@@ -54,184 +54,11 @@ from .dialogs_qt import (
 
 from .styles import DARK_THEME, LIGHT_THEME
 
-
-class ProcessingWorker(QThread):
-    """Worker thread для обработки BOM файлов"""
-    finished = Signal(str, bool, str)  # (message, success, output_file)
-    progress = Signal(str)  # progress message
-    
-    def __init__(self, args: list):
-        super().__init__()
-        self.args = args
-        self.output_file = ""
-    
-    def run(self):
-        """Выполняет обработку в отдельном потоке"""
-        try:
-            from .main import main as cli_main
-            import sys
-            from io import StringIO
-            
-            # Перехватываем stdout для получения прогресса
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            old_argv = sys.argv
-            
-            captured_output = StringIO()
-            
-            try:
-                sys.stdout = captured_output
-                sys.stderr = captured_output
-                sys.argv = ["split_bom.py"] + self.args
-                
-                # Отправляем начальное сообщение
-                self.progress.emit("⏳ Начинаем обработку файлов...\n")
-                self.progress.emit(f"Команда: split_bom {' '.join(self.args)}\n\n")
-                
-                # Запускаем обработку
-                cli_main()
-                
-                # Восстанавливаем
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-                sys.argv = old_argv
-                
-                # Получаем вывод
-                output_text = captured_output.getvalue()
-                
-                # Фильтруем проблемные символы
-                output_text = output_text.replace('\u2192', '->')
-                output_text = output_text.encode('utf-8', errors='replace').decode('utf-8')
-                
-                if output_text:
-                    self.progress.emit(output_text)
-                
-                # Извлекаем путь к выходному файлу
-                import re
-                match = re.search(r'XLSX written: (.+?)(?:\s+\(|$)', output_text)
-                if match:
-                    self.output_file = match.group(1).strip()
-                else:
-                    # Ищем в аргументах
-                    if "--xlsx" in self.args:
-                        idx = self.args.index("--xlsx")
-                        if idx + 1 < len(self.args):
-                            self.output_file = self.args[idx + 1]
-                
-                # Проверяем что файл создан
-                if self.output_file and os.path.exists(self.output_file):
-                    self.finished.emit(f"✅ Обработка завершена!\nФайл сохранен: {self.output_file}", True, self.output_file)
-                else:
-                    self.finished.emit("⚠️ Обработка завершена, но выходной файл не найден", False, "")
-                    
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-                sys.argv = old_argv
-                
-        except SystemExit as e:
-            # CLI может вызывать sys.exit(), это нормально
-            if e.code == 0:
-                self.finished.emit("✅ Обработка завершена!", True, self.output_file)
-            else:
-                error_msg = f"❌ Ошибка при обработке (код {e.code})"
-                self.finished.emit(error_msg, False, "")
-        except Exception as e:
-            import traceback
-            error_msg = f"❌ Ошибка при обработке:\n{str(e)}\n\n{traceback.format_exc()}"
-            self.finished.emit(error_msg, False, "")
-
-
-class ComparisonWorker(QThread):
-    """Worker thread для сравнения BOM файлов"""
-    finished = Signal(str, bool)  # (message, success)
-    progress = Signal(str)  # progress message
-    
-    def __init__(self, file1: str, file2: str, output: str):
-        super().__init__()
-        self.file1 = file1
-        self.file2 = file2
-        self.output = output
-    
-    def run(self):
-        """Выполняет сравнение в отдельном потоке"""
-        try:
-            from .main import compare_bom_files
-            import sys
-            from io import StringIO
-            import codecs
-            
-            # Перехватываем stdout для получения прогресса с правильной кодировкой
-            old_stdout = sys.stdout
-            old_stderr = sys.stderr
-            
-            # Создаем StringIO который поддерживает Unicode
-            captured_output = StringIO()
-            
-            try:
-                # Используем UTF-8 для вывода
-                sys.stdout = captured_output
-                sys.stderr = captured_output
-                
-                # Отправляем начальное сообщение
-                self.progress.emit("⏳ Начинаем сравнение файлов...\n")
-                self.progress.emit(f"📄 Файл 1: {os.path.basename(self.file1)}\n")
-                self.progress.emit(f"📄 Файл 2: {os.path.basename(self.file2)}\n\n")
-                
-                # Сначала пытаемся сравнить как обработанные файлы
-                from .main import compare_processed_files, compare_bom_files
-                
-                self.progress.emit("🔍 Проверка формата файлов...\n")
-                
-                # Пытаемся сравнить как обработанные файлы
-                success = compare_processed_files(self.file1, self.file2, self.output)
-                
-                if not success:
-                    # Файлы не обработанные - показываем предупреждение
-                    self.progress.emit("\n⚠️ ВНИМАНИЕ: Файлы не являются обработанными BOM файлами!\n")
-                    self.progress.emit("   Обработанные файлы должны содержать листы с категориями:\n")
-                    self.progress.emit("   (Резисторы, Конденсаторы, Микросхемы и т.д.)\n\n")
-                    self.progress.emit("❌ Для сравнения необходимо:\n")
-                    self.progress.emit("   1. Сначала обработать исходные BOM файлы\n")
-                    self.progress.emit("   2. Затем сравнить полученные результаты\n\n")
-                    self.progress.emit("💡 Или используйте исходные (необработанные) файлы для сравнения\n")
-                    self.finished.emit(
-                        "⚠️ Ошибка: файлы не являются обработанными BOM файлами!\n\n"
-                        "Для сравнения используйте:\n"
-                        "• Обработанные файлы (с листами категорий)\n"
-                        "• Или исходные BOM файлы (.docx, .xlsx)", 
-                        False
-                    )
-                    return
-                
-                # Восстанавливаем stdout/stderr
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-                
-                # Получаем вывод
-                output_text = captured_output.getvalue()
-                
-                # Фильтруем и очищаем вывод от проблемных символов
-                output_text = output_text.replace('\u2192', '->')  # Заменяем стрелку
-                output_text = output_text.encode('utf-8', errors='replace').decode('utf-8')
-                
-                if output_text:
-                    self.progress.emit(output_text)
-                
-                # Проверяем что файл создан
-                if os.path.exists(self.output):
-                    self.finished.emit(f"✅ Сравнение завершено!\nФайл сохранен: {self.output}", True)
-                else:
-                    self.finished.emit("⚠️ Файл результата не создан", False)
-                    
-            finally:
-                sys.stdout = old_stdout
-                sys.stderr = old_stderr
-                
-        except Exception as e:
-            import traceback
-            error_msg = f"❌ Ошибка при сравнении:\n{str(e)}\n\n{traceback.format_exc()}"
-            self.finished.emit(error_msg, False)
+# Импорты из новых модулей
+from .workers_qt import ProcessingWorker, ComparisonWorker
+from .search_qt import GlobalSearchDialog
+from . import gui_sections_qt
+from . import search_methods_qt
 
 
 def load_config() -> dict:
@@ -550,6 +377,45 @@ class BOMCategorizerMainWindow(QMainWindow):
         import_output_action.triggered.connect(self.on_import_from_output)
         self.db_menu.addAction(import_output_action)
         
+        # Меню "Поиск"
+        from PySide6.QtWidgets import QWidgetAction
+        search_menu = menubar.addMenu("🔍 Поиск")
+        
+        # Создаем виджет для выпадающего меню
+        search_widget = QWidget()
+        search_widget.setObjectName("globalSearchWidget")
+        search_widget.setFixedWidth(300)
+        
+        search_layout = QHBoxLayout(search_widget)
+        search_layout.setContentsMargins(8, 8, 8, 8)
+        search_layout.setSpacing(6)
+        
+        # Поле ввода
+        self.global_search_input = QLineEdit()
+        self.global_search_input.setObjectName("globalSearchInput")
+        self.global_search_input.setPlaceholderText("Введите название ИВП или ключевое слово...")
+        self.global_search_input.setClearButtonEnabled(True)
+        self.global_search_input.setMinimumWidth(200)
+        
+        # Кнопка поиска с лупой
+        search_button = QPushButton("🔎")
+        search_button.setObjectName("globalSearchButton")
+        search_button.setCursor(Qt.PointingHandCursor)
+        search_button.setToolTip("Найти (Enter)")
+        search_button.setFixedSize(32, 32)
+        
+        search_layout.addWidget(self.global_search_input)
+        search_layout.addWidget(search_button)
+        
+        # Создаем действие с виджетом
+        search_action = QWidgetAction(self)
+        search_action.setDefaultWidget(search_widget)
+        search_menu.addAction(search_action)
+        
+        # Подключаем сигналы
+        search_button.clicked.connect(self.on_global_search_triggered)
+        self.global_search_input.returnPressed.connect(self.on_global_search_triggered)
+        
         # Меню "Помощь"
         help_menu = menubar.addMenu("Помощь")
         
@@ -597,459 +463,24 @@ class BOMCategorizerMainWindow(QMainWindow):
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_layout.setSpacing(8)
 
-        # Добавляем секции
-        self.main_section = self._create_main_section()
+        # Добавляем секции (используем функции из gui_sections_qt)
+        self.main_section = gui_sections_qt.create_main_section(self)
         scroll_layout.addWidget(self.main_section)
 
-        self.comparison_section = self._create_comparison_section()
+        self.comparison_section = gui_sections_qt.create_comparison_section(self)
         scroll_layout.addWidget(self.comparison_section)
 
-        self.log_section = self._create_log_section()
+        self.log_section = gui_sections_qt.create_log_section(self)
         scroll_layout.addWidget(self.log_section)
 
-        self.expert_section = self._create_expert_tools_section()
+        self.expert_section = gui_sections_qt.create_expert_tools_section(self)
         scroll_layout.addWidget(self.expert_section)
 
         scroll_layout.addStretch()
-        scroll_layout.addWidget(self._create_footer())
+        scroll_layout.addWidget(gui_sections_qt.create_footer(self))
 
         scroll_area.setWidget(scroll_content)
         main_layout.addWidget(scroll_area)
-
-    def _create_main_section(self) -> QGroupBox:
-        """Создает секцию основных настроек"""
-        group = QGroupBox("Основные настройки")
-        layout = QVBoxLayout()
-
-        # Кнопки управления файлами
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(6)
-
-        add_btn = QPushButton("➕ Добавить файлы")
-        add_btn.setToolTip("Добавить BOM файлы для обработки (F1 - справка)")
-        add_btn.clicked.connect(self.on_add_files)
-        self.lockable_widgets.append(add_btn)
-        buttons_layout.addWidget(add_btn, 1)  # stretch factor 1
-
-        clear_btn = QPushButton("🗑️ Очистить список")
-        clear_btn.setProperty("class", "danger")
-        clear_btn.clicked.connect(self.on_clear_files)
-        self.lockable_widgets.append(clear_btn)
-        buttons_layout.addWidget(clear_btn, 1)  # stretch factor 1
-
-        layout.addLayout(buttons_layout)
-
-        # Список файлов
-        files_label = QLabel("Входные файлы:")
-        files_label.setProperty("class", "bold")
-        layout.addWidget(files_label)
-
-        self.files_list = QListWidget()
-        self.files_list.setMaximumHeight(100)
-        self.files_list.itemSelectionChanged.connect(self.on_file_selected)
-        self.lockable_widgets.append(self.files_list)
-        layout.addWidget(self.files_list)
-
-        # Grid layout для выровненных полей
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
-        grid.setColumnStretch(1, 1)  # Растягиваем колонку с полями ввода
-        grid.setColumnMinimumWidth(0, 180)  # Минимальная ширина для меток
-        
-        row = 0
-
-        # Количество экземпляров
-        label = QLabel("Количество экземпляров:")
-        label.setMinimumWidth(180)
-        grid.addWidget(label, row, 0, Qt.AlignLeft)
-
-        mult_widget = QWidget()
-        mult_layout = QHBoxLayout(mult_widget)
-        mult_layout.setContentsMargins(0, 0, 0, 0)
-        mult_layout.setSpacing(6)
-
-        self.multiplier_spin = QSpinBox()
-        self.multiplier_spin.setMinimum(1)
-        self.multiplier_spin.setMaximum(999)
-        self.multiplier_spin.setValue(1)
-        self.multiplier_spin.setMaximumWidth(80)
-        self.lockable_widgets.append(self.multiplier_spin)
-        mult_layout.addWidget(self.multiplier_spin)
-
-        apply_mult_btn = QPushButton("Применить")
-        apply_mult_btn.setFixedWidth(100)
-        apply_mult_btn.clicked.connect(self.on_multiplier_changed)
-        self.lockable_widgets.append(apply_mult_btn)
-        mult_layout.addWidget(apply_mult_btn)
-
-        mult_layout.addWidget(QLabel("(выберите файл из списка)"))
-        mult_layout.addStretch()
-
-        grid.addWidget(mult_widget, row, 1)
-        row += 1
-
-        # Листы Excel
-        label = QLabel("Листы (через запятую):")
-        label.setMinimumWidth(180)
-        grid.addWidget(label, row, 0, Qt.AlignLeft)
-
-        self.sheet_entry = QLineEdit()
-        self.sheet_entry.setPlaceholderText("Оставьте пустым для всех листов")
-        self.lockable_widgets.append(self.sheet_entry)
-        grid.addWidget(self.sheet_entry, row, 1)
-        row += 1
-
-        # Выходной файл XLSX
-        label = QLabel("Выходной XLSX:")
-        label.setMinimumWidth(180)
-        grid.addWidget(label, row, 0, Qt.AlignLeft)
-
-        self.output_entry = QLineEdit()
-        self.output_entry.setText(self.output_xlsx)
-        self.lockable_widgets.append(self.output_entry)
-        grid.addWidget(self.output_entry, row, 1)
-
-        pick_output_btn = QPushButton("Выбрать...")
-        pick_output_btn.setFixedWidth(100)
-        pick_output_btn.clicked.connect(self.on_pick_output)
-        self.lockable_widgets.append(pick_output_btn)
-        grid.addWidget(pick_output_btn, row, 2)
-        row += 1
-
-        # Папка для TXT
-        label = QLabel("Папка для TXT:")
-        label.setMinimumWidth(180)
-        grid.addWidget(label, row, 0, Qt.AlignLeft)
-
-        self.txt_entry = QLineEdit()
-        self.txt_entry.setPlaceholderText("Опционально")
-        self.lockable_widgets.append(self.txt_entry)
-        grid.addWidget(self.txt_entry, row, 1)
-
-        pick_txt_btn = QPushButton("Выбрать...")
-        pick_txt_btn.setFixedWidth(100)
-        pick_txt_btn.clicked.connect(self.on_pick_txt_dir)
-        self.lockable_widgets.append(pick_txt_btn)
-        grid.addWidget(pick_txt_btn, row, 2)
-
-        layout.addLayout(grid)
-
-        # Чекбокс суммарной комплектации
-        self.combine_check = QCheckBox("Суммарная комплектация")
-        self.combine_check.setChecked(self.combine)
-        self.combine_check.stateChanged.connect(
-            lambda state: setattr(self, 'combine', state == Qt.Checked)
-        )
-        self.lockable_widgets.append(self.combine_check)
-        layout.addWidget(self.combine_check)
-
-        # Кнопки запуска
-        action_layout = QHBoxLayout()
-        action_layout.setSpacing(6)
-
-        run_btn = QPushButton("▶️ Запустить обработку")
-        run_btn.setProperty("class", "accent")
-        run_btn.clicked.connect(self.on_run)
-        self.lockable_widgets.append(run_btn)
-        action_layout.addWidget(run_btn, 1)  # stretch factor 1
-
-        interactive_btn = QPushButton("🔄 Интерактивная классификация")
-        interactive_btn.clicked.connect(self.on_interactive_classify)
-        self.lockable_widgets.append(interactive_btn)
-        action_layout.addWidget(interactive_btn, 1)  # stretch factor 1
-
-        layout.addLayout(action_layout)
-
-        group.setLayout(layout)
-        return group
-
-    def _create_comparison_section(self) -> QGroupBox:
-        """Создает секцию сравнения файлов"""
-        group = QGroupBox("Сравнение BOM файлов")
-        layout = QVBoxLayout()
-
-        # Grid layout для выровненных полей
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(8)
-        grid.setVerticalSpacing(6)
-        grid.setColumnStretch(1, 1)  # Растягиваем колонку с полями ввода
-        grid.setColumnMinimumWidth(0, 180)  # Минимальная ширина для меток
-        
-        row = 0
-
-        # Первый файл
-        label = QLabel("Первый файл (базовый):")
-        label.setMinimumWidth(180)
-        grid.addWidget(label, row, 0, Qt.AlignLeft)
-
-        self.compare_entry1 = QLineEdit()
-        self.lockable_widgets.append(self.compare_entry1)
-        grid.addWidget(self.compare_entry1, row, 1)
-
-        pick_file1_btn = QPushButton("Выбрать...")
-        pick_file1_btn.setFixedWidth(100)
-        pick_file1_btn.clicked.connect(self.on_select_compare_file1)
-        self.lockable_widgets.append(pick_file1_btn)
-        grid.addWidget(pick_file1_btn, row, 2)
-        row += 1
-
-        # Второй файл
-        label = QLabel("Второй файл (новый):")
-        label.setMinimumWidth(180)
-        grid.addWidget(label, row, 0, Qt.AlignLeft)
-
-        self.compare_entry2 = QLineEdit()
-        self.lockable_widgets.append(self.compare_entry2)
-        grid.addWidget(self.compare_entry2, row, 1)
-
-        pick_file2_btn = QPushButton("Выбрать...")
-        pick_file2_btn.setFixedWidth(100)
-        pick_file2_btn.clicked.connect(self.on_select_compare_file2)
-        self.lockable_widgets.append(pick_file2_btn)
-        grid.addWidget(pick_file2_btn, row, 2)
-        row += 1
-
-        # Выходной файл
-        label = QLabel("Файл результата:")
-        label.setMinimumWidth(180)
-        grid.addWidget(label, row, 0, Qt.AlignLeft)
-
-        self.compare_output_entry = QLineEdit()
-        self.compare_output_entry.setText(self.compare_output)
-        self.lockable_widgets.append(self.compare_output_entry)
-        grid.addWidget(self.compare_output_entry, row, 1)
-
-        pick_output_btn = QPushButton("Выбрать...")
-        pick_output_btn.setFixedWidth(100)
-        pick_output_btn.clicked.connect(self.on_select_compare_output)
-        self.lockable_widgets.append(pick_output_btn)
-        grid.addWidget(pick_output_btn, row, 2)
-
-        layout.addLayout(grid)
-
-        # Кнопка сравнения
-        compare_btn = QPushButton("⚡ Сравнить файлы")
-        compare_btn.setProperty("class", "accent")
-        compare_btn.clicked.connect(self.on_compare_files)
-        self.lockable_widgets.append(compare_btn)
-        layout.addWidget(compare_btn)
-
-        group.setLayout(layout)
-        return group
-
-    def _create_log_section(self) -> QGroupBox:
-        """Создает секцию лога выполнения"""
-        group = QGroupBox("Лог выполнения")
-        # Добавляем подсказку для заголовка группы
-        group.setToolTip(
-            "📝 <b>Лог выполнения</b><br><br>"
-            "Область для отображения информации о процессе обработки файлов.<br><br>"
-            "<b>Функции:</b><br>"
-            "• Показывает прогресс обработки<br>"
-            "• Отображает ошибки и предупреждения<br>"
-            "• Двойной клик открывает лог в текстовом редакторе<br>"
-            "• В экспертном режиме можно включить временные метки<br><br>"
-            "<b>Справка:</b> Наведите курсор на область лога и нажмите <b>F1</b> для получения подробной информации"
-        )
-        layout = QVBoxLayout()
-
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(160)  # Увеличено в 2 раза с 80 до 160
-        # Добавляем обработчик двойного клика для открытия в текстовом редакторе
-        self.log_text.mouseDoubleClickEvent = lambda event: self.on_log_double_click(event)
-        self.log_text.setCursor(Qt.PointingHandCursor)
-        # Подробная подсказка с информацией о функциях и F1
-        self.log_text.setToolTip(
-            "📝 <b>Лог выполнения</b><br><br>"
-            "Отображает информацию о процессе обработки файлов:<br>"
-            "• Прогресс обработки<br>"
-            "• Ошибки и предупреждения<br>"
-            "• Результаты операций<br><br>"
-            "<b>Действия:</b><br>"
-            "• <b>Двойной клик</b> - открыть лог в текстовом редакторе<br>"
-            "• <b>F1</b> - получить подробную справку"
-        )
-
-        original_append = self.log_text.append
-
-        def append_with_mode(message):
-            text = "" if message is None else str(message)
-            if getattr(self, "log_with_timestamps", False) and text.strip():
-                leading_newlines = len(text) - len(text.lstrip('\n'))
-                prefix = "\n" * leading_newlines
-                body = text.lstrip('\n')
-                timestamp = datetime.now().strftime("%H:%M:%S")
-                formatted_body = f"[{timestamp}] {body}" if body else f"[{timestamp}]"
-                original_append(prefix + formatted_body)
-            else:
-                original_append(text)
-
-        self._log_append_original = original_append
-        self.log_text.append = append_with_mode
-
-        layout.addWidget(self.log_text)
-
-        group.setLayout(layout)
-        return group
-
-    def _create_expert_tools_section(self) -> QGroupBox:
-        """Создает секцию экспертных инструментов"""
-        group = QGroupBox("Экспертные инструменты")
-        layout = QVBoxLayout()
-
-        description = QLabel("Дополнительные настройки для опытных пользователей.")
-        description.setWordWrap(True)
-        layout.addWidget(description)
-
-        self.timestamp_checkbox = QCheckBox("Добавлять временные метки в лог")
-        self.timestamp_checkbox.setToolTip("При включении все сообщения лога будут помечены временем.")
-        self.timestamp_checkbox.stateChanged.connect(self.on_toggle_log_timestamps)
-        layout.addWidget(self.timestamp_checkbox)
-
-        self.auto_open_output_checkbox = QCheckBox("Автоматически открывать папку результата после успешной обработки")
-        self.auto_open_output_checkbox.setToolTip("После удачной обработки BOM-файлов будет автоматически открыт проводник с результатом.")
-        self.auto_open_output_checkbox.stateChanged.connect(self.on_toggle_auto_open_output)
-        layout.addWidget(self.auto_open_output_checkbox)
-
-        group.setLayout(layout)
-        group.setVisible(False)
-        return group
-
-    def _create_database_section(self) -> QGroupBox:
-        """Создает секцию управления базой данных"""
-        group = QGroupBox("База данных")
-        layout = QGridLayout()
-
-        # Первая строка кнопок
-        stats_btn = QPushButton("📊 Статистика")
-        stats_btn.clicked.connect(self.on_show_db_stats)
-        self.lockable_widgets.append(stats_btn)
-        layout.addWidget(stats_btn, 0, 0)
-
-        export_btn = QPushButton("📤 Экспорт")
-        export_btn.clicked.connect(self.on_export_database)
-        self.lockable_widgets.append(export_btn)
-        layout.addWidget(export_btn, 0, 1)
-
-        backup_btn = QPushButton("💾 Резервная копия")
-        backup_btn.clicked.connect(self.on_backup_database)
-        self.lockable_widgets.append(backup_btn)
-        layout.addWidget(backup_btn, 0, 2)
-
-        # Вторая строка кнопок
-        import_btn = QPushButton("📥 Импорт")
-        import_btn.clicked.connect(self.on_import_database)
-        self.lockable_widgets.append(import_btn)
-        layout.addWidget(import_btn, 1, 0)
-
-        open_folder_btn = QPushButton("📁 Открыть папку")
-        open_folder_btn.clicked.connect(self.on_open_db_folder)
-        self.lockable_widgets.append(open_folder_btn)
-        layout.addWidget(open_folder_btn, 1, 1)
-
-        replace_btn = QPushButton("🔄 Заменить БД")
-        replace_btn.clicked.connect(self.on_replace_database)
-        self.lockable_widgets.append(replace_btn)
-        layout.addWidget(replace_btn, 1, 2)
-
-        # Третья строка
-        import_output_btn = QPushButton("📋 Добавить из выходного файла")
-        import_output_btn.clicked.connect(self.on_import_from_output)
-        self.lockable_widgets.append(import_output_btn)
-        layout.addWidget(import_output_btn, 2, 0, 1, 3)
-
-        group.setLayout(layout)
-        return group
-
-    def _create_footer(self) -> QWidget:
-        """Создает футер с информацией"""
-        footer = QWidget()
-        layout = QVBoxLayout()
-        layout.setContentsMargins(3, 3, 3, 3)
-
-        # Информация о разработчике
-        dev_layout = QHBoxLayout()
-
-        dev_label = QLabel("Разработчик: Куреин М.Н.")
-        dev_label.setProperty("class", "bold")
-        dev_label.mouseDoubleClickEvent = lambda event: self.on_developer_double_click()
-        dev_layout.addWidget(dev_label)
-
-        dev_layout.addStretch()
-
-        date_label = QLabel(f"Дата: {self.cfg.get('app_info', {}).get('release_date', 'N/A')}")
-        dev_layout.addWidget(date_label)
-
-        layout.addLayout(dev_layout)
-
-        # Информация о БД и размере окна
-        info_layout = QHBoxLayout()
-
-        # БД статистика
-        try:
-            stats = get_database_stats()
-            metadata = stats.get('metadata', {})
-            db_version = metadata.get('version', 'N/A')
-            last_updated = metadata.get('last_updated', '')
-            total_components = stats.get('total', 0)
-            
-            # Форматируем дату для отображения
-            if last_updated and last_updated != 'N/A':
-                try:
-                    date_part = last_updated.split()[0]  # Берем только дату без времени
-                    version_text = f"{db_version} ({date_part})"
-                except:
-                    version_text = db_version
-            else:
-                version_text = db_version
-            
-            self.db_info_label = QLabel(f"БД: {version_text} ({total_components} компонентов)")
-            
-            # Добавляем tooltip с историей
-            self.update_database_tooltip()
-            
-            # Делаем метку кликабельной для показа полной истории
-            self.db_info_label.setCursor(Qt.PointingHandCursor)
-            self.db_info_label.mousePressEvent = lambda event: self.on_view_database()
-        except Exception:
-            self.db_info_label = QLabel("БД: Не загружена")
-
-        info_layout.addWidget(self.db_info_label)
-
-        # Индикатор режима
-        self.mode_label = QLabel()
-        self.mode_label.setStyleSheet("QLabel { color: #a6e3a1; font-weight: bold; }")
-        info_layout.addWidget(self.mode_label)
-
-        info_layout.addStretch()
-
-        # Информация о расположении (кликабельная метка)
-        db_path = get_database_path()
-        if "%APPDATA%" in db_path or "AppData" in db_path:
-            location_label = QLabel("Установка (%APPDATA%)")
-            location_label.setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; } QLabel:hover { color: #74c7ec; }")
-        else:
-            location_label = QLabel("Локальная")
-            location_label.setStyleSheet("QLabel { color: #f9e2af; font-weight: bold; } QLabel:hover { color: #f9e2af; }")
-        
-        location_label.setCursor(Qt.PointingHandCursor)
-        location_label.setToolTip("Нажмите для открытия папки с выделенным файлом базы данных")
-        location_label.mousePressEvent = lambda event: self.on_open_db_folder()
-        info_layout.addWidget(location_label)
-
-        # Размер окна (кликабельная метка)
-        self.size_label = QLabel(f"📐 {self.width()}×{self.height()}")
-        self.size_label.setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; } QLabel:hover { color: #74c7ec; }")
-        self.size_label.setCursor(Qt.PointingHandCursor)
-        self.size_label.mousePressEvent = lambda event: self.on_show_size_menu(event)
-        info_layout.addWidget(self.size_label)
-
-        layout.addLayout(info_layout)
-
-        footer.setLayout(layout)
-        return footer
 
     # ==================== Обработчики событий ====================
 
@@ -2150,6 +1581,42 @@ class BOMCategorizerMainWindow(QMainWindow):
             QMessageBox.critical(self, "Ошибка", f"Не удалось импортировать компоненты:\n{str(e)}")
             import traceback
             traceback.print_exc()
+
+    def on_global_search_triggered(self):
+        """Запускает глобальный поиск по базе данных и файлам."""
+        if not self.global_search_input:
+            return
+
+        query = self.global_search_input.text().strip()
+        if not query:
+            QMessageBox.information(
+                self,
+                "Глобальный поиск",
+                "Введите ключевое слово для поиска."
+            )
+            self.global_search_input.setFocus()
+            return
+
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            results = search_methods_qt.perform_global_search(self, query)
+        finally:
+            QApplication.restoreOverrideCursor()
+
+        if results["total_matches"] == 0 and not results["notes"]:
+            QMessageBox.information(
+                self,
+                "Глобальный поиск",
+                f"Совпадений по запросу «{query}» не найдено."
+            )
+            self.global_search_input.setFocus()
+            self.global_search_input.selectAll()
+            return
+
+        dialog = GlobalSearchDialog(self, results)
+        dialog.exec()
+        self.global_search_input.setFocus()
+        self.global_search_input.selectAll()
 
     def update_database_info(self):
         """Обновляет информацию о базе данных в футере"""
