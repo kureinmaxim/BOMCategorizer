@@ -13,18 +13,22 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # ========== ДИАЛОГ ВЫБОРА ВЕРСИИ ==========
+# Читаем версии из config файлов
+STANDARD_VERSION=$(python3 -c "import json; print(json.load(open('config.json'))['app_info']['version'])" 2>/dev/null || echo "3.3.0")
+MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config_qt.json'))['app_info']['version'])" 2>/dev/null || echo "4.2.3")
+
 echo ""
 echo -e "${YELLOW}============================================================${NC}"
 echo -e "${YELLOW}  ВЫБЕРИТЕ ВЕРСИЮ ДЛЯ СБОРКИ:${NC}"
 echo -e "${YELLOW}============================================================${NC}"
 echo ""
-echo -e "  ${GREEN}[1]${NC} Standard v3.2.2"
+echo -e "  ${GREEN}[1]${NC} Standard v${STANDARD_VERSION}"
 echo -e "      Tkinter GUI (стабильная версия)"
-echo -e "      Файл: BOMCategorizer-3.2.2-macOS-Standard.dmg"
+echo -e "      Файл: BOMCategorizer-${STANDARD_VERSION}-macOS-Standard.dmg"
 echo ""
-echo -e "  ${GREEN}[2]${NC} Modern Edition v4.0.0"
-echo -e "      PySide6 GUI (современный дизайн)"
-echo -e "      Файл: BOMCategorizer-4.0.0-macOS-Modern.dmg"
+echo -e "  ${GREEN}[2]${NC} Modern Edition v${MODERN_VERSION}"
+echo -e "      PySide6 GUI (современный дизайн + экспериментальные функции)"
+echo -e "      Файл: BOMCategorizer-${MODERN_VERSION}-macOS-Modern.dmg"
 echo ""
 echo -e "${YELLOW}============================================================${NC}"
 echo ""
@@ -36,7 +40,7 @@ while true; do
             EDITION="Standard"
             CONFIG_FILE="config.json"
             APP_FILE="app.py"
-            VERSION="3.2.2"
+            VERSION="${STANDARD_VERSION}"
             APP_NAME="BOM Categorizer Standard"
             DMG_NAME="BOMCategorizer-${VERSION}-macOS-Standard"
             break
@@ -45,7 +49,7 @@ while true; do
             EDITION="Modern Edition"
             CONFIG_FILE="config_qt.json"
             APP_FILE="app_qt.py"
-            VERSION="4.0.0"
+            VERSION="${MODERN_VERSION}"
             APP_NAME="BOM Categorizer Modern Edition"
             DMG_NAME="BOMCategorizer-${VERSION}-macOS-Modern"
             break

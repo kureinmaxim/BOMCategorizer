@@ -16,16 +16,32 @@ import os
 import shutil
 import subprocess
 import sys
+import json
+import re
 
 # Конфигурация
 TEMP_DIR = "temp_installer"
 INNO_SETUP_PATH = r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
-# Версии приложения
+
+def read_version_from_config(config_file):
+    """Читает версию из config файла"""
+    try:
+        if os.path.exists(config_file):
+            with open(config_file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+                return config.get("app_info", {}).get("version", "Unknown")
+        return "Unknown"
+    except Exception as e:
+        print(f"⚠️  Ошибка чтения версии из {config_file}: {e}")
+        return "Unknown"
+
+
+# Версии приложения (версии читаются автоматически из config файлов)
 EDITIONS = {
     "1": {
         "name": "Standard",
-        "version": "3.2.2",
+        "version": read_version_from_config("config.json"),
         "app_file": "app.py",
         "config": "config.json",
         "iss_file": "installer_clean.iss",
@@ -34,7 +50,7 @@ EDITIONS = {
     },
     "2": {
         "name": "Modern Edition",
-        "version": "4.2.3",
+        "version": read_version_from_config("config_qt.json"),
         "app_file": "app_qt.py",
         "config": "config_qt.json",
         "iss_file": "installer_qt.iss",
@@ -46,8 +62,10 @@ EDITIONS = {
 # Файлы для копирования (в корне проекта)
 FILES_TO_COPY = [
     "app.py",
+    "app_qt.py",  # Modern Edition entry point
     "split_bom.py",
     "config.json",
+    "config_qt.json",  # Modern Edition config
     "component_database_template.json",  # Шаблон БД (пустая база для новых установок)
     "merge_component_database.py",  # Скрипт слияния баз данных при обновлении
     "requirements_install.txt",  # Используем облегченную версию без тестовых зависимостей
@@ -56,6 +74,7 @@ FILES_TO_COPY = [
     "interactive_classify_improved.py",
     "preview_unclassified.py",
     "installer_clean.iss",
+    "installer_qt.iss",  # Modern Edition installer script
     "post_install.ps1",
     "repair_install.ps1",
     "repair_install.bat",
@@ -138,6 +157,29 @@ def copy_iss_to_root():
         return True
     else:
         print(f"\n[ERROR] Не найден {source}")
+        return False
+
+
+def update_iss_version(iss_file, version):
+    """Обновляет версию в .iss файле"""
+    try:
+        with open(iss_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Ищем строку с версией и заменяем её
+        content = re.sub(
+            r'#define MyAppVersion ".*?"',
+            f'#define MyAppVersion "{version}"',
+            content
+        )
+        
+        with open(iss_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        print(f"[OK] Версия в {iss_file} обновлена на {version}")
+        return True
+    except Exception as e:
+        print(f"⚠️  Ошибка обновления версии в {iss_file}: {e}")
         return False
 
 
@@ -235,6 +277,10 @@ def main():
         shutil.copy2(iss_source, os.path.join(TEMP_DIR, 'installer.iss'))
         shutil.copy2(iss_source, 'installer_active.iss')
         print(f"[OK] Скопирован {iss_source}")
+        
+        # Обновляем версию в .iss файле
+        print(f"\nОбновление версии в .iss файле...")
+        update_iss_version('installer_active.iss', edition['version'])
     else:
         print(f"[ERROR] Не найден {iss_source}")
         return 1
