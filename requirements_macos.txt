@@ -1,6 +1,8 @@
 pandas
 openpyxl
 python-docx
+chardet
+docx2txt
 pytest
 pytest-html
 pytest-cov

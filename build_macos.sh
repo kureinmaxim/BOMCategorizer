@@ -13,9 +13,9 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # ========== ДИАЛОГ ВЫБОРА ВЕРСИИ ==========
-# Читаем версии из config файлов
-STANDARD_VERSION=$(python3 -c "import json; print(json.load(open('config.json'))['app_info']['version'])" 2>/dev/null || echo "3.3.0")
-MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config_qt.json'))['app_info']['version'])" 2>/dev/null || echo "4.2.3")
+# Читаем версии из ШАБЛОНОВ config файлов (единственный источник правды)
+STANDARD_VERSION=$(python3 -c "import json; print(json.load(open('config.json.template'))['app_info']['version'])" 2>/dev/null || echo "3.3.0")
+MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config_qt.json.template'))['app_info']['version'])" 2>/dev/null || echo "4.2.3")
 
 echo ""
 echo -e "${YELLOW}============================================================${NC}"
@@ -177,9 +177,9 @@ cp -R "dist/${APP_NAME}.app" "${DMG_TEMP}/"
 # Создаем символическую ссылку на Applications
 ln -s /Applications "${DMG_TEMP}/Applications"
 
-# Создаем README
-DEVELOPER=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['app_info']['developer'])")
-RELEASE_DATE=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}'))['app_info']['release_date'])")
+# Создаем README (читаем из шаблона)
+DEVELOPER=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}.template'))['app_info']['developer'])")
+RELEASE_DATE=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}.template'))['app_info']['release_date'])")
 
 cat > "${DMG_TEMP}/README.txt" << EOF
 ${APP_NAME} v${VERSION}

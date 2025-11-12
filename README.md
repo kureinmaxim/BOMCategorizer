@@ -1052,6 +1052,7 @@ python app_qt.py
 
 ### Для разработчиков:
 - 🔧 [BUILD.md](BUILD.md) - Сборка инсталлятора (Windows и macOS, обе версии)
+- 🖥️ [PLATFORM_COMPARISON.md](docs/PLATFORM_COMPARISON.md) - 🆕 Сравнение Windows vs macOS workflow
 - 📦 [OFFLINE_INSTALLER.md](docs/OFFLINE_INSTALLER.md) - Офлайн инсталлятор
 - 📁 [PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) - Структура проекта
 - 🔧 [REPAIR_INSTALLATION.md](docs/REPAIR_INSTALLATION.md) - Восстановление после установки (работает БЕЗ интернета)

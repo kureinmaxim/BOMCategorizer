@@ -101,6 +101,9 @@ def apply_scale_factor(window: 'BOMCategorizerMainWindow') -> None:
     font_size = max(8, int(round(window.base_font_size * window.scale_factor)))
     font = QFont(get_system_font(), font_size)
     
+    # Сохраняем текущий размер окна
+    current_size = window.size()
+    
     # Применяем масштаб глобально через QApplication
     if window.app:
         window.app.setFont(font)
@@ -132,6 +135,18 @@ def apply_scale_factor(window: 'BOMCategorizerMainWindow') -> None:
     # Обновляем размеры виджетов
     _update_widget_sizes(window)
     
+    # Масштабируем размер окна пропорционально
+    # Берем базовый размер из конфига или текущий, если он больше
+    base_width = window.cfg.get('window', {}).get('width', 720)
+    base_height = window.cfg.get('window', {}).get('height', 900)
+    
+    # Вычисляем новый размер с учетом масштаба
+    new_width = max(int(base_width * window.scale_factor), current_size.width())
+    new_height = max(int(base_height * window.scale_factor), current_size.height())
+    
+    # Устанавливаем новый размер окна
+    window.resize(new_width, new_height)
+    
     # Принудительно обновляем все виджеты
     window.update()
     window.repaint()
@@ -141,6 +156,7 @@ def apply_scale_factor(window: 'BOMCategorizerMainWindow') -> None:
     
     central_widget = window.centralWidget()
     if central_widget:
+        central_widget.updateGeometry()
         central_widget.update()
         central_widget.repaint()
         for child in central_widget.findChildren(QWidget):

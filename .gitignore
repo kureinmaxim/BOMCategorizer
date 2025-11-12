@@ -71,6 +71,9 @@ example/
 config.local.json
 config.json
 config_qt.json
+# Keep templates for new installations
+!config.json.template
+!config_qt.json.template
 
 # Compiled installers
 BOMCategorizerSetup.exe

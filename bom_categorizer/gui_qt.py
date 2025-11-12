@@ -44,6 +44,8 @@ from .component_database import (
     format_history_tooltip
 )
 
+from .config_manager import initialize_all_configs
+
 from .dialogs_qt import (
     PinDialog,
     DatabaseStatsDialog,
@@ -99,6 +101,7 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Загружаем конфигурацию
         self.cfg = load_config()
+        self.config = self.cfg  # Псевдоним для совместимости
         ver = self.cfg.get("app_info", {}).get("version", "dev")
         name = self.cfg.get("app_info", {}).get("description", "BOM Categorizer")
 
@@ -3885,6 +3888,9 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
 
 def main():
     """Точка входа для PySide6 приложения"""
+    # Инициализируем конфигурационные файлы из шаблонов (если их нет)
+    initialize_all_configs()
+    
     app = QApplication(sys.argv)
 
     # Устанавливаем имя приложения

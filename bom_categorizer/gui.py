@@ -30,6 +30,8 @@ from .component_database import (
     format_history_tooltip
 )
 
+from .config_manager import initialize_all_configs
+
 # Исправление кодировки для корректного вывода русских символов
 if sys.stdout.encoding != 'utf-8':
     try:
@@ -212,6 +214,9 @@ class BOMCategorizerApp(tk.Tk):
         # Блокируем интерфейс если требуется PIN
         if self.require_pin:
             self.lock_interface()
+        
+        # Обработчик закрытия окна - автоматическое сохранение размера
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Проверяем первый запуск и предлагаем импорт БД
         self.after(500, self.check_first_run_and_offer_import)
@@ -1804,6 +1809,19 @@ class BOMCategorizerApp(tk.Tk):
         except Exception as e:
             print(f"⚠️ Не удалось сохранить размер окна: {e}")
     
+    def on_closing(self):
+        """Обработчик закрытия окна - автоматически сохраняет размер"""
+        try:
+            # Сохраняем текущий размер окна
+            width = self.winfo_width()
+            height = self.winfo_height()
+            self.save_window_size_to_config(width, height)
+        except Exception as e:
+            print(f"⚠️ Ошибка при сохранении размера окна: {e}")
+        finally:
+            # Закрываем приложение
+            self.destroy()
+    
     def on_replace_database(self):
         """Заменить текущую базу данных на другую из JSON файла"""
         try:
@@ -2266,5 +2284,8 @@ class BOMCategorizerApp(tk.Tk):
 
 def launch_gui():
     """Точка входа для запуска GUI приложения"""
+    # Инициализируем конфигурационные файлы из шаблонов (если их нет)
+    initialize_all_configs()
+    
     app = BOMCategorizerApp()
     app.mainloop()
