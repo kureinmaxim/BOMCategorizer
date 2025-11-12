@@ -60,6 +60,12 @@ class GlobalSearchDialog(QDialog):
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
+        
+        # Центрируем заголовки колонок "Совпадений" и "Детали"
+        header_item = self.tree.headerItem()
+        if header_item:
+            header_item.setTextAlignment(1, Qt.AlignCenter)  # Совпадений
+            header_item.setTextAlignment(2, Qt.AlignCenter)  # Детали
         self.tree.setRootIsDecorated(True)
         layout.addWidget(self.tree, stretch=1)
 

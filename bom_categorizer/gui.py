@@ -175,8 +175,8 @@ class BOMCategorizerApp(tk.Tk):
         
         # Загружаем размер окна из конфигурации
         window_cfg = self.cfg.get("window", {})
-        width = window_cfg.get("width", 660)
-        height = window_cfg.get("height", 1000)
+        width = window_cfg.get("width", 720)
+        height = window_cfg.get("height", 900)
         self.geometry(f"{width}x{height}")
 
         # Применяем современную цветовую схему
@@ -1754,7 +1754,7 @@ class BOMCategorizerApp(tk.Tk):
         
         # Предустановленные размеры
         sizes = [
-            ("По умолчанию (660×1000)", 660, 1000),
+            ("По умолчанию (720×900)", 720, 900),
             ("Компактный (720×792)", 720, 792),
             ("Средний (800×850)", 800, 850),
             ("Большой (900×900)", 900, 900),

@@ -107,8 +107,8 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Загружаем размер окна из конфигурации
         window_cfg = self.cfg.get("window", {})
-        width = window_cfg.get("width", 660)
-        height = window_cfg.get("height", 1000)
+        width = window_cfg.get("width", 720)
+        height = window_cfg.get("height", 900)
         self.resize(width, height)
 
         # Переменные состояния
@@ -1876,7 +1876,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         # Предустановленные размеры
         sizes = [
-            ("По умолчанию (620×800)", 620, 800),
+            ("По умолчанию (720×900)", 720, 900),
             ("Компактный (720×792)", 720, 792),
             ("Средний (800×850)", 800, 850),
             ("Большой (900×900)", 900, 900),
