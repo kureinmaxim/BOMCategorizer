@@ -145,6 +145,10 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.scale_factor = 0.8  # По умолчанию 80%
 
         self.current_view_mode = ui_settings.get("view_mode", "advanced")
+        # Экспертный режим не сохраняется между запусками - всегда возвращаемся к расширенному
+        if self.current_view_mode == "expert":
+            self.current_view_mode = "advanced"
+        # Проверка на корректность режима
         if self.current_view_mode not in ("simple", "advanced", "expert"):
             self.current_view_mode = "advanced"
 
@@ -176,6 +180,9 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Применяем масштаб после создания всех виджетов
         self.apply_scale_factor()
+        
+        # Обновляем галочки в меню режимов (после создания меню)
+        self.update_view_mode_actions()
 
         # Включаем поддержку Drag & Drop
         self.setAcceptDrops(True)
@@ -3774,7 +3781,8 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             ui_settings = self.cfg["ui"]
             ui_settings["theme"] = self.current_theme
             ui_settings["scale_factor"] = round(self.scale_factor, 2)
-            ui_settings["view_mode"] = self.current_view_mode
+            # Экспертный режим не сохраняется - всегда сохраняем как "advanced"
+            ui_settings["view_mode"] = "advanced" if self.current_view_mode == "expert" else self.current_view_mode
             ui_settings["log_timestamps"] = bool(self.log_with_timestamps if self.current_view_mode == "expert" else False)
             ui_settings["auto_open_output"] = bool(self.auto_open_output if self.current_view_mode == "expert" else False)
             ui_settings["auto_export_pdf"] = bool(self.auto_export_pdf if self.current_view_mode == "expert" else False)

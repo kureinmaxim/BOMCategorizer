@@ -22,23 +22,11 @@
     "theme": "dark",
     "font_size": 12,
     "scale_factor": 0.8,
-    "view_mode": "expert",
+    "view_mode": "advanced",
     "log_timestamps": false,
     "auto_open_output": false,
     "auto_export_pdf": false,
     "ai_classifier_enabled": false,
     "ai_auto_classify": false
-  },
-  "ai_classifier": {
-    "enabled": false,
-    "provider": "anthropic",
-    "model": "",
-    "api_keys": {
-      "anthropic": "",
-      "openai": "",
-      "ollama": "http://localhost:11434"
-    },
-    "auto_classify": false,
-    "confidence_threshold": "medium"
   }
 }
