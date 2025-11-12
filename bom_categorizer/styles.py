@@ -183,6 +183,50 @@ QLineEdit:disabled, QSpinBox:disabled {
     border: 2px solid #313244;
 }
 
+/* --- Глобальный поиск --- */
+QWidget#globalSearchWidget {
+    background-color: #181825; /* Mantle */
+    border: 2px solid #89b4fa; /* Accent Blue */
+    border-radius: 8px;
+}
+
+QLineEdit#globalSearchInput {
+    background-color: #242438; /* Darker Surface */
+    border: 2px solid #89b4fa;
+    color: #e0e5ff;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10pt;
+}
+
+QLineEdit#globalSearchInput:focus {
+    border: 2px solid #b4befe; /* Lavender */
+    background-color: #2f3045;
+}
+
+QPushButton#globalSearchButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #89b4fa, stop:1 #5a7fda); /* Blue Gradient */
+    color: #ffffff;
+    border: 2px solid #89b4fa;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 11pt;
+    padding: 6px 10px;
+}
+
+QPushButton#globalSearchButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #a6c8ff, stop:1 #89b4fa);
+    border: 2px solid #b4befe;
+}
+
+QPushButton#globalSearchButton:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #4a6ecf, stop:1 #3b5dbf);
+    border: 2px solid #74c7ec;
+}
+
 /* --- Списки --- */
 QListWidget {
     background-color: #313244; /* Surface1 */
@@ -572,6 +616,50 @@ QLineEdit:disabled, QSpinBox:disabled {
     background-color: #e6e9ef; /* Latte Surface 0 */
     color: #9ca0b0; /* Latte Subtext 0 */
     border: 2px solid #ccd0da;
+}
+
+/* --- Глобальный поиск --- */
+QWidget#globalSearchWidget {
+    background-color: #e6e9ef; /* Latte Surface 0 */
+    border: 2px solid #1e66f5; /* Latte Blue */
+    border-radius: 8px;
+}
+
+QLineEdit#globalSearchInput {
+    background-color: #dce0ea; /* Lighter Surface */
+    border: 2px solid #1e66f5;
+    color: #2c2f3c; /* Dark Text */
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 10pt;
+}
+
+QLineEdit#globalSearchInput:focus {
+    border: 2px solid #7287fd; /* Latte Lavender */
+    background-color: #f2f4f8;
+}
+
+QPushButton#globalSearchButton {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #1e66f5, stop:1 #0e56e5); /* Blue Gradient */
+    color: #ffffff;
+    border: 2px solid #1e66f5;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 11pt;
+    padding: 6px 10px;
+}
+
+QPushButton#globalSearchButton:hover {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #7287fd, stop:1 #5a6fdd);
+    border: 2px solid #7287fd;
+}
+
+QPushButton#globalSearchButton:pressed {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #0e56e5, stop:1 #0446d5);
+    border: 2px solid #04a5e5;
 }
 
 /* --- Списки --- */
