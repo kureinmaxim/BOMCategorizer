@@ -566,14 +566,26 @@ def get_component_category(component_name: str) -> Optional[str]:
     # Нормализуем наименование
     component_name = component_name.strip()
     
-    # Точное совпадение
+    # 1. Точное совпадение
     if component_name in db:
         return db[component_name]
     
-    # Поиск без учета регистра
+    # 2. Поиск без учета регистра
     component_lower = component_name.lower()
     for name, category in db.items():
         if name.lower() == component_lower:
+            return category
+    
+    # 3. Поиск без учета пробелов (для компонентов типа "Р1-12" vs "Р 1-12")
+    component_no_spaces = component_name.replace(" ", "").lower()
+    for name, category in db.items():
+        if name.replace(" ", "").lower() == component_no_spaces:
+            return category
+    
+    # 4. Поиск без учета дефисов и пробелов (для "Р1-12" vs "Р112" vs "Р 1 12")
+    component_normalized = component_name.replace(" ", "").replace("-", "").lower()
+    for name, category in db.items():
+        if name.replace(" ", "").replace("-", "").lower() == component_normalized:
             return category
     
     return None

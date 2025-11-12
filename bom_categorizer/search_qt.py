@@ -112,6 +112,11 @@ class GlobalSearchDialog(QDialog):
         if results.get("total_matches", 0) == 0 and not results.get("notes"):
             summary_label.setText(summary_label.text() + " | Совпадений не найдено")
 
+    def _center_columns(self, item: QTreeWidgetItem) -> None:
+        """Центрирует колонки 'Совпадений' (1) и 'Детали' (2) для элемента."""
+        item.setTextAlignment(1, Qt.AlignCenter)  # Колонка "Совпадений"
+        item.setTextAlignment(2, Qt.AlignCenter)  # Колонка "Детали"
+
     def _populate_tree(self) -> None:
         """Заполняет дерево результатами поиска."""
         self.tree.clear()
@@ -125,6 +130,7 @@ class GlobalSearchDialog(QDialog):
                 str(db_result.get("count", 0)),
                 ""
             ])
+            self._center_columns(db_root)
             db_path = db_result.get("path")
             db_root.setData(0, Qt.UserRole, db_path)
             if db_path:
@@ -134,6 +140,7 @@ class GlobalSearchDialog(QDialog):
                 name = match.get("name", "")
                 category = match.get("category", "")
                 item = QTreeWidgetItem(db_root, [name, "1", category])
+                self._center_columns(item)
                 if db_path:
                     item.setToolTip(0, f"{name}\nФайл: {db_path}{nav_hint}")
                 else:
@@ -144,6 +151,7 @@ class GlobalSearchDialog(QDialog):
             extra = db_result.get("extra", 0)
             if extra > 0:
                 extra_item = QTreeWidgetItem(db_root, [f"... и еще {extra} совпадений", "", ""])
+                self._center_columns(extra_item)
                 extra_item.setDisabled(True)
 
             db_root.setExpanded(True)
@@ -156,11 +164,13 @@ class GlobalSearchDialog(QDialog):
             str(inputs_total),
             ""
         ])
+        self._center_columns(inputs_root)
         for entry in inputs:
             display = entry.get("display") or entry.get("filename") or os.path.basename(entry.get("path", "")) or "Файл"
             count = entry.get("count", 0)
             path = entry.get("path")
             file_item = QTreeWidgetItem(inputs_root, [display, str(count), ""])
+            self._center_columns(file_item)
             file_item.setData(0, Qt.UserRole, path)
             if path:
                 file_item.setToolTip(0, path + nav_hint)
@@ -169,6 +179,7 @@ class GlobalSearchDialog(QDialog):
                 location = sample.get("location", "")
                 context = sample.get("context", "")
                 sample_item = QTreeWidgetItem(file_item, [location, "1", context])
+                self._center_columns(sample_item)
                 sample_item.setToolTip(0, f"{location}{nav_hint if path else ''}")
                 sample_item.setToolTip(2, context)
                 sample_item.setData(0, Qt.UserRole, path)
@@ -176,6 +187,7 @@ class GlobalSearchDialog(QDialog):
             extra = entry.get("extra", 0)
             if extra > 0:
                 extra_item = QTreeWidgetItem(file_item, [f"... и еще {extra} совпадений", "", ""])
+                self._center_columns(extra_item)
                 extra_item.setDisabled(True)
 
             file_item.setExpanded(True)
@@ -196,11 +208,13 @@ class GlobalSearchDialog(QDialog):
                 str(sum(entry.get("count", 0) for entry in comparison_entries)),
                 ""
             ])
+            self._center_columns(compare_root)
             for entry in comparison_entries:
                 display = entry.get("display") or entry.get("filename") or os.path.basename(entry.get("path", "")) or "Файл"
                 count = entry.get("count", 0)
                 path = entry.get("path")
                 file_item = QTreeWidgetItem(compare_root, [display, str(count), ""])
+                self._center_columns(file_item)
                 file_item.setData(0, Qt.UserRole, path)
                 if path:
                     file_item.setToolTip(0, path + nav_hint)
@@ -209,6 +223,7 @@ class GlobalSearchDialog(QDialog):
                     location = sample.get("location", "")
                     context = sample.get("context", "")
                     sample_item = QTreeWidgetItem(file_item, [location, "1", context])
+                    self._center_columns(sample_item)
                     sample_item.setToolTip(0, f"{location}{nav_hint if path else ''}")
                     sample_item.setToolTip(2, context)
                     sample_item.setData(0, Qt.UserRole, path)
@@ -216,6 +231,7 @@ class GlobalSearchDialog(QDialog):
                 extra = entry.get("extra", 0)
                 if extra > 0:
                     extra_item = QTreeWidgetItem(file_item, [f"... и еще {extra} совпадений", "", ""])
+                    self._center_columns(extra_item)
                     extra_item.setDisabled(True)
 
                 file_item.setExpanded(True)
@@ -228,10 +244,12 @@ class GlobalSearchDialog(QDialog):
                 str(len(notes)),
                 ""
             ])
+            self._center_columns(errors_root)
             for err in notes:
                 source = err.get("source", "Источник не указан")
                 message = err.get("message", "")
                 err_item = QTreeWidgetItem(errors_root, [source, "", message])
+                self._center_columns(err_item)
                 err_item.setToolTip(0, source)
                 err_item.setToolTip(2, message)
             errors_root.setExpanded(True)
@@ -243,6 +261,7 @@ class GlobalSearchDialog(QDialog):
                 "0",
                 "Совпадений по запросу не найдено"
             ])
+            self._center_columns(info_item)
             info_item.setDisabled(True)
 
         self.tree.expandToDepth(1)
@@ -254,6 +273,7 @@ class GlobalSearchDialog(QDialog):
             str(entry.get("count", 0)),
             ""
         ])
+        self._center_columns(item)
         path = entry.get("path")
         nav_hint = "\nДважды щёлкните или нажмите Enter, чтобы открыть файл в проводнике."
         if path:
@@ -264,6 +284,7 @@ class GlobalSearchDialog(QDialog):
             location = sample.get("location", "")
             context = sample.get("context", "")
             sample_item = QTreeWidgetItem(item, [location, "1", context])
+            self._center_columns(sample_item)
             if path:
                 sample_item.setToolTip(0, f"{location}{nav_hint}")
             else:
@@ -274,6 +295,7 @@ class GlobalSearchDialog(QDialog):
         extra = entry.get("extra", 0)
         if extra > 0:
             extra_item = QTreeWidgetItem(item, [f"... и еще {extra} совпадений", "", ""])
+            self._center_columns(extra_item)
             extra_item.setDisabled(True)
 
         item.setExpanded(True)

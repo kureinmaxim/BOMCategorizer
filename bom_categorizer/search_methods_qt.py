@@ -133,7 +133,7 @@ def perform_global_search(window: 'BOMCategorizerMainWindow', query: str) -> Dic
         elif output_path and not os.path.exists(output_path):
             results["notes"].append({
                 "source": "Выходной файл",
-                "message": "Файл не найден. Выполните обработку, чтобы создать выходной файл."
+                "message": "Файл не найден."
             })
 
     # Поиск в файлах сравнения
