@@ -262,11 +262,21 @@ def main():
     
     # Копируем правильный конфигурационный файл
     print(f"\nКопирую {edition['config']} -> config.json...")
+    if not os.path.exists(edition['config']):
+        print(f"[ERROR] Файл {edition['config']} не найден!")
+        print(f"       Убедитесь, что файл существует в корне проекта.")
+        return 1
     shutil.copy2(edition['config'], os.path.join(TEMP_DIR, 'config.json'))
+    print(f"[OK] {edition['config']} -> config.json")
     
     # Копируем правильный файл запуска
     print(f"Копирую {edition['app_file']} -> app.py...")
+    if not os.path.exists(edition['app_file']):
+        print(f"[ERROR] Файл {edition['app_file']} не найден!")
+        print(f"       Убедитесь, что файл существует в корне проекта.")
+        return 1
     shutil.copy2(edition['app_file'], os.path.join(TEMP_DIR, 'app.py'))
+    print(f"[OK] {edition['app_file']} -> app.py")
     
     # Шаг 3: Копирование .iss в корень
     print_step("Шаг 3: Подготовка скрипта Inno Setup")

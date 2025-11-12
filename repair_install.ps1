@@ -62,8 +62,8 @@ Get-Content $RequirementsFile | ForEach-Object {
 }
 Write-Host ""
 
-# Try to use pip
-Write-Host "Attempting to install packages..."
+# Try to use pip - first from offline packages
+Write-Host "Attempting to install packages from offline packages first..."
 Write-Host "Command: python -m pip install --no-index --find-links=offline_packages -r requirements.txt"
 Write-Host ""
 
@@ -72,7 +72,7 @@ Write-Host ""
 if ($LASTEXITCODE -eq 0) {
     Write-Host ""
     Write-Host "==============================================="
-    Write-Host "SUCCESS! All packages installed successfully."
+    Write-Host "SUCCESS! All packages installed successfully from offline packages."
     Write-Host "==============================================="
     Write-Host ""
     Write-Host "Verifying installation..."
@@ -82,11 +82,31 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "You can now run the application from the Start Menu."
 } else {
     Write-Host ""
-    Write-Host "==============================================="
-    Write-Host "ERROR: Failed to install packages."
-    Write-Host "==============================================="
+    Write-Host "WARNING: Some packages could not be installed from offline packages."
+    Write-Host "Attempting to install missing packages from PyPI (requires internet)..."
     Write-Host ""
-    Write-Host "Please check the log file: $LogFile"
+    
+    & $VenvPython -m pip install -r $RequirementsFile
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host ""
+        Write-Host "==============================================="
+        Write-Host "SUCCESS! All packages installed successfully (hybrid: offline + online)."
+        Write-Host "==============================================="
+        Write-Host ""
+        Write-Host "Verifying installation..."
+        Write-Host "Installed packages:"
+        & $VenvPython -m pip list
+        Write-Host ""
+        Write-Host "You can now run the application from the Start Menu."
+    } else {
+        Write-Host ""
+        Write-Host "==============================================="
+        Write-Host "ERROR: Failed to install packages even with online fallback."
+        Write-Host "==============================================="
+        Write-Host ""
+        Write-Host "Please check the log file: $LogFile"
+    }
 }
 
 Stop-Transcript

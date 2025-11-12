@@ -118,14 +118,14 @@ Write-Host "Requirements content:"
 Get-Content $RequirementsFile | ForEach-Object { Write-Host "  - $_" }
 
 if (Test-Path $OfflinePackagesDir) {
-    Write-Host "Found offline packages directory. Installing from local files (no internet required)..."
+    Write-Host "Found offline packages directory. Installing from local files first..."
     Write-Host "Offline packages directory: $OfflinePackagesDir"
     
     # List available packages
     Write-Host "Available offline packages:"
     Get-ChildItem $OfflinePackagesDir -Filter "*.whl" | ForEach-Object { Write-Host "  - $($_.Name)" }
     
-    Write-Host "Running pip install command..."
+    Write-Host "Running pip install command (offline packages first)..."
     if ($UsePythonModule) {
         Write-Host "Command: $VenvPython -m pip install --no-index --find-links=$OfflinePackagesDir -r $RequirementsFile"
         & $VenvPython -m pip install --no-index --find-links="$OfflinePackagesDir" -r $RequirementsFile
@@ -144,12 +144,35 @@ if (Test-Path $OfflinePackagesDir) {
             & $PipExecutable list
         }
     } else {
-        Write-Host "ERROR: Failed to install dependencies from offline packages."
+        Write-Host "WARNING: Some packages could not be installed from offline packages."
         Write-Host "Exit code: $LASTEXITCODE"
+        Write-Host "Attempting to install missing packages from PyPI (requires internet)..."
         Write-Host ""
-        Write-Host "You can try to repair the installation by running repair_install.bat"
-        Write-Host "from the installation directory: $PSScriptRoot"
-        Exit 1
+        
+        # Try to install from PyPI as fallback
+        if ($UsePythonModule) {
+            & $VenvPython -m pip install -r $RequirementsFile
+        } else {
+            & $PipExecutable install -r $RequirementsFile
+        }
+        
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "All dependencies installed successfully (hybrid: offline + online)."
+            Write-Host ""
+            Write-Host "Verifying installed packages:"
+            if ($UsePythonModule) {
+                & $VenvPython -m pip list
+            } else {
+                & $PipExecutable list
+            }
+        } else {
+            Write-Host "ERROR: Failed to install dependencies even with online fallback."
+            Write-Host "Exit code: $LASTEXITCODE"
+            Write-Host ""
+            Write-Host "You can try to repair the installation by running repair_install.bat"
+            Write-Host "from the installation directory: $PSScriptRoot"
+            Exit 1
+        }
     }
 } else {
     Write-Host "WARNING: offline_packages directory not found at: $OfflinePackagesDir"

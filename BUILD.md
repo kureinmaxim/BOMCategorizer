@@ -456,6 +456,52 @@ python update_version.py sync
 python update_version.py status
 ```
 
+### Проблема: Отсутствует config_qt.json при сборке Modern Edition
+
+**Симптомы:**
+```
+[ERROR] Не удается найти указанный файл: config_qt.json
+```
+
+**Решение:**
+```bash
+# Создать config_qt.json из шаблона
+cp config_qt.json.template config_qt.json
+
+# Или использовать скрипт синхронизации
+python update_version.py sync
+```
+
+### Проблема: PySide6 не найден в offline_packages
+
+**Симптомы:**
+- При установке через инсталлятор ошибка: `ERROR: Could not find a version that satisfies the requirement PySide6`
+- В `offline_packages` нет файлов PySide6
+
+**Решение:**
+
+Скрипты `post_install.ps1` и `repair_install.ps1` теперь используют **гибридный подход**:
+1. ✅ Сначала пытаются установить из `offline_packages` (быстро, без интернета)
+2. ✅ Если пакет не найден - автоматически устанавливают из PyPI (требует интернет)
+
+**Ручной ремонт установки:**
+```powershell
+# Запустить скрипт ремонта из директории установки
+cd "C:\Users\Username\AppData\Roaming\BOMCategorizerModern"
+.\repair_install.bat
+```
+
+**Или установить PySide6 вручную:**
+```powershell
+.\.venv\Scripts\python.exe -m pip install PySide6
+```
+
+**Добавление PySide6 в offline_packages (для будущих сборок):**
+```powershell
+# Скачать PySide6 и его зависимости
+python -m pip download PySide6 -d offline_packages --only-binary=:all: --platform win_amd64 --python-version 313
+```
+
 ---
 
 ## 📝 Пример полного цикла сборки
