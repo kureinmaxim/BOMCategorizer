@@ -446,18 +446,13 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         view_menu.addSeparator()
 
-        zoom_in_action = QAction("Увеличить масштаб", self)
-        zoom_in_action.setShortcuts([QKeySequence.ZoomIn, QKeySequence("Ctrl++"), QKeySequence("Ctrl+=")])
+        zoom_in_action = QAction("Увеличить масштаб (Ctrl++)", self)
+        zoom_in_action.setShortcut(QKeySequence("Ctrl+="))  # = это то же, что + без Shift
         zoom_in_action.triggered.connect(self.on_zoom_in)
         view_menu.addAction(zoom_in_action)
 
-        zoom_out_action = QAction("Уменьшить масштаб", self)
-        # Используем несколько вариантов для надежности
-        zoom_out_action.setShortcuts([
-            QKeySequence.ZoomOut,  # Стандартная комбинация Qt
-            QKeySequence("Ctrl+-"),  # Прямое указание
-            QKeySequence("Ctrl+Minus"),  # Именованная клавиша
-        ])
+        zoom_out_action = QAction("Уменьшить масштаб (Ctrl+-)", self)
+        zoom_out_action.setShortcut(QKeySequence("Ctrl+-"))  # Только один вариант
         zoom_out_action.triggered.connect(self.on_zoom_out)
         view_menu.addAction(zoom_out_action)
 
@@ -3449,18 +3444,10 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         QMessageBox.information(self, "Скопировано", "Информация скопирована в буфер обмена!")
     
     def keyPressEvent(self, event):
-        """Обработка нажатий клавиш для контекстной помощи и масштабирования"""
+        """Обработка нажатий клавиш для контекстной помощи"""
         if event.key() == Qt.Key_F1:
             self.show_context_help()
-        elif event.key() == Qt.Key_Minus and event.modifiers() == Qt.ControlModifier:
-            # Обработка Ctrl+- для уменьшения масштаба
-            self.on_zoom_out()
-        elif event.key() == Qt.Key_Plus and event.modifiers() == Qt.ControlModifier:
-            # Обработка Ctrl++ для увеличения масштаба (на случай если не работает через QAction)
-            self.on_zoom_in()
-        elif event.key() == Qt.Key_0 and event.modifiers() == Qt.ControlModifier:
-            # Обработка Ctrl+0 для сброса масштаба
-            self.reset_scale()
+            event.accept()
         else:
             super().keyPressEvent(event)
     
