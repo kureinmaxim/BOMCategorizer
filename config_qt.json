@@ -1,6 +1,6 @@
 {
   "app_info": {
-    "version": "4.1.2",
+    "version": "4.2.2",
     "edition": "Modern Edition",
     "release_date": "12.11.2025",
     "developer": "Куреин М.Н.",
@@ -14,16 +14,17 @@
     "require_pin": true
   },
   "window": {
-    "width": 702,
-    "height": 1210,
+    "width": 700,
+    "height": 900,
     "remember_size": true
   },
   "ui": {
     "theme": "dark",
     "font_size": 12,
-    "scale_factor": 0.9,
-    "view_mode": "simple",
+    "scale_factor": 0.8,
+    "view_mode": "expert",
     "log_timestamps": false,
-    "auto_open_output": false
+    "auto_open_output": false,
+    "auto_export_pdf": false
   }
 }
