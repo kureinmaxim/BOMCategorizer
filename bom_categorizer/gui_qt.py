@@ -416,6 +416,31 @@ class BOMCategorizerMainWindow(QMainWindow):
         search_button.clicked.connect(self.on_global_search_triggered)
         self.global_search_input.returnPressed.connect(self.on_global_search_triggered)
         
+        # Меню "Поиск PDF" (только в экспертном режиме)
+        self.pdf_search_menu = menubar.addMenu("📄 Поиск PDF")
+        
+        # Локальный поиск
+        local_pdf_action = QAction("📁 Локальный поиск PDF", self)
+        local_pdf_action.setToolTip("Поиск PDF файлов на компьютере в папках pdf_*, pdfBZ и т.д.")
+        local_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(0))
+        self.pdf_search_menu.addAction(local_pdf_action)
+        
+        # AI поиск
+        ai_pdf_action = QAction("🤖 AI поиск компонента", self)
+        ai_pdf_action.setToolTip("Поиск информации о компоненте через Anthropic Claude или OpenAI GPT")
+        ai_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(1))
+        self.pdf_search_menu.addAction(ai_pdf_action)
+        
+        self.pdf_search_menu.addSeparator()
+        
+        # Настройки поиска PDF
+        pdf_settings_action = QAction("⚙️ Настройки API ключей", self)
+        pdf_settings_action.triggered.connect(self.open_pdf_search_settings)
+        self.pdf_search_menu.addAction(pdf_settings_action)
+        
+        # Скрываем меню PDF в простом/расширенном режиме
+        self.pdf_search_menu.menuAction().setVisible(self.current_view_mode == "expert")
+        
         # Меню "Помощь"
         help_menu = menubar.addMenu("Помощь")
         
@@ -1617,6 +1642,38 @@ class BOMCategorizerMainWindow(QMainWindow):
         dialog.exec()
         self.global_search_input.setFocus()
         self.global_search_input.selectAll()
+    
+    def open_pdf_search_dialog(self, tab_index: int = 0):
+        """
+        Открывает диалог поиска PDF
+        
+        Args:
+            tab_index: Индекс вкладки (0 - локальный поиск, 1 - AI поиск)
+        """
+        from .pdf_search_dialogs import PDFSearchDialog
+        
+        dialog = PDFSearchDialog(self, self.cfg)
+        dialog.tabs.setCurrentIndex(tab_index)
+        dialog.show()  # Немодальный диалог
+    
+    def open_pdf_search_settings(self):
+        """Открывает настройки поиска PDF"""
+        from .pdf_search_dialogs import PDFSearchSettingsDialog
+        
+        dialog = PDFSearchSettingsDialog(self, self.cfg)
+        if dialog.exec() == QDialog.Accepted:
+            self.cfg = dialog.get_config()
+            self.save_pdf_search_config(self.cfg)
+    
+    def save_pdf_search_config(self, config: dict):
+        """Сохраняет конфигурацию поиска PDF"""
+        try:
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config, f, indent=2, ensure_ascii=False)
+            self.log_text.append("✅ Настройки поиска PDF сохранены\n")
+        except Exception as e:
+            self.log_text.append(f"⚠️ Ошибка сохранения настроек: {e}\n")
 
     def update_database_info(self):
         """Обновляет информацию о базе данных в футере"""
@@ -3116,6 +3173,10 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
 
         if self.db_menu is not None:
             self.db_menu.menuAction().setVisible(not simple)
+        
+        # PDF поиск только в экспертном режиме
+        if hasattr(self, 'pdf_search_menu') and self.pdf_search_menu is not None:
+            self.pdf_search_menu.menuAction().setVisible(expert)
 
         if self.mode_label is not None:
             mode_titles = {
