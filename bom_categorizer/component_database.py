@@ -42,10 +42,28 @@ import json
 import os
 import shutil
 import hashlib
+import sys
 from typing import Optional, Dict, List
 from datetime import datetime
 
 from openpyxl.utils import get_column_letter
+
+
+def safe_print(message: str):
+    """
+    Безопасный вывод сообщений с эмодзи в консоль.
+    Обрабатывает ошибки кодировки на Windows.
+    """
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        # Заменяем эмодзи на ASCII символы для консолей, не поддерживающих UTF-8
+        safe_message = message.replace("✅", "[OK]").replace("❌", "[ERROR]").replace("⚠️", "[WARNING]")
+        try:
+            print(safe_message)
+        except:
+            # В крайнем случае выводим в stderr
+            sys.stderr.write(safe_message + "\n")
 
 
 # Путь к файлу базы данных (в папке с данными пользователя)
@@ -196,7 +214,7 @@ def set_database_version(new_version: str) -> bool:
     
     # Проверяем формат версии
     if not new_version or '.' not in new_version:
-        print(f"❌ Неверный формат версии: {new_version}. Ожидается формат X.Y")
+        safe_print(f"❌ Неверный формат версии: {new_version}. Ожидается формат X.Y")
         return False
     
     try:
@@ -205,12 +223,12 @@ def set_database_version(new_version: str) -> bool:
         minor = int(parts[1]) if len(parts) > 1 else 0
         
         if major < 0 or minor < 0:
-            print(f"❌ Версия должна быть >= 0.0")
+            safe_print(f"❌ Версия должна быть >= 0.0")
             return False
         
         # Загружаем базу данных
         if not os.path.exists(db_path):
-            print(f"❌ База данных не найдена")
+            safe_print(f"❌ База данных не найдена")
             return False
         
         with open(db_path, 'r', encoding='utf-8') as f:
@@ -242,11 +260,11 @@ def set_database_version(new_version: str) -> bool:
         with open(db_path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
-        print(f"✅ Версия БД изменена: {old_version} → {new_version}")
+        safe_print(f"✅ Версия БД изменена: {old_version} → {new_version}")
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка при изменении версии: {e}")
+        safe_print(f"❌ Ошибка при изменении версии: {e}")
         return False
 
 
@@ -340,7 +358,7 @@ def load_component_database() -> Dict[str, str]:
         }
         
         _save_structured_database(structured_db)
-        print(f"✅ Создана база данных компонентов: {db_path}")
+        safe_print(f"✅ Создана база данных компонентов: {db_path}")
         print(f"   Начальных записей: {len(initial_components)}")
         return initial_components
     
@@ -389,12 +407,12 @@ def load_component_database() -> Dict[str, str]:
                         "components": data
                     }
                     _save_structured_database(structured_db)
-                    print(f"✅ База данных обновлена до нового формата с версионированием")
+                    safe_print(f"✅ База данных обновлена до нового формата с версионированием")
                     return data
             
             return {}
     except Exception as e:
-        print(f"⚠️ Ошибка чтения базы данных компонентов: {e}")
+        safe_print(f"⚠️ Ошибка чтения базы данных компонентов: {e}")
         return {}
 
 
@@ -411,7 +429,7 @@ def _save_structured_database(structured_db: dict) -> None:
         with open(db_path, 'w', encoding='utf-8') as f:
             json.dump(structured_db, f, ensure_ascii=False, indent=2, sort_keys=False)
     except Exception as e:
-        print(f"⚠️ Ошибка сохранения базы данных компонентов: {e}")
+        safe_print(f"⚠️ Ошибка сохранения базы данных компонентов: {e}")
 
 
 def save_component_database(database: Dict[str, str], action: str = "update", 
@@ -467,7 +485,7 @@ def save_component_database(database: Dict[str, str], action: str = "update",
                 "components": {}
             }
     except Exception as e:
-        print(f"⚠️ Ошибка загрузки базы данных: {e}")
+        safe_print(f"⚠️ Ошибка загрузки базы данных: {e}")
         return
     
     # Вычисляем количество добавленных компонентов
@@ -527,7 +545,7 @@ def add_component_to_database(component_name: str, category: str, source: Option
         # Передаем информацию о добавляемом компоненте
         action = "import_from_file" if source else "manual_add"
         save_component_database(db, action=action, source=source, component_names=[component_name])
-        print(f"✅ Добавлено в базу: {component_name} → {category}")
+        safe_print(f"✅ Добавлено в базу: {component_name} → {category}")
 
 
 def get_component_category(component_name: str) -> Optional[str]:
@@ -578,7 +596,7 @@ def get_database_history() -> List[dict]:
             data = json.load(f)
             return data.get("history", [])
     except Exception as e:
-        print(f"⚠️ Ошибка чтения истории БД: {e}")
+        safe_print(f"⚠️ Ошибка чтения истории БД: {e}")
         return []
 
 
@@ -657,7 +675,7 @@ def clear_database() -> bool:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = os.path.join(backup_dir, f"component_database_before_clear_{timestamp}.json")
             shutil.copy2(db_path, backup_path)
-            print(f"✅ Резервная копия создана: {backup_path}")
+            safe_print(f"✅ Резервная копия создана: {backup_path}")
         
         # Создаем новую пустую базу
         empty_db = {
@@ -689,11 +707,11 @@ def clear_database() -> bool:
         with open(db_path, 'w', encoding='utf-8') as f:
             json.dump(empty_db, f, ensure_ascii=False, indent=2)
         
-        print(f"✅ База данных очищена: {db_path}")
+        safe_print(f"✅ База данных очищена: {db_path}")
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка при очистке базы данных: {e}")
+        safe_print(f"❌ Ошибка при очистке базы данных: {e}")
         return False
 
 
@@ -740,7 +758,7 @@ def get_database_stats() -> dict:
             
             return stats
     except Exception as e:
-        print(f"⚠️ Ошибка получения статистики: {e}")
+        safe_print(f"⚠️ Ошибка получения статистики: {e}")
         return {
             'metadata': {},
             'total': 0,
@@ -850,12 +868,12 @@ def export_database_to_excel(output_path: str = "component_database_export.xlsx"
             # Немного увеличим высоту первой строки листа "Компоненты" для header
             components_sheet.row_dimensions[1].height = 24
         
-        print(f"✅ База данных экспортирована: {output_path}")
+        safe_print(f"✅ База данных экспортирована: {output_path}")
         print(f"   Компонентов: {len(db)}")
         return True
         
     except Exception as e:
-        print(f"❌ Ошибка экспорта базы данных: {e}")
+        safe_print(f"❌ Ошибка экспорта базы данных: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -979,7 +997,7 @@ def initialize_database_from_template():
         import shutil
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         shutil.copy2(template_path, db_path)
-        print(f"✅ Инициализирована БД из шаблона: {db_path}")
+        safe_print(f"✅ Инициализирована БД из шаблона: {db_path}")
     else:
         # Если шаблона нет - создаем пустую БД
         structured_db = {
@@ -994,4 +1012,4 @@ def initialize_database_from_template():
             "components": {}
         }
         _save_structured_database(structured_db)
-        print(f"✅ Создана пустая БД: {db_path}")
+        safe_print(f"✅ Создана пустая БД: {db_path}")

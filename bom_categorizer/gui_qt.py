@@ -3303,20 +3303,55 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
     def _update_widget_sizes(self):
         """Обновляет размеры виджетов в соответствии с масштабом"""
         # Базовые размеры (для масштаба 1.0)
-        base_sizes = {
-            'files_list_height': 100,
-            'log_text_height': 160,
-        }
+        base_button_height = 32
+        base_input_height = 28
+        base_spacing = 10
+        
+        # Масштабированные значения
+        scaled_button_height = int(base_button_height * self.scale_factor)
+        scaled_input_height = int(base_input_height * self.scale_factor)
+        scaled_spacing = int(base_spacing * self.scale_factor)
         
         # Обновляем высоту списка файлов
         if hasattr(self, 'files_list') and self.files_list:
-            scaled_height = int(base_sizes['files_list_height'] * self.scale_factor)
+            scaled_height = int(100 * self.scale_factor)
             self.files_list.setMaximumHeight(scaled_height)
+            self.files_list.setMinimumHeight(int(60 * self.scale_factor))
         
         # Обновляем высоту лога
         if hasattr(self, 'log_text') and self.log_text:
-            scaled_height = int(base_sizes['log_text_height'] * self.scale_factor)
+            scaled_height = int(160 * self.scale_factor)
             self.log_text.setMaximumHeight(scaled_height)
+            self.log_text.setMinimumHeight(int(100 * self.scale_factor))
+        
+        # Обновляем размеры всех кнопок
+        for button in self.findChildren(QPushButton):
+            button.setMinimumHeight(scaled_button_height)
+            button.setMaximumHeight(scaled_button_height + 10)
+        
+        # Обновляем размеры полей ввода
+        for line_edit in self.findChildren(QLineEdit):
+            line_edit.setMinimumHeight(scaled_input_height)
+            line_edit.setMaximumHeight(scaled_input_height + 10)
+        
+        # Обновляем размеры спинбоксов
+        for spin_box in self.findChildren(QSpinBox):
+            spin_box.setMinimumHeight(scaled_input_height)
+            spin_box.setMaximumHeight(scaled_input_height + 10)
+        
+        # Обновляем интервалы в layouts
+        for layout in self.findChildren(QVBoxLayout):
+            if layout:
+                layout.setSpacing(scaled_spacing)
+        
+        for layout in self.findChildren(QHBoxLayout):
+            if layout:
+                layout.setSpacing(scaled_spacing)
+        
+        # Принудительно обновляем геометрию
+        self.updateGeometry()
+        self.adjustSize()
+        QApplication.processEvents()
 
     def update_scale_actions(self):
         """Обновляет состояние пунктов меню масштаба"""
