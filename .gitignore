@@ -69,6 +69,8 @@ example/
 
 # Local configuration (passwords, personal settings)
 config.local.json
+config.json
+config_qt.json
 
 # Compiled installers
 BOMCategorizerSetup.exe
