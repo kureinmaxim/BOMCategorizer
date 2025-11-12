@@ -321,6 +321,140 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     window.auto_open_output_checkbox.setToolTip("После удачной обработки BOM-файлов будет автоматически открыт проводник с результатом.")
     window.auto_open_output_checkbox.stateChanged.connect(window.on_toggle_auto_open_output)
     layout.addWidget(window.auto_open_output_checkbox)
+    
+    # Улучшенный Drag & Drop
+    window.enhanced_dragdrop_checkbox = QCheckBox("🎯 Улучшенный Drag & Drop (перетаскивание между панелями, контекстное меню)")
+    window.enhanced_dragdrop_checkbox.setToolTip(
+        "Включает расширенные возможности перетаскивания:\n"
+        "• Изменение порядка файлов в списке\n"
+        "• Перетаскивание между разными списками\n"
+        "• Контекстное меню (ПКМ): открыть файл, показать в проводнике, копировать путь\n"
+        "• Визуальная подсветка зоны сброса"
+    )
+    window.enhanced_dragdrop_checkbox.stateChanged.connect(window.on_toggle_enhanced_dragdrop)
+    layout.addWidget(window.enhanced_dragdrop_checkbox)
+    
+    # Интерактивная командная строка
+    cli_layout = QHBoxLayout()
+    window.interactive_cli_checkbox = QCheckBox("💻 Интерактивная командная строка (расширенный CLI режим)")
+    window.interactive_cli_checkbox.setToolTip(
+        "Открывает интерактивную консоль для управления приложением:\n"
+        "• Выполнение команд для обработки файлов\n"
+        "• Управление базой данных через CLI\n"
+        "• Автодополнение и история команд\n"
+        "• Быстрый доступ ко всем функциям"
+    )
+    cli_layout.addWidget(window.interactive_cli_checkbox)
+    
+    open_cli_button = QPushButton("Открыть CLI")
+    open_cli_button.setObjectName("openCliButton")
+    open_cli_button.setFixedWidth(100)
+    open_cli_button.clicked.connect(window.open_interactive_cli)
+    cli_layout.addWidget(open_cli_button)
+    cli_layout.addStretch()
+    
+    layout.addLayout(cli_layout)
+    
+    # Экспорт в PDF
+    pdf_export_layout = QHBoxLayout()
+    pdf_label = QLabel("📄 Экспорт результата в PDF:")
+    pdf_label.setToolTip(
+        "Конвертирует выходной Excel файл в PDF документ:\n"
+        "• Сохранение таблиц и форматирования\n"
+        "• Титульная страница со сводкой\n"
+        "• Удобно для печати и отправки"
+    )
+    pdf_export_layout.addWidget(pdf_label)
+    
+    export_pdf_button = QPushButton("Экспортировать последний результат в PDF")
+    export_pdf_button.setObjectName("exportPdfButton")
+    export_pdf_button.clicked.connect(window.export_last_result_to_pdf)
+    export_pdf_button.setStyleSheet("""
+        QPushButton {
+            background-color: #f38ba8;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 15px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #f5c2e7;
+        }
+        QPushButton:disabled {
+            background-color: #6c7086;
+            color: #45475a;
+        }
+    """)
+    pdf_export_layout.addWidget(export_pdf_button)
+    pdf_export_layout.addStretch()
+    
+    layout.addLayout(pdf_export_layout)
+    
+    # Опция автоматического экспорта в PDF
+    window.auto_export_pdf_checkbox = QCheckBox("Автоматически создавать PDF после обработки")
+    window.auto_export_pdf_checkbox.setToolTip("После успешной обработки автоматически создается PDF версия результата")
+    window.auto_export_pdf_checkbox.stateChanged.connect(window.on_toggle_auto_pdf_export)
+    layout.addWidget(window.auto_export_pdf_checkbox)
+    
+    # Разделитель
+    layout.addWidget(QLabel("<hr>"))
+    
+    # AI-подсказки для классификации
+    ai_header_layout = QHBoxLayout()
+    ai_label = QLabel("🤖 AI-подсказки для классификации:")
+    ai_label.setToolTip(
+        "Интеграция с LLM для автоматической классификации неизвестных компонентов:\n"
+        "• Использует Claude, GPT или локальный Ollama\n"
+        "• Предлагает категории для новых компонентов\n"
+        "• Объясняет выбор категории\n"
+        "• Работает в интерактивном режиме"
+    )
+    ai_label.setProperty("class", "bold")
+    ai_header_layout.addWidget(ai_label)
+    ai_header_layout.addStretch()
+    layout.addLayout(ai_header_layout)
+    
+    # Чекбокс включения AI-подсказок
+    window.ai_classifier_checkbox = QCheckBox("Включить AI-подсказки при интерактивной классификации")
+    window.ai_classifier_checkbox.setToolTip(
+        "При включении в интерактивном режиме будет доступна кнопка 'AI-подсказка':\n"
+        "• Автоматическое предложение категории через LLM\n"
+        "• Объяснение выбора\n"
+        "• Уровень уверенности (high/medium/low)\n"
+        "• Требуется API ключ для выбранного провайдера"
+    )
+    window.ai_classifier_checkbox.stateChanged.connect(window.on_toggle_ai_classifier)
+    layout.addWidget(window.ai_classifier_checkbox)
+    
+    # Кнопка настроек AI и статус
+    ai_controls_layout = QHBoxLayout()
+    
+    ai_settings_button = QPushButton("⚙️ Настройки AI")
+    ai_settings_button.setObjectName("aiSettingsButton")
+    ai_settings_button.setFixedWidth(130)
+    ai_settings_button.clicked.connect(window.open_ai_settings)
+    ai_settings_button.setToolTip("Настройка провайдера AI, API ключей и параметров")
+    ai_controls_layout.addWidget(ai_settings_button)
+    
+    # Статус AI
+    window.ai_status_label = QLabel("Статус: ⚪ Не настроен")
+    window.ai_status_label.setStyleSheet("color: #6c7086;")
+    ai_controls_layout.addWidget(window.ai_status_label)
+    
+    ai_controls_layout.addStretch()
+    layout.addLayout(ai_controls_layout)
+    
+    # Опция автоматической классификации
+    window.ai_auto_classify_checkbox = QCheckBox("Автоматически классифицировать все неизвестные компоненты через AI")
+    window.ai_auto_classify_checkbox.setToolTip(
+        "⚠️ Экспериментально! При включении ВСЕ неизвестные компоненты будут автоматически\n"
+        "отправлены на классификацию через AI без интерактивного запроса.\n"
+        "Требует API ключа. Может занять много времени и средств при большом количестве компонентов."
+    )
+    window.ai_auto_classify_checkbox.setEnabled(False)  # Включается только если AI настроен
+    window.ai_auto_classify_checkbox.stateChanged.connect(window.on_toggle_ai_auto_classify)
+    layout.addWidget(window.ai_auto_classify_checkbox)
 
     group.setLayout(layout)
     group.setVisible(False)

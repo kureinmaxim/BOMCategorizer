@@ -151,6 +151,11 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Дополнительные опции отображения
         self.log_with_timestamps = bool(ui_settings.get("log_timestamps", False)) if self.current_view_mode == "expert" else False
         self.auto_open_output = bool(ui_settings.get("auto_open_output", False)) if self.current_view_mode == "expert" else False
+        self.auto_export_pdf = bool(ui_settings.get("auto_export_pdf", False)) if self.current_view_mode == "expert" else False
+        
+        # AI-подсказки
+        self.ai_classifier_enabled = bool(ui_settings.get("ai_classifier_enabled", False)) if self.current_view_mode == "expert" else False
+        self.ai_auto_classify = bool(ui_settings.get("ai_auto_classify", False)) if self.current_view_mode == "expert" else False
 
         # Плейсхолдеры для элементов меню и секций
         self.scale_actions: Dict[float, QAction] = {}
@@ -377,9 +382,42 @@ class BOMCategorizerMainWindow(QMainWindow):
         import_output_action.triggered.connect(self.on_import_from_output)
         self.db_menu.addAction(import_output_action)
         
-        # Меню "Поиск"
+        # Меню "Помощь"
+        help_menu = menubar.addMenu("Помощь")
+        
+        # Контекстная помощь
+        context_help_action = QAction("❓ Контекстная помощь", self)
+        context_help_action.setShortcut(QKeySequence("F1"))
+        context_help_action.triggered.connect(self.show_context_help)
+        help_menu.addAction(context_help_action)
+        
+        # База знаний
+        knowledge_base_action = QAction("📚 База знаний", self)
+        knowledge_base_action.triggered.connect(self.show_knowledge_base)
+        help_menu.addAction(knowledge_base_action)
+        
+        help_menu.addSeparator()
+        
+        # Руководство по Drag & Drop
+        dragdrop_help_action = QAction("🎯 Как использовать Drag & Drop", self)
+        dragdrop_help_action.triggered.connect(self.show_dragdrop_help)
+        help_menu.addAction(dragdrop_help_action)
+        
+        help_menu.addSeparator()
+        
+        # О программе
+        about_action = QAction("ℹ️ О программе", self)
+        about_action.triggered.connect(self.show_about)
+        help_menu.addAction(about_action)
+        
+        # Системная информация
+        system_info_action = QAction("💻 Системная информация", self)
+        system_info_action.triggered.connect(self.show_system_info)
+        help_menu.addAction(system_info_action)
+        
+        # Меню "Поиск" (после Помощь)
         from PySide6.QtWidgets import QWidgetAction
-        search_menu = menubar.addMenu("🔍 Поиск")
+        self.global_search_menu = menubar.addMenu("🔍 Поиск")
         
         # Создаем виджет для выпадающего меню
         search_widget = QWidget()
@@ -410,13 +448,16 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Создаем действие с виджетом
         search_action = QWidgetAction(self)
         search_action.setDefaultWidget(search_widget)
-        search_menu.addAction(search_action)
+        self.global_search_menu.addAction(search_action)
         
         # Подключаем сигналы
         search_button.clicked.connect(self.on_global_search_triggered)
         self.global_search_input.returnPressed.connect(self.on_global_search_triggered)
         
-        # Меню "Поиск PDF" (только в экспертном режиме)
+        # Глобальный поиск доступен только в экспертном режиме (но видим всегда)
+        self.global_search_menu.setEnabled(self.current_view_mode == "expert")
+        
+        # Меню "Поиск PDF" (после глобального поиска)
         self.pdf_search_menu = menubar.addMenu("📄 Поиск PDF")
         
         # Локальный поиск
@@ -438,34 +479,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         pdf_settings_action.triggered.connect(self.open_pdf_search_settings)
         self.pdf_search_menu.addAction(pdf_settings_action)
         
-        # Скрываем меню PDF в простом/расширенном режиме
-        self.pdf_search_menu.menuAction().setVisible(self.current_view_mode == "expert")
-        
-        # Меню "Помощь"
-        help_menu = menubar.addMenu("Помощь")
-        
-        # Контекстная помощь
-        context_help_action = QAction("❓ Контекстная помощь", self)
-        context_help_action.setShortcut(QKeySequence("F1"))
-        context_help_action.triggered.connect(self.show_context_help)
-        help_menu.addAction(context_help_action)
-        
-        # База знаний
-        knowledge_base_action = QAction("📚 База знаний", self)
-        knowledge_base_action.triggered.connect(self.show_knowledge_base)
-        help_menu.addAction(knowledge_base_action)
-        
-        help_menu.addSeparator()
-        
-        # О программе
-        about_action = QAction("ℹ️ О программе", self)
-        about_action.triggered.connect(self.show_about)
-        help_menu.addAction(about_action)
-        
-        # Системная информация
-        system_info_action = QAction("💻 Системная информация", self)
-        system_info_action.triggered.connect(self.show_system_info)
-        help_menu.addAction(system_info_action)
+        # Меню PDF видимо всегда, но активно только в экспертном режиме
+        self.pdf_search_menu.setEnabled(self.current_view_mode == "expert")
+        if self.current_view_mode != "expert":
+            self.pdf_search_menu.setToolTip("Поиск PDF доступен только в Экспертном режиме")
+        else:
+            self.pdf_search_menu.setToolTip("Поиск PDF файлов на компьютере и через AI")
 
     def _create_ui(self):
         """Создает элементы интерфейса"""
@@ -2967,6 +2986,175 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         clipboard.setText(plain_text)
         QMessageBox.information(self, "Скопировано", "Информация скопирована в буфер обмена!")
     
+    def show_dragdrop_help(self):
+        """Показывает руководство по использованию Drag & Drop"""
+        help_text = """
+<h1 style="color: #89b4fa;">🎯 Улучшенный Drag & Drop</h1>
+
+<h2 style="color: #94e2d5;">Как включить</h2>
+<ol>
+<li>Переключитесь в <b>Экспертный режим</b><br>
+    (Вид → Режим работы → Экспертный режим)</li>
+<li>В секции <b>Экспертные инструменты</b> найдите чекбокс:<br>
+    <i>🎯 Улучшенный Drag & Drop</i></li>
+<li>Установите галочку - функция активируется мгновенно!</li>
+</ol>
+
+<h2 style="color: #94e2d5;">Основные возможности</h2>
+
+<h3 style="color: #f9e2af;">📁 Перетаскивание из проводника</h3>
+<ul>
+<li>Откройте папку с файлами в проводнике Windows</li>
+<li>Выделите нужные файлы (.xlsx, .docx, .txt)</li>
+<li>Перетащите их в список <b>Входные файлы</b></li>
+<li>Зона подсветится синей рамкой при перетаскивании</li>
+</ul>
+
+<h3 style="color: #f9e2af;">🔄 Изменение порядка файлов</h3>
+<ul>
+<li>Зажмите левую кнопку мыши на файле в списке</li>
+<li>Перетащите файл на нужную позицию</li>
+<li>Отпустите кнопку мыши</li>
+<li>Порядок обработки соответствует порядку в списке</li>
+</ul>
+
+<h3 style="color: #f9e2af;">🖱️ Контекстное меню (ПКМ)</h3>
+<p>Щелкните <b>правой кнопкой мыши</b> на любом файле в списке:</p>
+<ul>
+<li><b>📄 Открыть файл</b> - открывает файл в Excel/Word/Notepad</li>
+<li><b>📁 Показать в проводнике</b> - открывает папку и выделяет файл</li>
+<li><b>📋 Копировать путь</b> - копирует полный путь к файлу</li>
+<li><b>🗑️ Удалить из списка</b> - удаляет файл из списка (не физически)</li>
+</ul>
+
+<h2 style="color: #94e2d5;">Примеры использования</h2>
+
+<h3 style="color: #cba6f7;">Пример 1: Быстрое добавление файлов</h3>
+<p style="margin-left: 20px;">
+1. Откройте папку с BOM-файлами<br>
+2. Выделите все нужные файлы (Ctrl+Click)<br>
+3. Перетащите в окно программы<br>
+4. Готово! Все файлы добавлены
+</p>
+
+<h3 style="color: #cba6f7;">Пример 2: Изменение приоритета</h3>
+<p style="margin-left: 20px;">
+Нужно чтобы "БОМ_основной.xlsx" обработался первым:<br>
+• Перетащите его в начало списка<br>
+• Файлы обрабатываются сверху вниз
+</p>
+
+<h3 style="color: #cba6f7;">Пример 3: Быстрое открытие файла</h3>
+<p style="margin-left: 20px;">
+• ПКМ на файле → "📄 Открыть файл"<br>
+• Файл откроется в Excel/Word<br>
+• Удобно для быстрой проверки
+</p>
+
+<h3 style="color: #cba6f7;">Пример 4: Отправка пути коллеге</h3>
+<p style="margin-left: 20px;">
+• ПКМ на файле → "📋 Копировать путь"<br>
+• Ctrl+V в мессенджер/email<br>
+• Коллега получит точный путь к файлу
+</p>
+
+<h2 style="color: #94e2d5;">Горячие клавиши</h2>
+<table style="border-collapse: collapse; width: 100%;">
+<tr style="background-color: #313244;">
+    <th style="padding: 8px; text-align: left; border: 1px solid #45475a;">Действие</th>
+    <th style="padding: 8px; text-align: left; border: 1px solid #45475a;">Клавиша</th>
+</tr>
+<tr>
+    <td style="padding: 8px; border: 1px solid #45475a;">Выделить все файлы</td>
+    <td style="padding: 8px; border: 1px solid #45475a;"><b>Ctrl+A</b></td>
+</tr>
+<tr style="background-color: #1e1e2e;">
+    <td style="padding: 8px; border: 1px solid #45475a;">Множественный выбор</td>
+    <td style="padding: 8px; border: 1px solid #45475a;"><b>Ctrl+Click</b></td>
+</tr>
+<tr>
+    <td style="padding: 8px; border: 1px solid #45475a;">Диапазон выбора</td>
+    <td style="padding: 8px; border: 1px solid #45475a;"><b>Shift+Click</b></td>
+</tr>
+<tr style="background-color: #1e1e2e;">
+    <td style="padding: 8px; border: 1px solid #45475a;">Удалить выбранное</td>
+    <td style="padding: 8px; border: 1px solid #45475a;"><b>Delete</b></td>
+</tr>
+</table>
+
+<h2 style="color: #94e2d5;">⚠️ Важные замечания</h2>
+<ul>
+<li>Поддерживаются только файлы: .xlsx, .docx, .doc, .txt</li>
+<li>При перетаскивании из проводника файлы не перемещаются - добавляется только ссылка</li>
+<li>Для отключения функции требуется перезапуск программы</li>
+<li>Рекомендуется не добавлять более 100 файлов одновременно</li>
+</ul>
+
+<h2 style="color: #94e2d5;">💡 Советы</h2>
+<ul>
+<li>Используйте ПКМ → "Показать в проводнике" для быстрого доступа к папке</li>
+<li>Копирование пути удобно для отправки локации файла другим пользователям</li>
+<li>Изменяйте порядок файлов для контроля последовательности обработки</li>
+<li>Визуальная подсветка показывает что файлы можно сбросить в эту область</li>
+</ul>
+
+<hr style="border: 1px solid #45475a; margin: 20px 0;">
+
+<p style="text-align: center; color: #6c7086;">
+<i>Экспериментальная функция в ветке experimental/new-feature</i><br>
+Полная документация: <b>DRAG_DROP_README.md</b>
+</p>
+"""
+        
+        # Создаем диалог
+        dialog = QDialog(self)
+        dialog.setWindowTitle("🎯 Как использовать Drag & Drop")
+        dialog.resize(800, 700)
+        
+        layout = QVBoxLayout()
+        
+        # Текст с прокруткой
+        text_widget = QTextBrowser()
+        text_widget.setOpenExternalLinks(True)
+        text_widget.setHtml(help_text)
+        text_widget.setFont(QFont(get_system_font(), 10))
+        layout.addWidget(text_widget)
+        
+        # Кнопки
+        button_layout = QHBoxLayout()
+        
+        open_readme_btn = QPushButton("📄 Открыть полную документацию")
+        open_readme_btn.clicked.connect(lambda: self._open_dragdrop_readme())
+        button_layout.addWidget(open_readme_btn)
+        
+        button_layout.addStretch()
+        
+        close_btn = QPushButton("Закрыть")
+        close_btn.clicked.connect(dialog.accept)
+        button_layout.addWidget(close_btn)
+        
+        layout.addLayout(button_layout)
+        
+        dialog.setLayout(layout)
+        dialog.exec()
+    
+    def _open_dragdrop_readme(self):
+        """Открывает файл DRAG_DROP_README.md"""
+        import os
+        readme_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "DRAG_DROP_README.md")
+        if os.path.exists(readme_path):
+            try:
+                if platform.system() == 'Windows':
+                    os.startfile(readme_path)
+                elif platform.system() == 'Darwin':  # macOS
+                    subprocess.Popen(['open', readme_path])
+                else:  # Linux
+                    subprocess.Popen(['xdg-open', readme_path])
+            except Exception as e:
+                QMessageBox.warning(self, "Ошибка", f"Не удалось открыть файл:\n{e}")
+        else:
+            QMessageBox.warning(self, "Файл не найден", f"Файл DRAG_DROP_README.md не найден:\n{readme_path}")
+    
     def keyPressEvent(self, event):
         """Обработка нажатий клавиш для контекстной помощи"""
         if event.key() == Qt.Key_F1:
@@ -3158,6 +3346,9 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if mode != "expert":
             self.log_with_timestamps = False
             self.auto_open_output = False
+            self.auto_export_pdf = False
+            self.ai_classifier_enabled = False
+            self.ai_auto_classify = False
         self.apply_view_mode()
 
     def apply_view_mode(self, initial: bool = False):
@@ -3174,9 +3365,21 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if self.db_menu is not None:
             self.db_menu.menuAction().setVisible(not simple)
         
-        # PDF поиск только в экспертном режиме
+        # PDF поиск и глобальный поиск - видимы всегда, но активны только в экспертном режиме
         if hasattr(self, 'pdf_search_menu') and self.pdf_search_menu is not None:
-            self.pdf_search_menu.menuAction().setVisible(expert)
+            self.pdf_search_menu.setEnabled(expert)
+            if expert:
+                self.pdf_search_menu.setToolTip("Поиск PDF файлов на компьютере и через AI")
+            else:
+                self.pdf_search_menu.setToolTip("Поиск PDF доступен только в Экспертном режиме")
+            
+        # Глобальный поиск видим всегда, но активен только в экспертном режиме
+        if hasattr(self, 'global_search_menu'):
+            self.global_search_menu.setEnabled(expert)
+            if expert:
+                self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+            else:
+                self.global_search_menu.setToolTip("Глобальный поиск доступен только в Экспертном режиме")
 
         if self.mode_label is not None:
             mode_titles = {
@@ -3218,6 +3421,351 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if self.log_text:
             message = "📂 Автооткрытие папки результата включено" if self.auto_open_output else "📂 Автооткрытие папки результата отключено"
             self.log_text.append(message)
+    
+    def on_toggle_enhanced_dragdrop(self, state: int):
+        """Включение/выключение улучшенного Drag & Drop"""
+        from .drag_drop_qt import enable_drag_drop_improvements
+        
+        enabled = bool(state)
+        
+        if enabled:
+            # Включаем улучшенный D&D
+            success = enable_drag_drop_improvements(self)
+            if success and self.log_text:
+                self.log_text.append("🎯 Улучшенный Drag & Drop включен")
+                self.log_text.append("   • Перетаскивайте файлы для изменения порядка")
+                self.log_text.append("   • ПКМ на файле для контекстного меню")
+        else:
+            # Для отключения нужен перезапуск приложения
+            if self.log_text:
+                self.log_text.append("⚠️ Для отключения требуется перезапуск приложения")
+        
+        self.save_ui_preferences()
+    
+    def open_interactive_cli(self):
+        """Открывает интерактивную командную строку"""
+        from PySide6.QtWidgets import QDialog
+        from .cli_interactive import InteractiveCLI
+        
+        # Создаем диалог
+        dialog = QDialog(self)
+        dialog.setWindowTitle("💻 Интерактивная командная строка")
+        dialog.resize(900, 600)
+        
+        # Создаем layout
+        from PySide6.QtWidgets import QVBoxLayout
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Добавляем CLI виджет
+        cli_widget = InteractiveCLI(self, dialog)
+        layout.addWidget(cli_widget)
+        
+        # Показываем диалог
+        dialog.exec()
+        
+        # Логируем
+        if self.log_text:
+            self.log_text.append("💻 Интерактивная командная строка закрыта")
+    
+    def export_last_result_to_pdf(self):
+        """Экспортирует последний выходной файл в PDF"""
+        # Проверяем, есть ли выходной файл
+        output_file = self.output_entry.text().strip() if hasattr(self, 'output_entry') else ""
+        
+        if not output_file:
+            QMessageBox.warning(
+                self,
+                "Экспорт в PDF",
+                "Не указан выходной файл.\nСначала выполните обработку файлов."
+            )
+            return
+        
+        if not os.path.exists(output_file):
+            QMessageBox.warning(
+                self,
+                "Экспорт в PDF",
+                f"Файл не найден:\n{output_file}\n\nСначала выполните обработку файлов."
+            )
+            return
+        
+        try:
+            from .pdf_exporter import export_bom_to_pdf
+            
+            # Показываем диалог выбора места сохранения
+            from PySide6.QtWidgets import QFileDialog
+            pdf_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Сохранить PDF",
+                os.path.splitext(output_file)[0] + ".pdf",
+                "PDF Files (*.pdf)"
+            )
+            
+            if not pdf_path:
+                return  # Пользователь отменил
+            
+            # Собираем сводную информацию
+            summary_info = {
+                "Исходных файлов": len(self.input_files),
+                "Выходной файл": os.path.basename(output_file),
+                "Версия БД": self.db.get_version() if hasattr(self, 'db') else "N/A",
+                "Программа": f"BOM Categorizer {self.cfg.get('app_info', {}).get('version', 'dev')}"
+            }
+            
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            if self.log_text:
+                self.log_text.append(f"📄 Экспорт в PDF: {os.path.basename(pdf_path)}")
+            
+            # Выполняем экспорт
+            result_pdf = export_bom_to_pdf(
+                output_file,
+                pdf_path,
+                with_summary=True,
+                summary_info=summary_info
+            )
+            
+            QApplication.restoreOverrideCursor()
+            
+            if self.log_text:
+                self.log_text.append(f"✅ PDF создан: {result_pdf}")
+            
+            # Спрашиваем, открыть ли файл
+            reply = QMessageBox.question(
+                self,
+                "Экспорт завершен",
+                f"PDF документ успешно создан:\n{result_pdf}\n\nОткрыть файл?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                self._open_file(result_pdf)
+        
+        except ImportError as e:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось загрузить модуль экспорта в PDF.\n"
+                f"Возможно, не установлена библиотека reportlab.\n\n"
+                f"Установите: pip install reportlab\n\n"
+                f"Ошибка: {e}"
+            )
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            if self.log_text:
+                self.log_text.append(f"❌ Ошибка экспорта в PDF: {e}")
+            QMessageBox.critical(
+                self,
+                "Ошибка экспорта",
+                f"Не удалось создать PDF:\n{e}"
+            )
+    
+    def on_toggle_auto_pdf_export(self, state: int):
+        """Включение/выключение автоматического экспорта в PDF"""
+        self.auto_export_pdf = bool(state)
+        self.save_ui_preferences()
+        if self.log_text:
+            message = "📄 Автоматический экспорт в PDF включен" if self.auto_export_pdf else "📄 Автоматический экспорт в PDF отключен"
+            self.log_text.append(message)
+    
+    def on_toggle_ai_classifier(self, state: int):
+        """Включение/выключение AI-подсказок"""
+        self.ai_classifier_enabled = bool(state)
+        self.save_ui_preferences()
+        
+        # Обновляем статус
+        self.update_ai_status()
+        
+        if self.log_text:
+            message = "🤖 AI-подсказки включены" if self.ai_classifier_enabled else "🤖 AI-подсказки отключены"
+            self.log_text.append(message)
+            
+            if self.ai_classifier_enabled:
+                # Проверяем наличие API ключа
+                from .ai_classifier_qt import AIClassifierSettings
+                settings = AIClassifierSettings()
+                api_key = settings.get_api_key()
+                
+                if not api_key:
+                    self.log_text.append("⚠️ Для использования AI-подсказок необходимо настроить API ключ")
+                    self.log_text.append("   Нажмите '⚙️ Настройки AI' для конфигурации")
+    
+    def on_toggle_ai_auto_classify(self, state: int):
+        """Включение/выключение автоматической AI классификации"""
+        self.ai_auto_classify = bool(state)
+        self.save_ui_preferences()
+        
+        if self.log_text:
+            if self.ai_auto_classify:
+                self.log_text.append("🤖 Автоматическая AI-классификация включена")
+                self.log_text.append("⚠️ ВСЕ неизвестные компоненты будут отправлены на классификацию через AI")
+            else:
+                self.log_text.append("🤖 Автоматическая AI-классификация отключена")
+    
+    def open_ai_settings(self):
+        """Открывает диалог настроек AI"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit, QDialogButtonBox, QTextEdit, QLabel
+        from .ai_classifier_qt import AIClassifierSettings
+        
+        # Создаем диалог
+        dialog = QDialog(self)
+        dialog.setWindowTitle("⚙️ Настройки AI-подсказок")
+        dialog.resize(600, 500)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Описание
+        desc = QLabel(
+            "Настройте провайдера AI и API ключи для автоматической классификации компонентов.\n"
+            "Поддерживаются: Anthropic Claude, OpenAI GPT, Ollama (локальный)."
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        
+        # Форма настроек
+        form = QFormLayout()
+        
+        # Провайдер
+        provider_combo = QComboBox()
+        provider_combo.addItems(["Anthropic Claude", "OpenAI GPT", "Ollama (локальный)"])
+        form.addRow("Провайдер AI:", provider_combo)
+        
+        # Загружаем текущие настройки
+        settings = AIClassifierSettings()
+        current_provider = settings.get_provider()
+        provider_map = {
+            "anthropic": 0,
+            "openai": 1,
+            "ollama": 2
+        }
+        provider_combo.setCurrentIndex(provider_map.get(current_provider, 0))
+        
+        # API ключи
+        anthropic_key = QLineEdit()
+        anthropic_key.setPlaceholderText("sk-ant-...")
+        anthropic_key.setText(settings.get_api_key("anthropic"))
+        anthropic_key.setEchoMode(QLineEdit.Password)
+        form.addRow("Anthropic API Key:", anthropic_key)
+        
+        openai_key = QLineEdit()
+        openai_key.setPlaceholderText("sk-...")
+        openai_key.setText(settings.get_api_key("openai"))
+        openai_key.setEchoMode(QLineEdit.Password)
+        form.addRow("OpenAI API Key:", openai_key)
+        
+        ollama_url = QLineEdit()
+        ollama_url.setPlaceholderText("http://localhost:11434")
+        ollama_url.setText(settings.get_api_key("ollama"))
+        form.addRow("Ollama URL:", ollama_url)
+        
+        # Модель
+        model_input = QLineEdit()
+        model_input.setPlaceholderText("По умолчанию (оставьте пустым)")
+        model_input.setText(settings.get_model())
+        form.addRow("Модель (опционально):", model_input)
+        
+        layout.addLayout(form)
+        
+        # Справка
+        help_text = QTextEdit()
+        help_text.setReadOnly(True)
+        help_text.setMaximumHeight(150)
+        help_text.setHtml("""
+<b>Справка:</b><br>
+<b>Anthropic Claude:</b> Получите API ключ на <a href="https://console.anthropic.com/">console.anthropic.com</a><br>
+<b>OpenAI GPT:</b> Получите API ключ на <a href="https://platform.openai.com/api-keys">platform.openai.com</a><br>
+<b>Ollama:</b> Установите локально: <a href="https://ollama.ai/">ollama.ai</a><br><br>
+<b>Модели по умолчанию:</b><br>
+• Anthropic: claude-3-sonnet-20240229<br>
+• OpenAI: gpt-4<br>
+• Ollama: llama2<br>
+        """)
+        help_text.setOpenExternalLinks(True)
+        layout.addWidget(help_text)
+        
+        # Кнопки
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        
+        # Показываем диалог
+        if dialog.exec() == QDialog.Accepted:
+            # Сохраняем настройки
+            provider_reverse_map = {
+                0: "anthropic",
+                1: "openai",
+                2: "ollama"
+            }
+            
+            new_settings = {
+                "enabled": self.ai_classifier_enabled,
+                "provider": provider_reverse_map[provider_combo.currentIndex()],
+                "model": model_input.text().strip(),
+                "api_keys": {
+                    "anthropic": anthropic_key.text().strip(),
+                    "openai": openai_key.text().strip(),
+                    "ollama": ollama_url.text().strip()
+                },
+                "auto_classify": getattr(self, 'ai_auto_classify', False),
+                "confidence_threshold": "medium"
+            }
+            
+            if settings.save_settings(new_settings):
+                if self.log_text:
+                    self.log_text.append("✅ Настройки AI сохранены")
+                
+                # Обновляем статус
+                self.update_ai_status()
+            else:
+                QMessageBox.warning(self, "Ошибка", "Не удалось сохранить настройки AI")
+    
+    def update_ai_status(self):
+        """Обновляет статус AI в UI"""
+        if not hasattr(self, 'ai_status_label'):
+            return
+        
+        from .ai_classifier_qt import AIClassifierSettings
+        settings = AIClassifierSettings()
+        
+        if not settings.is_enabled():
+            self.ai_status_label.setText("Статус: ⚪ Отключен")
+            self.ai_status_label.setStyleSheet("color: #6c7086;")
+            if hasattr(self, 'ai_auto_classify_checkbox'):
+                self.ai_auto_classify_checkbox.setEnabled(False)
+            return
+        
+        provider = settings.get_provider()
+        api_key = settings.get_api_key(provider)
+        
+        if not api_key:
+            self.ai_status_label.setText(f"Статус: 🟡 Не настроен")
+            self.ai_status_label.setStyleSheet("color: #fab387;")
+            if hasattr(self, 'ai_auto_classify_checkbox'):
+                self.ai_auto_classify_checkbox.setEnabled(False)
+        else:
+            provider_names = {
+                "anthropic": "Claude",
+                "openai": "GPT",
+                "ollama": "Ollama"
+            }
+            provider_name = provider_names.get(provider, provider)
+            self.ai_status_label.setText(f"Статус: 🟢 Готов ({provider_name})")
+            self.ai_status_label.setStyleSheet("color: #a6e3a1;")
+            if hasattr(self, 'ai_auto_classify_checkbox'):
+                self.ai_auto_classify_checkbox.setEnabled(True)
+    
+    def _open_file(self, file_path: str):
+        """Открывает файл в системном приложении"""
+        try:
+            if platform.system() == 'Windows':
+                os.startfile(file_path)
+            elif platform.system() == 'Darwin':  # macOS
+                subprocess.Popen(['open', file_path])
+            else:  # Linux
+                subprocess.Popen(['xdg-open', file_path])
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось открыть файл:\n{e}")
 
     def save_ui_preferences(self):
         try:
@@ -3229,6 +3777,9 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             ui_settings["view_mode"] = self.current_view_mode
             ui_settings["log_timestamps"] = bool(self.log_with_timestamps if self.current_view_mode == "expert" else False)
             ui_settings["auto_open_output"] = bool(self.auto_open_output if self.current_view_mode == "expert" else False)
+            ui_settings["auto_export_pdf"] = bool(self.auto_export_pdf if self.current_view_mode == "expert" else False)
+            ui_settings["ai_classifier_enabled"] = bool(self.ai_classifier_enabled if self.current_view_mode == "expert" else False)
+            ui_settings["ai_auto_classify"] = bool(self.ai_auto_classify if self.current_view_mode == "expert" else False)
 
             cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
             with open(cfg_path, "w", encoding="utf-8") as f:
