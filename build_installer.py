@@ -34,12 +34,12 @@ EDITIONS = {
     },
     "2": {
         "name": "Modern Edition",
-        "version": "4.0.0",
+        "version": "4.2.3",
         "app_file": "app_qt.py",
         "config": "config_qt.json",
         "iss_file": "installer_qt.iss",
         "output": "BOMCategorizerModernSetup.exe",
-        "description": "PySide6 GUI (современный дизайн)"
+        "description": "PySide6 GUI (современный дизайн + экспериментальные функции)"
     }
 }
 
