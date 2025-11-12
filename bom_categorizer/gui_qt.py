@@ -461,8 +461,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         search_button.clicked.connect(self.on_global_search_triggered)
         self.global_search_input.returnPressed.connect(self.on_global_search_triggered)
         
-        # Глобальный поиск доступен только в экспертном режиме (но видим всегда)
-        self.global_search_menu.setEnabled(self.current_view_mode == "expert")
+        # Глобальный поиск доступен во всех режимах
+        self.global_search_menu.setEnabled(True)
+        self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
         
         # Меню "Поиск PDF" (после глобального поиска)
         self.pdf_search_menu = menubar.addMenu("📄 Поиск PDF")
@@ -2071,6 +2072,11 @@ class BOMCategorizerMainWindow(QMainWindow):
             # История формирования
             history_group = QGroupBox("📜 История формирования базы данных")
             history_layout = QVBoxLayout()
+            
+            # Подсказка
+            hint_label = QLabel("💡 Дважды кликните на строку с файлом-источником, чтобы открыть его в проводнике")
+            hint_label.setStyleSheet("color: #89b4fa; font-style: italic; padding: 5px;")
+            history_layout.addWidget(hint_label)
 
             if history:
                 # Создаем таблицу для истории
@@ -2097,6 +2103,7 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setShowGrid(False)
                 history_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
                 history_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+                history_table.setCursor(Qt.PointingHandCursor)  # Курсор-указатель для подсказки о клике
                 history_table.setStyleSheet("""
                     QTableWidget {
                         background-color: #1f2335;
@@ -2154,6 +2161,24 @@ class BOMCategorizerMainWindow(QMainWindow):
                     history_table.setItem(i, 3, source_item)
                     history_table.setItem(i, 4, added_item)
 
+                # Обработчик двойного клика для открытия файла-источника в проводнике
+                def open_source_file(index):
+                    row = index.row()
+                    source_item = history_table.item(row, 3)  # Колонка "Источник"
+                    if source_item:
+                        source_path = source_item.text()
+                        # Проверяем, что это путь к файлу (не "-" и содержит расширение)
+                        if source_path != '-' and os.path.exists(source_path):
+                            self.reveal_in_file_manager(source_path, select=True)
+                        elif source_path != '-':
+                            # Если файл не существует, показываем сообщение
+                            QMessageBox.information(
+                                dialog,
+                                "Файл не найден",
+                                f"Файл-источник не найден:\n{source_path}\n\nВозможно, он был перемещен или удален."
+                            )
+                
+                history_table.doubleClicked.connect(open_source_file)
                 history_layout.addWidget(history_table)
             else:
                 no_history_label = QLabel("История пуста")
@@ -3380,13 +3405,10 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             else:
                 self.pdf_search_menu.setToolTip("Поиск PDF доступен только в Экспертном режиме")
             
-        # Глобальный поиск видим всегда, но активен только в экспертном режиме
+        # Глобальный поиск доступен во всех режимах
         if hasattr(self, 'global_search_menu'):
-            self.global_search_menu.setEnabled(expert)
-            if expert:
-                self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
-            else:
-                self.global_search_menu.setToolTip("Глобальный поиск доступен только в Экспертном режиме")
+            self.global_search_menu.setEnabled(True)
+            self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
 
         if self.mode_label is not None:
             mode_titles = {
