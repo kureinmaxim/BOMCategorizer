@@ -212,8 +212,8 @@ class DragDropListWidget(QListWidget):
         drag = QDrag(self)
         drag.setMimeData(mime_data)
         
-        # Устанавливаем курсор
-        drag.setDragCursor(Qt.CursorShape.DragMoveCursor.bitmap(), Qt.MoveAction)
+        # Qt автоматически установит правильный курсор для drag операции
+        # (метод bitmap() не существует в PySide6)
         
         # Выполняем перетаскивание
         result = drag.exec(Qt.MoveAction | Qt.CopyAction)

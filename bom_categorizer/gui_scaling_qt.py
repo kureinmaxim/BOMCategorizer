@@ -135,17 +135,9 @@ def apply_scale_factor(window: 'BOMCategorizerMainWindow') -> None:
     # Обновляем размеры виджетов
     _update_widget_sizes(window)
     
-    # Масштабируем размер окна пропорционально
-    # Берем базовый размер из конфига или текущий, если он больше
-    base_width = window.cfg.get('window', {}).get('width', 720)
-    base_height = window.cfg.get('window', {}).get('height', 900)
-    
-    # Вычисляем новый размер с учетом масштаба
-    new_width = max(int(base_width * window.scale_factor), current_size.width())
-    new_height = max(int(base_height * window.scale_factor), current_size.height())
-    
-    # Устанавливаем новый размер окна
-    window.resize(new_width, new_height)
+    # НЕ масштабируем размер окна - используем размер из config как есть!
+    # Размер окна должен задаваться пользователем явно в config_qt.json
+    # и НЕ пересчитываться автоматически при изменении scale_factor
     
     # Принудительно обновляем все виджеты
     window.update()

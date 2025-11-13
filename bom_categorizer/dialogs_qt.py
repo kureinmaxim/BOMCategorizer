@@ -26,6 +26,9 @@ class PinDialog(QDialog):
         self.setWindowTitle("Авторизация")
         self.setFixedSize(380, 220)
         self.setModal(True)
+        
+        # Получаем scale_factor от родительского окна
+        self.scale_factor = getattr(parent, 'scale_factor', 1.0) if parent else 1.0
 
         self._create_ui()
 
@@ -45,7 +48,7 @@ class PinDialog(QDialog):
         # Заголовок
         title_label = QLabel("Введите PIN-код:")
         title_font = QFont()
-        title_font.setPointSize(14)
+        title_font.setPointSize(int(14 * self.scale_factor))
         title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
@@ -56,7 +59,7 @@ class PinDialog(QDialog):
         self.pin_entry.setEchoMode(QLineEdit.Password)
         self.pin_entry.setAlignment(Qt.AlignCenter)
         pin_font = QFont()
-        pin_font.setPointSize(18)
+        pin_font.setPointSize(int(18 * self.scale_factor))
         self.pin_entry.setFont(pin_font)
         self.pin_entry.setMaxLength(10)
         self.pin_entry.returnPressed.connect(self.check_pin)
@@ -118,6 +121,9 @@ class DatabaseStatsDialog(QDialog):
     def __init__(self, stats: dict, parent=None):
         super().__init__(parent)
         self.stats = stats
+        
+        # Получаем scale_factor от родительского окна
+        self.scale_factor = getattr(parent, 'scale_factor', 1.0) if parent else 1.0
 
         self.setWindowTitle("Статистика базы данных")
         self.setMinimumSize(600, 500)
@@ -132,6 +138,11 @@ class DatabaseStatsDialog(QDialog):
         # Текстовое поле с информацией
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
+        
+        # Применяем шрифт с учётом scale_factor
+        font = QFont()
+        font.setPointSize(int(10 * self.scale_factor))
+        text_edit.setFont(font)
 
         # Формируем текст статистики
         stats_text = self._format_stats()
@@ -141,6 +152,9 @@ class DatabaseStatsDialog(QDialog):
 
         # Кнопка закрытия
         close_btn = QPushButton("Закрыть")
+        button_font = QFont()
+        button_font.setPointSize(int(10 * self.scale_factor))
+        close_btn.setFont(button_font)
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
 

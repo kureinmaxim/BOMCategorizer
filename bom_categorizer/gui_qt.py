@@ -1877,6 +1877,17 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         menu = QMenu(self)
         
+        # Применяем шрифт меню с учётом scale_factor (как для всех меню)
+        current_index = self._current_scale_index()
+        if current_index < len(self.scale_levels) - 1:
+            menu_scale = self.scale_levels[current_index + 1]
+        else:
+            menu_scale = self.scale_levels[-1]
+        
+        menu_font_size = max(7, int(round(9 * menu_scale)))
+        menu_font = QFont(get_system_font(), menu_font_size)
+        menu.setFont(menu_font)
+        
         # Предустановленные размеры
         sizes = [
             ("По умолчанию (720×900)", 720, 900),
@@ -1917,6 +1928,13 @@ class BOMCategorizerMainWindow(QMainWindow):
     def save_window_size_to_config(self, width: int, height: int):
         """Сохраняет размер окна в конфигурационный файл"""
         try:
+            # Проверяем, нужно ли запоминать размер окна
+            remember_size = self.cfg.get("window", {}).get("remember_size", True)
+            
+            if not remember_size:
+                # Если remember_size = false, не сохраняем размер окна
+                return
+            
             self.cfg["window"] = {
                 "width": width,
                 "height": height,
@@ -3146,13 +3164,20 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         dialog.setWindowTitle("🎯 Как использовать Drag & Drop")
         dialog.resize(800, 700)
         
+        # Применяем шрифт диалога с учётом scale_factor
+        dialog_font_size = int(12 * self.scale_factor)
+        dialog.setFont(QFont(get_system_font(), dialog_font_size))
+        
         layout = QVBoxLayout()
         
         # Текст с прокруткой
         text_widget = QTextBrowser()
         text_widget.setOpenExternalLinks(True)
         text_widget.setHtml(help_text)
-        text_widget.setFont(QFont(get_system_font(), 10))
+        
+        # Применяем шрифт с учётом scale_factor
+        font_size = int(10 * self.scale_factor)
+        text_widget.setFont(QFont(get_system_font(), font_size))
         layout.addWidget(text_widget)
         
         # Кнопки
@@ -3273,8 +3298,36 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         # Применяем к главному окну
         self.setFont(font)
         
-        # Применяем рекурсивно ко всем дочерним виджетам
+        # Применяем рекурсивно ко всем дочерним виджетам (кроме меню)
         self._apply_font_recursive(self, font)
+        
+        # Применяем шрифт для меню - на один уровень больше основного интерфейса
+        # Если основной интерфейс 80%, то меню 100%; если 90%, то меню 110%
+        from PySide6.QtWidgets import QMenu, QMenuBar
+        menubar = self.menuBar()
+        if menubar:
+            # Находим следующий уровень scale для меню (на один выше текущего)
+            current_index = self._current_scale_index()
+            if current_index < len(self.scale_levels) - 1:
+                menu_scale = self.scale_levels[current_index + 1]
+            else:
+                menu_scale = self.scale_levels[-1]  # Максимальный уровень
+            
+            menu_base_size = 9  # Базовый размер для меню
+            menu_font_size = max(7, int(round(menu_base_size * menu_scale)))
+            menu_font = QFont(get_system_font(), menu_font_size)
+            
+            # Устанавливаем шрифт для самого menubar (названия "Файл", "Вид" и т.д.)
+            menubar.setFont(menu_font)
+            
+            # ПРИНУДИТЕЛЬНО через stylesheet - это единственный способ изменить шрифт menubar
+            menubar_style = f"QMenuBar {{ font-size: {menu_font_size}pt; font-family: '{get_system_font()}'; }}"
+            menubar_style += f"QMenuBar::item {{ font-size: {menu_font_size}pt; font-family: '{get_system_font()}'; }}"
+            menubar.setStyleSheet(menubar_style)
+            
+            # Устанавливаем шрифт для выпадающих меню
+            for menu in self.findChildren(QMenu):
+                menu.setFont(menu_font)
         
         # Обновляем размеры виджетов, заданные в пикселях
         self._update_widget_sizes()
@@ -3283,6 +3336,8 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
     
     def _apply_font_recursive(self, widget, font):
         """Рекурсивно применяет шрифт ко всем дочерним виджетам"""
+        from PySide6.QtWidgets import QMenu, QMenuBar
+        
         # Применяем к текущему виджету
         current_font = widget.font()
         # Сохраняем семейство шрифта, если оно было специально задано
@@ -3295,6 +3350,10 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         
         # Применяем рекурсивно ко всем дочерним виджетам
         for child in widget.findChildren(QWidget):
+            # ПРОПУСКАЕМ меню - они должны сохранять системный размер шрифта
+            if isinstance(child, (QMenu, QMenuBar)):
+                continue
+                
             child_font = child.font()
             if child_font.family() != font.family() and child_font.family() != get_system_font():
                 # Сохраняем специальное семейство шрифта, но обновляем размер
@@ -3353,7 +3412,8 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         
         # Принудительно обновляем геометрию
         self.updateGeometry()
-        self.adjustSize()
+        # НЕ вызываем adjustSize() - это автоматически уменьшает окно!
+        # Размер окна должен определяться config_qt.json, а не содержимым
         QApplication.processEvents()
 
     def update_scale_actions(self):
