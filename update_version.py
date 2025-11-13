@@ -29,6 +29,22 @@ import sys
 import subprocess
 from datetime import datetime
 
+# Настройка UTF-8 для Windows консоли
+def setup_console_encoding():
+    """Настраивает UTF-8 кодировку для корректного вывода эмодзи в Windows"""
+    if sys.platform == 'win32':
+        try:
+            # Попытка установить UTF-8 для stdout и stderr
+            import io
+            if hasattr(sys.stdout, 'buffer'):
+                sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            if hasattr(sys.stderr, 'buffer'):
+                sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except Exception:
+            pass  # Если не получилось, продолжаем без UTF-8
+
+setup_console_encoding()
+
 
 class Colors:
     """ANSI цвета для вывода"""
@@ -40,13 +56,41 @@ class Colors:
     NC = '\033[0m'  # No Color
 
 
+class Emoji:
+    """Эмодзи для вывода"""
+    CHECK = '✅'
+    INFO = 'ℹ️'
+    WARN = '💡'
+    ERROR = '❌'
+    SYNC = '🔄'
+    ARROW = '→'
+
+
+def safe_print(text, use_emoji=True):
+    """
+    Безопасный вывод текста с поддержкой эмодзи.
+    Если эмодзи не поддерживаются, заменяет их на текстовые альтернативы.
+    """
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        # Fallback: заменяем эмодзи на текст
+        fallback_text = text.replace(Emoji.CHECK, '[OK]')
+        fallback_text = fallback_text.replace(Emoji.INFO, '[INFO]')
+        fallback_text = fallback_text.replace(Emoji.WARN, '[TIP]')
+        fallback_text = fallback_text.replace(Emoji.ERROR, '[ERROR]')
+        fallback_text = fallback_text.replace(Emoji.SYNC, '[SYNC]')
+        fallback_text = fallback_text.replace(Emoji.ARROW, '->')
+        print(fallback_text)
+
+
 def read_config_template(template_path):
     """Читает config шаблон"""
     try:
         with open(template_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:
-        print(f"{Colors.RED}❌ Ошибка чтения {template_path}: {e}{Colors.NC}")
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка чтения {template_path}: {e}{Colors.NC}")
         return None
 
 
@@ -58,43 +102,87 @@ def write_config_template(template_path, config):
             f.write('\n')
         return True
     except Exception as e:
-        print(f"{Colors.RED}❌ Ошибка записи {template_path}: {e}{Colors.NC}")
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка записи {template_path}: {e}{Colors.NC}")
+        return False
+
+
+def update_local_config(config_path, version, edition, release_date=None, last_updated=None):
+    """
+    Обновляет секцию app_info в локальном config, не затрагивая остальные настройки.
+    
+    Args:
+        config_path: путь к локальному config (config.json или config_qt.json)
+        version: новая версия
+        edition: название edition
+        release_date: дата релиза (строка) или None, если не нужно обновлять
+        last_updated: дата обновления (строка) или None, если не нужно обновлять
+    """
+    if not os.path.exists(config_path):
+        safe_print(f"{Colors.YELLOW}{Emoji.WARN} Локальный файл не найден: {config_path}. Пропускаю обновление.{Colors.NC}")
+        return False
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except Exception as e:
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка чтения {config_path}: {e}{Colors.NC}")
+        return False
+    
+    app_info = config.get('app_info', {})
+    app_info['version'] = version
+    if edition:
+        app_info['edition'] = edition
+    if release_date is not None:
+        app_info['release_date'] = release_date
+    if last_updated is not None:
+        app_info['last_updated'] = last_updated
+    
+    config['app_info'] = app_info
+    
+    try:
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+            f.write('\n')
+        safe_print(f"{Colors.GREEN}   {Emoji.ARROW} Обновлен локальный файл: {config_path}{Colors.NC}")
+        return True
+    except Exception as e:
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка записи {config_path}: {e}{Colors.NC}")
         return False
 
 
 def show_status():
     """Показывает текущие версии во всех файлах"""
-    print(f"\n{Colors.BOLD}📊 ТЕКУЩИЕ ВЕРСИИ{Colors.NC}\n")
-    print("=" * 70)
+    safe_print(f"\n{Colors.BOLD}[STATUS] ТЕКУЩИЕ ВЕРСИИ{Colors.NC}\n")
+    safe_print("=" * 70)
     
     # Standard Edition
-    print(f"\n{Colors.BLUE}📦 Standard Edition (Tkinter){Colors.NC}")
+    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Standard Edition (Tkinter){Colors.NC}")
     config = read_config_template('config.json.template')
     if config:
         version = config['app_info']['version']
         date = config['app_info'].get('release_date', 'N/A')
-        print(f"  Версия:      {Colors.GREEN}{version}{Colors.NC}")
-        print(f"  Дата релиза: {date}")
-        print(f"  Файл:        config.json.template")
+        safe_print(f"  Версия:      {Colors.GREEN}{version}{Colors.NC}")
+        safe_print(f"  Дата релиза: {date}")
+        safe_print(f"  Файл:        config.json.template")
     
     # Modern Edition
-    print(f"\n{Colors.BLUE}📦 Modern Edition (PySide6){Colors.NC}")
+    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Modern Edition (PySide6){Colors.NC}")
     config = read_config_template('config_qt.json.template')
     if config:
         version = config['app_info']['version']
         date = config['app_info'].get('release_date', 'N/A')
-        print(f"  Версия:      {Colors.GREEN}{version}{Colors.NC}")
-        print(f"  Дата релиза: {date}")
-        print(f"  Файл:        config_qt.json.template")
+        safe_print(f"  Версия:      {Colors.GREEN}{version}{Colors.NC}")
+        safe_print(f"  Дата релиза: {date}")
+        safe_print(f"  Файл:        config_qt.json.template")
     
     # Скрипты сборки
-    print(f"\n{Colors.BLUE}🔧 Файлы сборки (читают из шаблонов){Colors.NC}")
-    print(f"  ✅ build_macos.sh")
-    print(f"  ✅ installer_clean.iss (через sync_installer_versions.py)")
-    print(f"  ✅ installer_qt.iss (через sync_installer_versions.py)")
+    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Файлы сборки (читают из шаблонов){Colors.NC}")
+    safe_print(f"  - build_macos.sh")
+    safe_print(f"  - installer_clean.iss (через sync_installer_versions.py)")
+    safe_print(f"  - installer_qt.iss (через sync_installer_versions.py)")
     
-    print("\n" + "=" * 70)
-    print(f"\n{Colors.YELLOW}💡 Совет:{Colors.NC} Используйте 'update_version.py sync' для синхронизации\n")
+    safe_print("\n" + "=" * 70)
+    safe_print(f"\n{Colors.YELLOW}{Emoji.WARN} Используйте 'update_version.py sync' для синхронизации{Colors.NC}\n")
 
 
 def update_version(edition, new_version, update_date=True):
@@ -113,7 +201,7 @@ def update_version(edition, new_version, update_date=True):
         template_path = 'config_qt.json.template'
         edition_name = "Modern Edition"
     else:
-        print(f"{Colors.RED}❌ Неизвестная edition: {edition}{Colors.NC}")
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Неизвестная edition: {edition}{Colors.NC}")
         return False
     
     # Читаем config
@@ -123,21 +211,44 @@ def update_version(edition, new_version, update_date=True):
     
     # Получаем старую версию
     old_version = config['app_info']['version']
+    edition_value = config['app_info'].get('edition', edition_name)
     
     # Обновляем версию
     config['app_info']['version'] = new_version
     
     # Обновляем даты
     if update_date:
-        today = datetime.now().strftime("%d.%m.%Y")
-        config['app_info']['release_date'] = today
-        config['app_info']['last_updated'] = datetime.now().strftime("%Y-%m-%d")
+        now = datetime.now()
+        release_date = now.strftime("%d.%m.%Y")
+        last_updated = now.strftime("%Y-%m-%d")
+        config['app_info']['release_date'] = release_date
+        config['app_info']['last_updated'] = last_updated
+    else:
+        release_date = None
+        last_updated = None
     
     # Сохраняем
     if write_config_template(template_path, config):
-        print(f"{Colors.GREEN}✅ {edition_name}: {old_version} → {new_version}{Colors.NC}")
+        safe_print(f"{Colors.GREEN}{Emoji.CHECK} {edition_name}: {old_version} {Emoji.ARROW} {new_version}{Colors.NC}")
         if update_date:
-            print(f"   Дата обновлена: {config['app_info']['release_date']}")
+            safe_print(f"   Дата обновлена: {config['app_info']['release_date']}")
+        
+        # Обновляем локальный config, если он существует
+        if edition == 'standard':
+            local_config_path = 'config.json'
+        elif edition == 'modern':
+            local_config_path = 'config_qt.json'
+        else:
+            local_config_path = None
+        
+        if local_config_path:
+            update_local_config(
+                local_config_path,
+                new_version,
+                edition_value,
+                release_date=release_date if update_date else None,
+                last_updated=last_updated if update_date else None
+            )
         return True
     
     return False
@@ -145,8 +256,8 @@ def update_version(edition, new_version, update_date=True):
 
 def sync_all():
     """Синхронизирует все файлы сборки с шаблонами"""
-    print(f"\n{Colors.BOLD}🔄 СИНХРОНИЗАЦИЯ ФАЙЛОВ СБОРКИ{Colors.NC}\n")
-    print("=" * 70)
+    safe_print(f"\n{Colors.BOLD}{Emoji.SYNC} СИНХРОНИЗАЦИЯ ФАЙЛОВ СБОРКИ{Colors.NC}\n")
+    safe_print("=" * 70)
     
     # Запускаем sync_installer_versions.py
     try:
@@ -154,25 +265,27 @@ def sync_all():
             [sys.executable, 'sync_installer_versions.py'],
             capture_output=True,
             text=True,
+            encoding='utf-8',
+            errors='replace',
             check=False
         )
-        print(result.stdout)
+        safe_print(result.stdout)
         if result.returncode != 0:
-            print(result.stderr)
-            print(f"{Colors.YELLOW}⚠️  Предупреждение: sync_installer_versions.py завершился с кодом {result.returncode}{Colors.NC}")
+            safe_print(result.stderr)
+            safe_print(f"{Colors.YELLOW}{Emoji.WARN} sync_installer_versions.py завершился с кодом {result.returncode}{Colors.NC}")
     except Exception as e:
-        print(f"{Colors.RED}❌ Ошибка выполнения sync_installer_versions.py: {e}{Colors.NC}")
-        print(f"{Colors.YELLOW}💡 Убедитесь, что файл существует и имеет права на выполнение{Colors.NC}")
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка выполнения sync_installer_versions.py: {e}{Colors.NC}")
+        safe_print(f"{Colors.YELLOW}{Emoji.WARN} Убедитесь, что файл существует и имеет права на выполнение{Colors.NC}")
     
-    print("=" * 70)
-    print(f"\n{Colors.GREEN}✅ Синхронизация завершена!{Colors.NC}")
-    print(f"{Colors.YELLOW}💡 build_macos.sh автоматически читает версии из шаблонов{Colors.NC}\n")
+    safe_print("=" * 70)
+    safe_print(f"\n{Colors.GREEN}{Emoji.CHECK} Синхронизация завершена.{Colors.NC}")
+    safe_print(f"{Colors.YELLOW}{Emoji.INFO} build_macos.sh автоматически читает версии из шаблонов{Colors.NC}\n")
 
 
 def print_usage():
     """Выводит справку по использованию"""
-    print(f"""
-{Colors.BOLD}📚 УПРАВЛЕНИЕ ВЕРСИЯМИ BOM CATEGORIZER{Colors.NC}
+    safe_print(f"""
+{Colors.BOLD}УПРАВЛЕНИЕ ВЕРСИЯМИ BOM CATEGORIZER{Colors.NC}
 
 {Colors.BLUE}Использование:{Colors.NC}
   python update_version.py <команда> [аргументы]
@@ -202,7 +315,7 @@ def print_usage():
   2. Синхронизируйте:    python update_version.py sync
   3. Соберите проект:    ./build_macos.sh (macOS) или build_installer.py (Windows)
 
-{Colors.YELLOW}💡 Источник правды:{Colors.NC}
+{Colors.YELLOW}{Emoji.WARN} Источник правды:{Colors.NC}
   Все версии хранятся ТОЛЬКО в шаблонах:
   - config.json.template (Standard Edition)
   - config_qt.json.template (Modern Edition)
@@ -228,8 +341,8 @@ def main():
         
     elif command == 'set':
         if len(sys.argv) < 4:
-            print(f"{Colors.RED}❌ Недостаточно аргументов{Colors.NC}")
-            print(f"Использование: python update_version.py set <standard|modern|both> <версия>")
+            safe_print(f"{Colors.RED}{Emoji.ERROR} Недостаточно аргументов{Colors.NC}")
+            safe_print(f"Использование: python update_version.py set <standard|modern|both> <версия>")
             return 1
         
         edition = sys.argv[2].lower()
@@ -241,13 +354,13 @@ def main():
         elif edition in ['standard', 'modern']:
             success = update_version(edition, new_version)
         else:
-            print(f"{Colors.RED}❌ Неизвестная edition: {edition}{Colors.NC}")
-            print(f"Используйте: standard, modern или both")
+            safe_print(f"{Colors.RED}{Emoji.ERROR} Неизвестная edition: {edition}{Colors.NC}")
+            safe_print(f"Используйте: standard, modern или both")
             return 1
         
         if success:
-            print(f"\n{Colors.GREEN}✅ Версия обновлена в шаблонах{Colors.NC}")
-            print(f"{Colors.YELLOW}🔄 Синхронизирую файлы сборки...{Colors.NC}")
+            safe_print(f"\n{Colors.GREEN}{Emoji.CHECK} Версия обновлена в шаблонах{Colors.NC}")
+            safe_print(f"{Colors.YELLOW}{Emoji.INFO} Синхронизирую файлы сборки...{Colors.NC}")
             sync_all()
         else:
             return 1
@@ -259,7 +372,7 @@ def main():
         print_usage()
         
     else:
-        print(f"{Colors.RED}❌ Неизвестная команда: {command}{Colors.NC}")
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Неизвестная команда: {command}{Colors.NC}")
         print_usage()
         return 1
     

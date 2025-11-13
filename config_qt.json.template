@@ -1,13 +1,13 @@
 {
   "app_info": {
-    "version": "4.2.3",
+    "version": "4.3.1",
     "edition": "Modern Edition",
-    "release_date": "12.11.2025",
+    "release_date": "13.11.2025",
     "developer": "Куреин М.Н.",
     "developer_en": "Kurein M.N.",
     "description": "Категоризатор BOM файлов Modern Edition",
     "description_en": "BOM Categorizer Modern Edition - Bill of Materials Categorization Tool",
-    "last_updated": "2025-11-12"
+    "last_updated": "2025-11-13"
   },
   "security": {
     "pin": "1234",
