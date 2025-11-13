@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
+from .gui_scaling_qt import get_system_font
+
 
 class GlobalSearchDialog(QDialog):
     """Диалог отображения результатов глобального поиска."""
@@ -28,9 +30,8 @@ class GlobalSearchDialog(QDialog):
         self.parent_window = parent
         self.results = results
         
-        # Получаем scale_factor от родительского окна и уменьшаем на 20%
-        base_scale = getattr(parent, 'scale_factor', 1.0)
-        self.scale_factor = base_scale * 0.8
+        # Получаем scale_factor от родительского окна (без уменьшения, как в таблице истории БД)
+        self.scale_factor = getattr(parent, 'scale_factor', 1.0)
 
         self.setWindowTitle(f"Результаты поиска: «{results.get('query', '')}»")
         self.setModal(True)
@@ -55,19 +56,18 @@ class GlobalSearchDialog(QDialog):
             summary_parts.append(f"Время: {results['duration_ms']} мс")
         summary_label = QLabel(" | ".join(summary_parts))
         summary_label.setWordWrap(True)
-        # Применяем шрифт к метке сводки
-        summary_font_size = max(7, int(9 * self.scale_factor))
-        summary_label.setFont(QFont("", summary_font_size))
+        # Применяем шрифт к метке сводки (на 20% меньше основного, как в истории БД)
+        summary_font_size = max(7, int(9 * self.scale_factor * 0.8))
+        summary_label.setFont(QFont(get_system_font(), summary_font_size))
         layout.addWidget(summary_label)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(3)
         self.tree.setHeaderLabels(["Источник", "Совпадений", "Детали"])
         
-        # Применяем шрифт к дереву с учётом scale_factor
-        tree_font_size = max(7, int(9 * self.scale_factor))
-        tree_font = QFont()
-        tree_font.setPointSize(tree_font_size)
+        # Применяем шрифт к дереву (на 20% меньше основного, как в истории БД)
+        tree_font_size = max(7, int(12 * self.scale_factor * 1))
+        tree_font = QFont(get_system_font(), tree_font_size)
         self.tree.setFont(tree_font)
         
         header = self.tree.header()
@@ -109,9 +109,9 @@ class GlobalSearchDialog(QDialog):
 
         info_label = QLabel("📁 Дважды щёлкните или нажмите Enter, чтобы открыть папку с выбранным файлом.")
         info_label.setWordWrap(True)
-        # Применяем шрифт к подсказке
-        info_font_size = max(7, int(9 * self.scale_factor))
-        info_label.setFont(QFont("", info_font_size))
+        # Применяем шрифт к подсказке (на 20% меньше основного, как в истории БД)
+        info_font_size = max(7, int(11 * self.scale_factor * 0.8))
+        info_label.setFont(QFont(get_system_font(), info_font_size))
         info_label.setStyleSheet("color: #a6adc8;" if theme != "light" else "color: #4c4f69;")
         layout.addWidget(info_label)
 
@@ -120,9 +120,9 @@ class GlobalSearchDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        # Применяем шрифт к кнопкам
-        button_font_size = max(7, int(9 * self.scale_factor))
-        button_font = QFont("", button_font_size)
+        # Применяем шрифт к кнопкам (на 20% меньше основного, как в истории БД)
+        button_font_size = max(7, int(9 * self.scale_factor * 0.8))
+        button_font = QFont(get_system_font(), button_font_size)
 
         self.save_button = QPushButton("💾 Сохранить результаты...")
         self.save_button.setFont(button_font)
