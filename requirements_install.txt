@@ -3,4 +3,5 @@ openpyxl
 python-docx
 pywin32
 PySide6
+reportlab
 

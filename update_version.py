@@ -150,30 +150,83 @@ def update_local_config(config_path, version, edition, release_date=None, last_u
         return False
 
 
+def read_config_file(config_path):
+    """Читает config файл (локальный или шаблон)"""
+    try:
+        if not os.path.exists(config_path):
+            return None
+        with open(config_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
 def show_status():
-    """Показывает текущие версии во всех файлах"""
+    """Показывает текущие версии во всех файлах (шаблоны и локальные)"""
     safe_print(f"\n{Colors.BOLD}[STATUS] ТЕКУЩИЕ ВЕРСИИ{Colors.NC}\n")
     safe_print("=" * 70)
     
+    versions_differ = False
+    
     # Standard Edition
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Standard Edition (Tkinter){Colors.NC}")
-    config = read_config_template('config.json.template')
-    if config:
-        version = config['app_info']['version']
-        date = config['app_info'].get('release_date', 'N/A')
-        safe_print(f"  Версия:      {Colors.GREEN}{version}{Colors.NC}")
-        safe_print(f"  Дата релиза: {date}")
-        safe_print(f"  Файл:        config.json.template")
+    
+    # Шаблон
+    template_config = read_config_template('config.json.template')
+    if template_config:
+        template_version = template_config['app_info']['version']
+        template_date = template_config['app_info'].get('release_date', 'N/A')
+        safe_print(f"  {Colors.BOLD}Шаблон:{Colors.NC}")
+        safe_print(f"    Версия:      {Colors.GREEN}{template_version}{Colors.NC}")
+        safe_print(f"    Дата релиза: {template_date}")
+        safe_print(f"    Файл:        config.json.template")
+    
+    # Локальный config
+    local_config = read_config_file('config.json')
+    if local_config:
+        local_version = local_config['app_info']['version']
+        local_date = local_config['app_info'].get('release_date', 'N/A')
+        safe_print(f"  {Colors.BOLD}Локальный:{Colors.NC}")
+        safe_print(f"    Версия:      {Colors.GREEN}{local_version}{Colors.NC}")
+        safe_print(f"    Дата релиза: {local_date}")
+        safe_print(f"    Файл:        config.json")
+        
+        # Сравнение версий
+        if template_config and template_version != local_version:
+            versions_differ = True
+            safe_print(f"    {Colors.RED}{Emoji.WARN} ⚠️ Версии отличаются!{Colors.NC}")
+    else:
+        safe_print(f"  {Colors.YELLOW}Локальный: config.json не найден{Colors.NC}")
     
     # Modern Edition
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Modern Edition (PySide6){Colors.NC}")
-    config = read_config_template('config_qt.json.template')
-    if config:
-        version = config['app_info']['version']
-        date = config['app_info'].get('release_date', 'N/A')
-        safe_print(f"  Версия:      {Colors.GREEN}{version}{Colors.NC}")
-        safe_print(f"  Дата релиза: {date}")
-        safe_print(f"  Файл:        config_qt.json.template")
+    
+    # Шаблон
+    template_config = read_config_template('config_qt.json.template')
+    if template_config:
+        template_version = template_config['app_info']['version']
+        template_date = template_config['app_info'].get('release_date', 'N/A')
+        safe_print(f"  {Colors.BOLD}Шаблон:{Colors.NC}")
+        safe_print(f"    Версия:      {Colors.GREEN}{template_version}{Colors.NC}")
+        safe_print(f"    Дата релиза: {template_date}")
+        safe_print(f"    Файл:        config_qt.json.template")
+    
+    # Локальный config
+    local_config = read_config_file('config_qt.json')
+    if local_config:
+        local_version = local_config['app_info']['version']
+        local_date = local_config['app_info'].get('release_date', 'N/A')
+        safe_print(f"  {Colors.BOLD}Локальный:{Colors.NC}")
+        safe_print(f"    Версия:      {Colors.GREEN}{local_version}{Colors.NC}")
+        safe_print(f"    Дата релиза: {local_date}")
+        safe_print(f"    Файл:        config_qt.json")
+        
+        # Сравнение версий
+        if template_config and template_version != local_version:
+            versions_differ = True
+            safe_print(f"    {Colors.RED}{Emoji.WARN} ⚠️ Версии отличаются!{Colors.NC}")
+    else:
+        safe_print(f"  {Colors.YELLOW}Локальный: config_qt.json не найден{Colors.NC}")
     
     # Скрипты сборки
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Файлы сборки (читают из шаблонов){Colors.NC}")
@@ -182,7 +235,16 @@ def show_status():
     safe_print(f"  - installer_qt.iss (через sync_installer_versions.py)")
     
     safe_print("\n" + "=" * 70)
-    safe_print(f"\n{Colors.YELLOW}{Emoji.WARN} Используйте 'update_version.py sync' для синхронизации{Colors.NC}\n")
+    
+    # Рекомендации
+    if versions_differ:
+        safe_print(f"\n{Colors.RED}{Emoji.WARN} ⚠️ ОБНАРУЖЕНЫ РАСХОЖДЕНИЯ В ВЕРСИЯХ!{Colors.NC}")
+        safe_print(f"{Colors.YELLOW}   Локальные версии отличаются от версий в шаблонах.{Colors.NC}")
+        safe_print(f"{Colors.YELLOW}   Выполните синхронизацию:{Colors.NC}")
+        safe_print(f"{Colors.BOLD}   {Colors.GREEN}python update_version.py sync{Colors.NC}\n")
+    else:
+        safe_print(f"\n{Colors.GREEN}{Emoji.CHECK} Все версии синхронизированы{Colors.NC}")
+        safe_print(f"{Colors.YELLOW}{Emoji.INFO} Используйте 'update_version.py sync' для синхронизации файлов сборки{Colors.NC}\n")
 
 
 def update_version(edition, new_version, update_date=True):
@@ -255,9 +317,65 @@ def update_version(edition, new_version, update_date=True):
 
 
 def sync_all():
-    """Синхронизирует все файлы сборки с шаблонами"""
-    safe_print(f"\n{Colors.BOLD}{Emoji.SYNC} СИНХРОНИЗАЦИЯ ФАЙЛОВ СБОРКИ{Colors.NC}\n")
+    """Синхронизирует все файлы сборки и локальные config с шаблонами"""
+    safe_print(f"\n{Colors.BOLD}{Emoji.SYNC} СИНХРОНИЗАЦИЯ ФАЙЛОВ СБОРКИ И ЛОКАЛЬНЫХ CONFIG{Colors.NC}\n")
     safe_print("=" * 70)
+    
+    # Синхронизация локальных config файлов
+    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Синхронизация локальных config файлов:{Colors.NC}")
+    
+    # Standard Edition
+    template_config = read_config_template('config.json.template')
+    if template_config:
+        template_version = template_config['app_info']['version']
+        template_edition = template_config['app_info'].get('edition', 'Standard')
+        template_release_date = template_config['app_info'].get('release_date')
+        template_last_updated = template_config['app_info'].get('last_updated')
+        
+        local_config = read_config_file('config.json')
+        if local_config:
+            local_version = local_config['app_info']['version']
+            if template_version != local_version:
+                safe_print(f"  {Colors.YELLOW}config.json: {local_version} → {template_version}{Colors.NC}")
+                update_local_config(
+                    'config.json',
+                    template_version,
+                    template_edition,
+                    release_date=template_release_date,
+                    last_updated=template_last_updated
+                )
+            else:
+                safe_print(f"  {Colors.GREEN}{Emoji.CHECK} config.json уже синхронизирован (v{local_version}){Colors.NC}")
+        else:
+            safe_print(f"  {Colors.YELLOW}config.json не найден (будет создан при первом запуске){Colors.NC}")
+    
+    # Modern Edition
+    template_config = read_config_template('config_qt.json.template')
+    if template_config:
+        template_version = template_config['app_info']['version']
+        template_edition = template_config['app_info'].get('edition', 'Modern Edition')
+        template_release_date = template_config['app_info'].get('release_date')
+        template_last_updated = template_config['app_info'].get('last_updated')
+        
+        local_config = read_config_file('config_qt.json')
+        if local_config:
+            local_version = local_config['app_info']['version']
+            if template_version != local_version:
+                safe_print(f"  {Colors.YELLOW}config_qt.json: {local_version} → {template_version}{Colors.NC}")
+                update_local_config(
+                    'config_qt.json',
+                    template_version,
+                    template_edition,
+                    release_date=template_release_date,
+                    last_updated=template_last_updated
+                )
+            else:
+                safe_print(f"  {Colors.GREEN}{Emoji.CHECK} config_qt.json уже синхронизирован (v{local_version}){Colors.NC}")
+        else:
+            safe_print(f"  {Colors.YELLOW}config_qt.json не найден (будет создан при первом запуске){Colors.NC}")
+    
+    # Синхронизация файлов сборки (.iss)
+    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Синхронизация файлов сборки:{Colors.NC}")
     
     # Запускаем sync_installer_versions.py
     try:
@@ -279,6 +397,7 @@ def sync_all():
     
     safe_print("=" * 70)
     safe_print(f"\n{Colors.GREEN}{Emoji.CHECK} Синхронизация завершена.{Colors.NC}")
+    safe_print(f"{Colors.YELLOW}{Emoji.INFO} Локальные config обновлены (только секция app_info, личные настройки сохранены){Colors.NC}")
     safe_print(f"{Colors.YELLOW}{Emoji.INFO} build_macos.sh автоматически читает версии из шаблонов{Colors.NC}\n")
 
 

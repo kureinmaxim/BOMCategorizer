@@ -7,3 +7,4 @@ pytest
 pytest-html
 pytest-cov
 PySide6
+reportlab

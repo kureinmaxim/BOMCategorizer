@@ -1042,6 +1042,52 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Проверяем наличие нераспределенных элементов
             if output_file:
                 self.check_and_offer_interactive_classification(output_file)
+                
+                # Автоматический экспорт в PDF (если включен)
+                if self.auto_export_pdf and os.path.exists(output_file):
+                    try:
+                        from .pdf_exporter import export_bom_to_pdf
+                        
+                        # Создаем путь для PDF
+                        pdf_path = os.path.splitext(output_file)[0] + ".pdf"
+                        
+                        # Собираем сводную информацию
+                        summary_info = {
+                            "Исходных файлов": len(self.input_files) if hasattr(self, 'input_files') else 0,
+                            "Выходной файл": os.path.basename(output_file),
+                            "Версия БД": self.db.get_version() if hasattr(self, 'db') else "N/A",
+                            "Программа": f"BOM Categorizer {self.cfg.get('app_info', {}).get('version', 'dev')}"
+                        }
+                        
+                        if self.log_text:
+                            self.log_text.append(f"📄 Автоматический экспорт в PDF: {os.path.basename(pdf_path)}")
+                        
+                        # Выполняем экспорт
+                        result_pdf = export_bom_to_pdf(
+                            output_file,
+                            pdf_path,
+                            with_summary=True,
+                            summary_info=summary_info
+                        )
+                        
+                        if self.log_text:
+                            self.log_text.append(f"✅ PDF создан автоматически: {result_pdf}")
+                    
+                    except ImportError as e:
+                        if self.log_text:
+                            self.log_text.append(f"⚠️ Не удалось выполнить автоматический экспорт в PDF: библиотека reportlab не установлена")
+                        QMessageBox.warning(
+                            self,
+                            "Автоэкспорт в PDF",
+                            f"Не удалось выполнить автоматический экспорт в PDF.\n"
+                            f"Библиотека reportlab не установлена.\n\n"
+                            f"Установите: pip install reportlab\n\n"
+                            f"Ошибка: {e}"
+                        )
+                    except Exception as e:
+                        if self.log_text:
+                            self.log_text.append(f"⚠️ Ошибка автоматического экспорта в PDF: {e}")
+                
                 if self.auto_open_output and os.path.exists(output_file):
                     if self.reveal_in_file_manager(output_file, select=True):
                         self.log_text.append("📂 Автоматически открыт проводник с результатом")
