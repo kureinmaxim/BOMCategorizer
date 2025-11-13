@@ -1877,13 +1877,8 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         menu = QMenu(self)
         
-        # Применяем шрифт меню с учётом scale_factor (как для всех меню)
-        current_index = self._current_scale_index()
-        if current_index < len(self.scale_levels) - 1:
-            menu_scale = self.scale_levels[current_index + 1]
-        else:
-            menu_scale = self.scale_levels[-1]
-        
+        # Применяем шрифт меню с учётом scale_factor (та же логика что для основных меню)
+        menu_scale = max(self.scale_factor + 0.2, 0.9)
         menu_font_size = max(7, int(round(9 * menu_scale)))
         menu_font = QFont(get_system_font(), menu_font_size)
         menu.setFont(menu_font)
@@ -2078,6 +2073,11 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Информация о базе данных
             info_label = QLabel()
             info_label.setProperty("class", "bold")
+            
+            # Применяем шрифт на 20% меньше основного scale_factor
+            info_font_size = max(7, int(10 * self.scale_factor * 0.8))
+            info_label.setFont(QFont(get_system_font(), info_font_size))
+            
             info_text = f"""
             <h3>📊 Информация о базе данных</h3>
             <p><b>Версия:</b> {metadata.get('version', 'N/A')}</p>
@@ -2096,6 +2096,8 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Подсказка
             hint_label = QLabel("💡 Дважды кликните на строку с файлом-источником, чтобы открыть его в проводнике")
+            hint_font_size = max(7, int(10 * self.scale_factor * 0.9))
+            hint_label.setFont(QFont(get_system_font(), hint_font_size))
             hint_label.setStyleSheet("color: #89b4fa; font-style: italic; padding: 5px;")
             history_layout.addWidget(hint_label)
 
@@ -2104,6 +2106,13 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table = QTableWidget()
                 history_table.setColumnCount(5)
                 history_table.setHorizontalHeaderLabels(["Версия", "Дата/Время", "Действие", "Источник", "Добавлено"])
+                
+                # Применяем шрифт к таблице - scale_factor
+                table_font_size = max(7, int(11 * self.scale_factor * 1))  #
+                table_font = QFont(get_system_font(), table_font_size)
+                history_table.setFont(table_font)
+                history_table.horizontalHeader().setFont(table_font)
+                
                 history_table.horizontalHeader().setStretchLastSection(False)
                 history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
                 history_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -2213,11 +2222,16 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             export_btn = QPushButton("📤 Экспорт в Excel")
             export_btn.clicked.connect(lambda: self.export_database())
+            # Применяем шрифт к кнопкам - на 20% меньше основного scale_factor
+            button_font_size = max(7, int(9 * self.scale_factor * 0.8))
+            button_font = QFont(get_system_font(), button_font_size)
+            export_btn.setFont(button_font)
             button_layout.addWidget(export_btn)
             
             button_layout.addStretch()
             
             close_btn = QPushButton("Закрыть")
+            close_btn.setFont(button_font)
             close_btn.clicked.connect(dialog.accept)
             button_layout.addWidget(close_btn)
             
@@ -3301,17 +3315,13 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         # Применяем рекурсивно ко всем дочерним виджетам (кроме меню)
         self._apply_font_recursive(self, font)
         
-        # Применяем шрифт для меню - на один уровень больше основного интерфейса
-        # Если основной интерфейс 80%, то меню 100%; если 90%, то меню 110%
+        # Применяем шрифт для меню - на 20% крупнее основного интерфейса, но не меньше 90%
+        # Если основной интерфейс 70%, то меню 90%; если 80%, то меню 100%
         from PySide6.QtWidgets import QMenu, QMenuBar
         menubar = self.menuBar()
         if menubar:
-            # Находим следующий уровень scale для меню (на один выше текущего)
-            current_index = self._current_scale_index()
-            if current_index < len(self.scale_levels) - 1:
-                menu_scale = self.scale_levels[current_index + 1]
-            else:
-                menu_scale = self.scale_levels[-1]  # Максимальный уровень
+            # Меню всегда на 0.2 (20%) крупнее, но минимум 0.9 (90%)
+            menu_scale = max(self.scale_factor + 0.2, 0.9)
             
             menu_base_size = 9  # Базовый размер для меню
             menu_font_size = max(7, int(round(menu_base_size * menu_scale)))

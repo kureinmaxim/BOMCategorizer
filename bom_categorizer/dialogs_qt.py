@@ -139,9 +139,9 @@ class DatabaseStatsDialog(QDialog):
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         
-        # Применяем шрифт с учётом scale_factor
+        # Применяем шрифт с учётом scale_factor (базовый размер 9pt)
         font = QFont()
-        font.setPointSize(int(10 * self.scale_factor))
+        font.setPointSize(max(8, int(9 * self.scale_factor)))
         text_edit.setFont(font)
 
         # Формируем текст статистики
@@ -153,7 +153,7 @@ class DatabaseStatsDialog(QDialog):
         # Кнопка закрытия
         close_btn = QPushButton("Закрыть")
         button_font = QFont()
-        button_font.setPointSize(int(10 * self.scale_factor))
+        button_font.setPointSize(max(8, int(9 * self.scale_factor)))
         close_btn.setFont(button_font)
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)

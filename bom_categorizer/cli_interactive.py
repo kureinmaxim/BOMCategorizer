@@ -45,6 +45,10 @@ class InteractiveCLI(QWidget):
         self.history_index = -1
         self.commands = {}
         
+        # Получаем scale_factor от главного окна и увеличиваем на 20%
+        base_scale = getattr(main_window, 'scale_factor', 1.0)
+        self.scale_factor = base_scale * 1.4
+        
         self._setup_ui()
         self._register_commands()
         self._print_welcome()
@@ -56,13 +60,15 @@ class InteractiveCLI(QWidget):
         
         # Заголовок
         header = QLabel("💻 Интерактивная командная строка")
-        header.setStyleSheet("font-weight: bold; font-size: 14px; padding: 5px;")
+        header_font_size = int(14 * self.scale_factor)
+        header.setStyleSheet(f"font-weight: bold; font-size: {header_font_size}px; padding: 5px;")
         layout.addWidget(header)
         
         # Область вывода
         self.output_area = QTextEdit()
         self.output_area.setReadOnly(True)
-        self.output_area.setFont(QFont("Consolas", 10))
+        output_font_size = max(8, int(10 * self.scale_factor))
+        self.output_area.setFont(QFont("Consolas", output_font_size))
         self.output_area.setStyleSheet("""
             QTextEdit {
                 background-color: #1e1e2e;
@@ -78,11 +84,13 @@ class InteractiveCLI(QWidget):
         input_layout = QHBoxLayout()
         
         self.prompt_label = QLabel(">>>")
-        self.prompt_label.setStyleSheet("color: #89b4fa; font-weight: bold; font-family: Consolas;")
+        prompt_font_size = max(8, int(14 * self.scale_factor))
+        self.prompt_label.setStyleSheet(f"color: #89b4fa; font-weight: bold; font-family: Consolas; font-size: {prompt_font_size}pt;")
         input_layout.addWidget(self.prompt_label)
         
         self.input_field = QLineEdit()
-        self.input_field.setFont(QFont("Consolas", 10))
+        input_font_size = max(8, int(10 * self.scale_factor))
+        self.input_field.setFont(QFont("Consolas", input_font_size))
         self.input_field.setPlaceholderText("Введите команду (help для справки)...")
         self.input_field.returnPressed.connect(self._execute_command)
         self.input_field.setStyleSheet("""

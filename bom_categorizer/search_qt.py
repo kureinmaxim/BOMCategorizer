@@ -27,6 +27,10 @@ class GlobalSearchDialog(QDialog):
         super().__init__(parent)
         self.parent_window = parent
         self.results = results
+        
+        # Получаем scale_factor от родительского окна и уменьшаем на 20%
+        base_scale = getattr(parent, 'scale_factor', 1.0)
+        self.scale_factor = base_scale * 0.8
 
         self.setWindowTitle(f"Результаты поиска: «{results.get('query', '')}»")
         self.setModal(True)
@@ -51,12 +55,23 @@ class GlobalSearchDialog(QDialog):
             summary_parts.append(f"Время: {results['duration_ms']} мс")
         summary_label = QLabel(" | ".join(summary_parts))
         summary_label.setWordWrap(True)
+        # Применяем шрифт к метке сводки
+        summary_font_size = max(7, int(9 * self.scale_factor))
+        summary_label.setFont(QFont("", summary_font_size))
         layout.addWidget(summary_label)
 
         self.tree = QTreeWidget()
         self.tree.setColumnCount(3)
         self.tree.setHeaderLabels(["Источник", "Совпадений", "Детали"])
+        
+        # Применяем шрифт к дереву с учётом scale_factor
+        tree_font_size = max(7, int(9 * self.scale_factor))
+        tree_font = QFont()
+        tree_font.setPointSize(tree_font_size)
+        self.tree.setFont(tree_font)
+        
         header = self.tree.header()
+        header.setFont(tree_font)
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
@@ -94,7 +109,10 @@ class GlobalSearchDialog(QDialog):
 
         info_label = QLabel("📁 Дважды щёлкните или нажмите Enter, чтобы открыть папку с выбранным файлом.")
         info_label.setWordWrap(True)
-        info_label.setStyleSheet("font-size: 9pt; color: #a6adc8;" if theme != "light" else "font-size: 9pt; color: #4c4f69;")
+        # Применяем шрифт к подсказке
+        info_font_size = max(7, int(9 * self.scale_factor))
+        info_label.setFont(QFont("", info_font_size))
+        info_label.setStyleSheet("color: #a6adc8;" if theme != "light" else "color: #4c4f69;")
         layout.addWidget(info_label)
 
         self._populate_tree()
@@ -102,11 +120,17 @@ class GlobalSearchDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
+        # Применяем шрифт к кнопкам
+        button_font_size = max(7, int(9 * self.scale_factor))
+        button_font = QFont("", button_font_size)
+
         self.save_button = QPushButton("💾 Сохранить результаты...")
+        self.save_button.setFont(button_font)
         self.save_button.clicked.connect(self.save_results)
         button_layout.addWidget(self.save_button)
 
         close_button = QPushButton("Закрыть")
+        close_button.setFont(button_font)
         close_button.clicked.connect(self.accept)
         button_layout.addWidget(close_button)
 

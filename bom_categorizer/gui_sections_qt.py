@@ -348,7 +348,9 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     
     open_cli_button = QPushButton("Открыть CLI")
     open_cli_button.setObjectName("openCliButton")
-    open_cli_button.setFixedWidth(100)
+    # Масштабируем ширину кнопки в зависимости от scale_factor
+    button_width = int(120 * window.scale_factor)
+    open_cli_button.setMinimumWidth(button_width)
     open_cli_button.clicked.connect(window.open_interactive_cli)
     cli_layout.addWidget(open_cli_button)
     cli_layout.addStretch()
@@ -432,7 +434,9 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     
     ai_settings_button = QPushButton("⚙️ Настройки AI")
     ai_settings_button.setObjectName("aiSettingsButton")
-    ai_settings_button.setFixedWidth(130)
+    # Масштабируем ширину кнопки в зависимости от scale_factor
+    button_width = int(150 * window.scale_factor)
+    ai_settings_button.setMinimumWidth(button_width)
     ai_settings_button.clicked.connect(window.open_ai_settings)
     ai_settings_button.setToolTip("Настройка провайдера AI, API ключей и параметров")
     ai_controls_layout.addWidget(ai_settings_button)
