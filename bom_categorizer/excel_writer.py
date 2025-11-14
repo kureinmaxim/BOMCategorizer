@@ -181,8 +181,8 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     qty_col_candidates = ['_merged_qty_', 'qty', 'Количество', 'количество', 'Общее количество']
     for candidate in qty_col_candidates:
         if candidate in result_df.columns:
-            if candidate != 'Кол-во':
-                result_df = result_df.rename(columns={candidate: 'Кол-во'})
+            if candidate != 'шт.':
+                result_df = result_df.rename(columns={candidate: 'шт.'})
             break
     
     # Переименовать "Код МР" в стандартное написание
@@ -501,7 +501,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     
     # Упорядочить колонки в правильном порядке
     # Код МР после ТУ, Примечание в конце
-    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Код МР', 'Источник', 'Кол-во']
+    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Код МР', 'Источник', 'шт.']
     
     ordered_cols = [col for col in desired_order if col in result_df.columns]
     remaining_cols = [col for col in result_df.columns 

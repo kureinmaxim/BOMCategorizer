@@ -186,6 +186,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         # Обновляем галочки в меню режимов (после создания меню)
         self.update_view_mode_actions()
+        
+        # Применяем режим работы из конфига (скрываем/показываем панели)
+        self.apply_view_mode(initial=True)
 
         # Включаем поддержку Drag & Drop
         self.setAcceptDrops(True)
