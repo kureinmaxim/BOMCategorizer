@@ -35,12 +35,49 @@ class PDFExporter:
         import platform
         import sys
         
+        fonts_registered = False
+        error_messages = []
+        
         try:
             system = platform.system()
-            fonts_registered = False
             
-            # Для Windows - пробуем Arial
-            if system == 'Windows':
+            # Приоритет 1: Шрифты из папки приложения (для инсталлятора)
+            # Ищем папку fonts рядом с исполняемым файлом или скриптом
+            if not fonts_registered:
+                try:
+                    # Определяем базовую директорию приложения
+                    if getattr(sys, 'frozen', False):
+                        # Если запущено из exe (PyInstaller)
+                        base_dir = os.path.dirname(sys.executable)
+                    else:
+                        # Если запущено как скрипт
+                        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    
+                    fonts_dir = os.path.join(base_dir, 'fonts')
+                    
+                    if os.path.exists(fonts_dir):
+                        dejavu_paths = {
+                            'DejaVuSans': os.path.join(fonts_dir, 'DejaVuSans.ttf'),
+                            'DejaVuSans-Bold': os.path.join(fonts_dir, 'DejaVuSans-Bold.ttf'),
+                        }
+                        
+                        if all(os.path.exists(p) for p in dejavu_paths.values()):
+                            pdfmetrics.registerFont(TTFont('DejaVuSans', dejavu_paths['DejaVuSans']))
+                            pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', dejavu_paths['DejaVuSans-Bold']))
+                            self.cyrillic_font = 'DejaVuSans'
+                            self.cyrillic_font_bold = 'DejaVuSans-Bold'
+                            fonts_registered = True
+                            print(f"✓ Зарегистрированы шрифты: DejaVuSans из папки приложения (поддержка кириллицы)")
+                        else:
+                            error_messages.append(f"DejaVuSans: Папка fonts найдена, но файлы шрифтов отсутствуют")
+                    else:
+                        error_messages.append(f"DejaVuSans: Папка fonts не найдена в {base_dir}")
+                
+                except Exception as e:
+                    error_messages.append(f"DejaVuSans (папка приложения): {str(e)}")
+            
+            # Приоритет 2: Для Windows - пробуем Arial
+            if not fonts_registered and system == 'Windows':
                 font_paths = {
                     'Arial': 'C:/Windows/Fonts/arial.ttf',
                     'Arial-Bold': 'C:/Windows/Fonts/arialbd.ttf',
@@ -54,10 +91,14 @@ class PDFExporter:
                         self.cyrillic_font = 'Arial'
                         self.cyrillic_font_bold = 'Arial-Bold'
                         fonts_registered = True
-                    except Exception:
-                        pass
+                        print(f"✓ Зарегистрированы шрифты: Arial (поддержка кириллицы)")
+                    except Exception as e:
+                        error_messages.append(f"Arial: {str(e)}")
+                else:
+                    missing = [k for k, v in font_paths.items() if not os.path.exists(v)]
+                    error_messages.append(f"Arial: Файлы не найдены - {missing}")
             
-            # Для macOS - пробуем системные шрифты
+            # Приоритет 3: Для macOS - пробуем системные шрифты
             elif system == 'Darwin':
                 font_paths = {
                     'Arial': '/System/Library/Fonts/Supplemental/Arial.ttf',
@@ -72,16 +113,16 @@ class PDFExporter:
                         self.cyrillic_font = 'Arial'
                         self.cyrillic_font_bold = 'Arial-Bold'
                         fonts_registered = True
-                    except Exception:
-                        pass
+                        print(f"✓ Зарегистрированы шрифты: Arial (поддержка кириллицы)")
+                    except Exception as e:
+                        error_messages.append(f"Arial: {str(e)}")
+                else:
+                    missing = [k for k, v in font_paths.items() if not os.path.exists(v)]
+                    error_messages.append(f"Arial: Файлы не найдены - {missing}")
             
-            # Fallback: пробуем DejaVu (доступен через reportlab)
+            # Приоритет 4: пробуем DejaVu в системных папках
             if not fonts_registered:
                 try:
-                    # DejaVu шрифты часто встроены в reportlab или доступны в системе
-                    from reportlab.pdfbase.ttfonts import TTFont
-                    from reportlab.lib.fonts import addMapping
-                    
                     # Пробуем найти DejaVu в разных местах
                     dejavu_paths = [
                         '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Linux
@@ -104,18 +145,94 @@ class PDFExporter:
                         self.cyrillic_font = 'DejaVuSans'
                         self.cyrillic_font_bold = 'DejaVuSans-Bold'
                         fonts_registered = True
+                        print(f"✓ Зарегистрированы шрифты: DejaVuSans (поддержка кириллицы)")
+                    else:
+                        error_messages.append(f"DejaVuSans: Файлы не найдены в стандартных путях")
                 
-                except Exception:
-                    pass
+                except Exception as e:
+                    error_messages.append(f"DejaVuSans: {str(e)}")
             
-            # Если ничего не получилось - используем стандартные шрифты
-            # (текст будет показываться как квадратики, но хотя бы не упадет)
+            # Приоритет 5: пробуем загрузить DejaVu из папки проекта или pip пакета
             if not fonts_registered:
+                try:
+                    # Пробуем найти шрифты в папке проекта или site-packages reportlab
+                    import reportlab
+                    reportlab_dir = os.path.dirname(reportlab.__file__)
+                    fonts_dir = os.path.join(reportlab_dir, 'fonts')
+                    
+                    # Проверяем разные возможные пути
+                    possible_paths = [
+                        os.path.join(fonts_dir, 'DejaVuSans.ttf'),
+                        os.path.join(reportlab_dir, 'lib', 'fonts', 'DejaVuSans.ttf'),
+                    ]
+                    
+                    possible_bold_paths = [
+                        os.path.join(fonts_dir, 'DejaVuSans-Bold.ttf'),
+                        os.path.join(reportlab_dir, 'lib', 'fonts', 'DejaVuSans-Bold.ttf'),
+                    ]
+                    
+                    dejavu_normal = next((p for p in possible_paths if os.path.exists(p)), None)
+                    dejavu_bold = next((p for p in possible_bold_paths if os.path.exists(p)), None)
+                    
+                    if dejavu_normal and dejavu_bold:
+                        pdfmetrics.registerFont(TTFont('DejaVuSans', dejavu_normal))
+                        pdfmetrics.registerFont(TTFont('DejaVuSans-Bold', dejavu_bold))
+                        self.cyrillic_font = 'DejaVuSans'
+                        self.cyrillic_font_bold = 'DejaVuSans-Bold'
+                        fonts_registered = True
+                        print(f"✓ Зарегистрированы шрифты: DejaVuSans из reportlab (поддержка кириллицы)")
+                    else:
+                        error_messages.append(f"DejaVuSans: Не найдены в папке reportlab")
+                
+                except Exception as e:
+                    error_messages.append(f"DejaVuSans (reportlab): {str(e)}")
+            
+            # Приоритет 6: пробуем Times New Roman для Windows
+            if not fonts_registered and system == 'Windows':
+                try:
+                    times_paths = {
+                        'Times': 'C:/Windows/Fonts/times.ttf',
+                        'Times-Bold': 'C:/Windows/Fonts/timesbd.ttf',
+                    }
+                    
+                    all_exist = all(os.path.exists(path) for path in times_paths.values())
+                    if all_exist:
+                        pdfmetrics.registerFont(TTFont('TimesNewRoman', times_paths['Times']))
+                        pdfmetrics.registerFont(TTFont('TimesNewRoman-Bold', times_paths['Times-Bold']))
+                        self.cyrillic_font = 'TimesNewRoman'
+                        self.cyrillic_font_bold = 'TimesNewRoman-Bold'
+                        fonts_registered = True
+                        print(f"✓ Зарегистрированы шрифты: Times New Roman (поддержка кириллицы)")
+                    else:
+                        error_messages.append(f"Times New Roman: Файлы не найдены")
+                
+                except Exception as e:
+                    error_messages.append(f"Times New Roman: {str(e)}")
+            
+            # Если ничего не получилось - выводим предупреждение и используем Helvetica
+            if not fonts_registered:
+                print("\n" + "="*70)
+                print("⚠️  ВНИМАНИЕ: Не удалось зарегистрировать шрифты с поддержкой кириллицы!")
+                print("="*70)
+                print("Кириллические символы в PDF будут отображаться некорректно (квадратиками).")
+                print("\nПричины:")
+                for msg in error_messages:
+                    print(f"  - {msg}")
+                print("\nРЕКОМЕНДАЦИИ:")
+                print("  1. Установите шрифт DejaVu Sans:")
+                print("     • Windows: Скачайте с https://dejavu-fonts.github.io/")
+                print("       и установите файлы DejaVuSans.ttf и DejaVuSans-Bold.ttf")
+                print("       в папку C:\\Windows\\Fonts\\")
+                print("  2. Или установите пакет: pip install reportlab[rlpycairo]")
+                print("  3. Перезапустите программу после установки шрифтов")
+                print("="*70 + "\n")
+                
                 self.cyrillic_font = 'Helvetica'
                 self.cyrillic_font_bold = 'Helvetica-Bold'
                     
-        except Exception:
+        except Exception as e:
             # Критическая ошибка - используем стандартные
+            print(f"⚠️  Критическая ошибка при регистрации шрифтов: {e}")
             self.cyrillic_font = 'Helvetica'
             self.cyrillic_font_bold = 'Helvetica-Bold'
     

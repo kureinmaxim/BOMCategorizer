@@ -17,6 +17,7 @@ UninstallDisplayIcon={app}\icon.ico
 [Files]
 Source: "temp_installer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pyc,__pycache__"
 Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+Source: "fonts\*.ttf"; DestDir: "{app}\fonts"; Flags: ignoreversion; Check: FontsExist
 
 [Run]
 Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\post_install.ps1"""; StatusMsg: "Setting up Python environment..."; Flags: runhidden
@@ -25,4 +26,10 @@ Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-Exe
 Name: "{group}\BOM Categorizer Modern"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
 Name: "{group}\Uninstall BOM Categorizer Modern"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\BOM Categorizer Modern"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+
+[Code]
+function FontsExist: Boolean;
+begin
+  Result := DirExists(ExpandConstant('{src}\fonts'));
+end;
 
