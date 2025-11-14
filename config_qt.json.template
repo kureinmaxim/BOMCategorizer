@@ -14,15 +14,15 @@
     "require_pin": true
   },
   "window": {
-    "width": 720,
-    "height": 900,
+    "width": 730,
+    "height": 550,
     "remember_size": true
   },
   "ui": {
     "theme": "dark",
     "font_size": 12,
     "scale_factor": 1.0,
-    "view_mode": "advanced",
+    "view_mode": "simple",
     "log_timestamps": false,
     "auto_open_output": false,
     "auto_export_pdf": false,

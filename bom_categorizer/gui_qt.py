@@ -238,18 +238,18 @@ class BOMCategorizerMainWindow(QMainWindow):
         file_menu = menubar.addMenu("Файл")
         
         # Открыть файлы
-        open_action = QAction("📂 Открыть файлы", self)
-        open_action.setShortcut(QKeySequence("Ctrl+O"))
-        open_action.triggered.connect(self.on_add_files)
-        file_menu.addAction(open_action)
+        self.open_action = QAction("📂 Открыть файлы", self)
+        self.open_action.setShortcut(QKeySequence("Ctrl+O"))
+        self.open_action.triggered.connect(self.on_add_files)
+        file_menu.addAction(self.open_action)
         
         file_menu.addSeparator()
         
         # Запустить обработку
-        run_action = QAction("🚀 Запустить обработку", self)
-        run_action.setShortcut(QKeySequence("Ctrl+R"))
-        run_action.triggered.connect(self.on_run)
-        file_menu.addAction(run_action)
+        self.run_action = QAction("🚀 Запустить обработку", self)
+        self.run_action.setShortcut(QKeySequence("Ctrl+R"))
+        self.run_action.triggered.connect(self.on_run)
+        file_menu.addAction(self.run_action)
         
         file_menu.addSeparator()
         
@@ -306,12 +306,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         view_menu.addSeparator()
 
         # Подменю режимов работы
-        mode_menu = view_menu.addMenu("Режим работы")
+        self.mode_menu = view_menu.addMenu("Режим работы")
         mode_group = QActionGroup(self)
         mode_group.setExclusive(True)
 
         mode_definitions = [
-            ("simple", "Простой режим (для начинающих)"),
+            ("simple", "Простой режим"),
             ("advanced", "Расширенный режим (все функции)"),
             ("expert", "Экспертный режим (дополнительные настройки)"),
         ]
@@ -321,7 +321,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             action = QAction(label, self)
             action.setCheckable(True)
             action.triggered.connect(lambda checked, m=key: self.set_view_mode(m))
-            mode_menu.addAction(action)
+            self.mode_menu.addAction(action)
             mode_group.addAction(action)
             self.view_mode_actions[key] = action
 
@@ -1992,11 +1992,32 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Блокировка интерфейса"""
         for widget in self.lockable_widgets:
             widget.setEnabled(False)
+        
+        # Блокировка элементов меню до ввода PIN
+        if hasattr(self, 'open_action'):
+            self.open_action.setEnabled(False)
+        if hasattr(self, 'run_action'):
+            self.run_action.setEnabled(False)
+        if hasattr(self, 'mode_menu'):
+            self.mode_menu.setEnabled(False)
+        if hasattr(self, 'global_search_menu'):
+            self.global_search_menu.setEnabled(False)
 
     def unlock_interface(self):
         """Разблокировка интерфейса"""
         for widget in self.lockable_widgets:
             widget.setEnabled(True)
+        
+        # Разблокировка элементов меню после ввода PIN
+        if hasattr(self, 'open_action'):
+            self.open_action.setEnabled(True)
+        if hasattr(self, 'run_action'):
+            self.run_action.setEnabled(True)
+        if hasattr(self, 'mode_menu'):
+            self.mode_menu.setEnabled(True)
+        if hasattr(self, 'global_search_menu'):
+            self.global_search_menu.setEnabled(True)
+        
         self.unlocked = True
 
     def resizeEvent(self, event):
@@ -2960,11 +2981,11 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
                 'title': 'Режимы работы',
                 'content': '''
 <b>Простой режим:</b>
-Упрощенный интерфейс для начинающих.
+Упрощенный интерфейс (по умолчанию).
 Скрыты: сравнение файлов, лог, меню базы данных.
 
 <b>Расширенный режим:</b>
-Все функции доступны (по умолчанию).
+Все функции доступны.
 
 <b>Экспертный режим:</b>
 Дополнительные настройки:

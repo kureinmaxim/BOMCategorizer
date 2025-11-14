@@ -102,7 +102,7 @@ def _create_view_menu(window: 'BOMCategorizerMainWindow', menubar: QMenuBar) -> 
     mode_group.setExclusive(True)
 
     mode_definitions = [
-        ("simple", "Простой режим (для начинающих)"),
+        ("simple", "Простой режим"),
         ("advanced", "Расширенный режим (все функции)"),
         ("expert", "Экспертный режим (дополнительные настройки)"),
     ]
