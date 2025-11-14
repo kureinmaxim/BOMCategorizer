@@ -38,6 +38,19 @@ mkdir "$env:APPDATA\BOMCategorizerModern\fonts"
 
 ---
 
+## Ошибка при сборке Inno Setup
+
+Если в логе появляется:
+
+```
+Error on line 20 in installer_active.iss: No files found matching "...\fonts\*.ttf"
+```
+
+значит в папке `fonts` отсутствуют файлы `DejaVuSans.ttf` и `DejaVuSans-Bold.ttf`.  
+Выполните команды из раздела для разработчиков (или скачайте шрифты вручную) и соберите инсталлятор повторно.
+
+---
+
 ## Проверка
 
 ```bash
