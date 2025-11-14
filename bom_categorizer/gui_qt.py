@@ -528,11 +528,11 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.comparison_section = gui_sections_qt.create_comparison_section(self)
         scroll_layout.addWidget(self.comparison_section)
 
-        self.log_section = gui_sections_qt.create_log_section(self)
-        scroll_layout.addWidget(self.log_section)
-
         self.expert_section = gui_sections_qt.create_expert_tools_section(self)
         scroll_layout.addWidget(self.expert_section)
+
+        self.log_section = gui_sections_qt.create_log_section(self)
+        scroll_layout.addWidget(self.log_section)
 
         scroll_layout.addStretch()
         scroll_layout.addWidget(gui_sections_qt.create_footer(self))
@@ -3627,6 +3627,13 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         self.save_ui_preferences()
         if self.log_text:
             message = "📂 Автооткрытие папки результата включено" if self.auto_open_output else "📂 Автооткрытие папки результата отключено"
+            self.log_text.append(message)
+    
+    def on_toggle_combine(self, state: int):
+        """Включение/выключение суммарной комплектации"""
+        self.combine = bool(state == Qt.Checked)
+        if self.log_text:
+            message = "📦 Суммарная комплектация включена" if self.combine else "📦 Суммарная комплектация отключена"
             self.log_text.append(message)
     
     def on_toggle_enhanced_dragdrop(self, state: int):
