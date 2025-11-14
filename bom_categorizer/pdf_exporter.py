@@ -505,16 +505,21 @@ class PDFExporter:
                 'CategoryHeader',
                 parent=self.styles['Heading2'],
                 fontName=self.cyrillic_font_bold,
-                fontSize=12,
+                fontSize=10,  # Уменьшен размер шрифта
                 textColor=colors.HexColor('#2563eb'),
-                alignment=TA_CENTER
+                alignment=TA_LEFT  # Выравнивание по левому краю
             )
             
             # Создаем строку с заголовком категории
-            # Помещаем текст только в первую ячейку, остальные - пустые Paragraph
-            category_cell = Paragraph(f"<b>{sheet_name}</b>", category_header_style)
+            # Пустая ячейка в 1-й колонке (№ п/п), текст во 2-й колонке (Наименование ИВП)
             empty_cell = Paragraph('', category_header_style)
-            category_row = [category_cell] + [empty_cell] * (num_cols - 1)
+            category_cell = Paragraph(f"<b>{sheet_name}</b>", category_header_style)
+            
+            # Формируем строку: пустая ячейка, заголовок, затем остальные пустые
+            if num_cols >= 2:
+                category_row = [empty_cell, category_cell] + [empty_cell] * (num_cols - 2)
+            else:
+                category_row = [category_cell]  # На случай если колонка всего одна
             
             # Вставляем строку заголовка в начало данных
             data.insert(0, category_row)
@@ -589,12 +594,12 @@ class PDFExporter:
             # Применяем стили ко всей строке заголовка категории
             style.add('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8F4FF'))  # Светло-голубой фон
             style.add('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#2563eb'))
-            style.add('ALIGN', (0, 0), (-1, 0), 'CENTER')
+            style.add('ALIGN', (0, 0), (-1, 0), 'LEFT')  # Выравнивание по левому краю
             style.add('VALIGN', (0, 0), (-1, 0), 'MIDDLE')
             style.add('FONTNAME', (0, 0), (-1, 0), self.cyrillic_font_bold)
-            style.add('FONTSIZE', (0, 0), (-1, 0), 12)
-            style.add('BOTTOMPADDING', (0, 0), (-1, 0), 6)
-            style.add('TOPPADDING', (0, 0), (-1, 0), 6)
+            style.add('FONTSIZE', (0, 0), (-1, 0), 10)  # Уменьшенный размер шрифта
+            style.add('BOTTOMPADDING', (0, 0), (-1, 0), 4)  # Немного уменьшен отступ
+            style.add('TOPPADDING', (0, 0), (-1, 0), 4)
             # Убираем внутренние границы в строке заголовка для эффекта объединения
             if num_cols > 1:
                 style.add('LINEBELOW', (0, 0), (-1, 0), 1, colors.black)  # Нижняя граница
