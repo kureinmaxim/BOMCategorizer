@@ -3568,7 +3568,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if hasattr(self, "comparison_section") and self.comparison_section:
             self.comparison_section.setVisible(not simple)
         if hasattr(self, "log_section") and self.log_section:
-            self.log_section.setVisible(not simple)
+            self.log_section.setVisible(expert)
         if hasattr(self, "expert_section") and self.expert_section:
             self.expert_section.setVisible(expert)
 

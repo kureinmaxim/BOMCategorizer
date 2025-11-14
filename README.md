@@ -135,7 +135,7 @@ python -m venv venv
 python -m pip install --upgrade pip
 
 # 5) Установить зависимости
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
 # 6) Запустить Standard Edition
 python app.py

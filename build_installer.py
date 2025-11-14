@@ -79,6 +79,8 @@ FILES_TO_COPY = [
     "repair_install.ps1",
     "repair_install.bat",
     "run_app.bat",
+    "run_app_debug.bat",  # Debug version with console output
+    "run_app_simple.bat",  # Simple version with console output (for troubleshooting)
     "split_bom.bat",
     "start_gui.bat",
     "README.md",
@@ -89,7 +91,8 @@ FILES_TO_COPY = [
 DIRECTORIES_TO_COPY = [
     "bom_categorizer",  # Модульная структура
     "docs",             # Документация
-    "offline_packages"  # Оффлайн пакеты для установки
+    "offline_packages", # Оффлайн пакеты для установки
+    "fonts"             # Шрифты для PDF экспорта (кириллица)
 ]
 
 
@@ -107,6 +110,46 @@ def clean_temp_dir():
         shutil.rmtree(TEMP_DIR)
     os.makedirs(TEMP_DIR)
     print(f"Создана директория {TEMP_DIR}")
+
+
+def copytree_exclude(src, dst, exclude_dirs=None, exclude_files=None):
+    """
+    Копирует директорию с исключением указанных директорий и файлов.
+    
+    Args:
+        src: исходная директория
+        dst: целевая директория
+        exclude_dirs: список имен директорий для исключения (по умолчанию: __pycache__, .git, .pytest_cache)
+        exclude_files: список паттернов файлов для исключения (по умолчанию: *.pyc, *.pyo, *.pyd)
+    """
+    if exclude_dirs is None:
+        exclude_dirs = ['__pycache__', '.git', '.pytest_cache', '.mypy_cache', '.ruff_cache']
+    if exclude_files is None:
+        exclude_files = ['*.pyc', '*.pyo', '*.pyd']
+    
+    os.makedirs(dst, exist_ok=True)
+    
+    for item in os.listdir(src):
+        src_path = os.path.join(src, item)
+        dst_path = os.path.join(dst, item)
+        
+        # Пропускаем исключенные директории
+        if os.path.isdir(src_path) and item in exclude_dirs:
+            continue
+        
+        # Пропускаем исключенные файлы
+        if os.path.isfile(src_path):
+            skip = False
+            for pattern in exclude_files:
+                if item.endswith(pattern.replace('*', '')):
+                    skip = True
+                    break
+            if skip:
+                continue
+            shutil.copy2(src_path, dst_path)
+        else:
+            # Рекурсивно копируем поддиректории
+            copytree_exclude(src_path, dst_path, exclude_dirs, exclude_files)
 
 
 def copy_files():
@@ -135,15 +178,33 @@ def copy_files():
         shutil.copy2(db_template, db_final)
         print(f"  [OK] component_database_template.json -> component_database.json (пустая БД)")
     
+    # Копируем директории с исключением ненужных файлов
     for directory in DIRECTORIES_TO_COPY:
         if os.path.exists(directory):
             dest = os.path.join(TEMP_DIR, directory)
             if os.path.exists(dest):
                 shutil.rmtree(dest)
-            shutil.copytree(directory, dest)
-            print(f"  [OK] {directory}/ (директория)")
+            copytree_exclude(directory, dest)
+            print(f"  [OK] {directory}/ (директория, исключены __pycache__ и *.pyc)")
         else:
             print(f"  [SKIP] {directory}/ (не найдена)")
+    
+    # Дополнительная очистка: удаляем __pycache__ если они все-таки попали
+    print("\nОчистка временных файлов...")
+    for root, dirs, files in os.walk(TEMP_DIR):
+        # Удаляем директории __pycache__
+        if '__pycache__' in dirs:
+            pycache_path = os.path.join(root, '__pycache__')
+            shutil.rmtree(pycache_path)
+            print(f"  [CLEAN] Удален {pycache_path}")
+            dirs.remove('__pycache__')  # Убираем из списка для обхода
+        
+        # Удаляем .pyc файлы
+        for file in files:
+            if file.endswith('.pyc') or file.endswith('.pyo'):
+                pyc_path = os.path.join(root, file)
+                os.remove(pyc_path)
+                print(f"  [CLEAN] Удален {pyc_path}")
 
 
 def copy_iss_to_root():

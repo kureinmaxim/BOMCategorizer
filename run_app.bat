@@ -1,72 +1,44 @@
 @echo off
-chcp 65001 >nul
+chcp 65001 >nul 2>&1
 cd /d "%~dp0"
 
 :: Create a log file for debugging
 echo Launching BOM Categorizer... > debug_log.txt
+echo Current directory: %CD% >> debug_log.txt
+echo Script location: %~dp0 >> debug_log.txt
 echo. >> debug_log.txt
 
+:: Check if virtual environment exists. If not, run setup.
 if exist ".venv\Scripts\python.exe" (
-    echo Found Python in .venv. Checking installed packages... >> debug_log.txt
-    echo. >> debug_log.txt
-    
-    echo ===== VENV PACKAGE LIST ===== >> debug_log.txt
-    if exist ".venv\Scripts\pip.exe" (
-        call .venv\Scripts\pip.exe list >> debug_log.txt 2>>&1
-    ) else if exist ".venv\Scripts\pip3.exe" (
-        call .venv\Scripts\pip3.exe list >> debug_log.txt 2>>&1
-    ) else (
-        call .venv\Scripts\python.exe -m pip list >> debug_log.txt 2>>&1
-    )
-    echo. >> debug_log.txt
-    echo ===== END OF PACKAGE LIST ===== >> debug_log.txt
-    echo. >> debug_log.txt
-    
-    echo Starting app.py, redirecting output to log... >> debug_log.txt
-    call .venv\Scripts\python.exe app_qt.py >> debug_log.txt 2>>&1
-    echo App execution finished. >> debug_log.txt
-
+    echo Virtual environment found. Skipping setup. >> debug_log.txt
 ) else (
-    echo ERROR: Virtual environment not found! >> debug_log.txt
-    echo Searched for python.exe in: %~dp0.venv\Scripts\ >> debug_log.txt
-    echo. >> debug_log.txt
-    echo Attempting to repair installation... >> debug_log.txt
+    echo Virtual environment not found. Starting setup... >> debug_log.txt
     
     cls
     echo ========================================
     echo BOM Categorizer - First Run Setup
     echo ========================================
     echo.
-    echo Virtual environment not found.
+    echo Virtual environment not found. This is normal for the first run.
     echo.
-    echo This is normal for first run or if installation was incomplete.
-    echo.
-    echo Press any key to install dependencies (requires Python)...
+    echo Press any key to install dependencies...
     pause >nul
     
     echo.
-    echo Installing dependencies...
-    echo Please wait, this may take a few minutes...
+    echo Installing dependencies, please wait...
     echo.
     
-    :: Try to run post_install.ps1
     powershell.exe -ExecutionPolicy Bypass -File "%~dp0post_install.ps1"
     
-    if errorlevel 1 (
+    if %errorlevel% neq 0 (
         echo.
         echo ========================================
-        echo Installation FAILED
+        echo INSTALLATION FAILED
         echo ========================================
         echo.
-        echo Please check:
-        echo   1. Python is installed on your system
-        echo   2. You have internet connection
-        echo   3. Check install_log.txt for details
+        echo Please check install_log.txt for details.
         echo.
-        echo For help, see: %~dp0install_log.txt
-        echo.
-        echo Press any key to exit...
-        pause >nul
+        pause
         exit /b 1
     )
     
@@ -77,25 +49,28 @@ if exist ".venv\Scripts\python.exe" (
     echo.
     echo Starting application...
     timeout /t 2 >nul
-    
-    :: Now try to start the app
-    if exist ".venv\Scripts\python.exe" (
-        call .venv\Scripts\python.exe app_qt.py
-    ) else (
-        echo ERROR: Installation completed but .venv still not found!
-        echo Please run repair_install.bat
-        pause
-        exit /b 1
-    )
 )
 
+:: Final check before launch
+if not exist ".venv\Scripts\python.exe" (
+    echo ERROR: Virtual environment still not found after setup! >> debug_log.txt
+    echo ERROR: Installation might have failed. Please run repair_install.bat
+    pause
+    exit /b 1
+)
+
+if not exist "app.py" (
+    echo ERROR: app.py not found! >> debug_log.txt
+    echo ERROR: Main application file app.py is missing.
+    pause
+    exit /b 1
+)
+
+:: Launch application
+echo Starting application with python.exe... >> debug_log.txt
+.venv\Scripts\python.exe app.py
+
+:: Keep console open to see output/errors
 echo.
-echo ========================================
-echo The program has finished executing.
-echo ========================================
-echo.
-echo Debug log: %~dp0debug_log.txt
-echo Install log: %~dp0install_log.txt
-echo.
-echo Press any key to close...
-pause >nul
+echo Application closed.
+pause

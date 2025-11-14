@@ -32,6 +32,7 @@ ENV/
 env/
 
 # Offline packages (too large for GitHub, but kept in local archives)
+offline_packages/*.whl
 offline-packages-linux/
 
 # IDE
