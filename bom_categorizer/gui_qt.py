@@ -189,6 +189,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         # Применяем режим работы из конфига (скрываем/показываем панели)
         self.apply_view_mode(initial=True)
+        
+        # Обновляем статус AI (активирует чекбоксы если AI настроен)
+        self.update_ai_status()
 
         # Включаем поддержку Drag & Drop
         self.setAcceptDrops(True)
@@ -1970,26 +1973,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         QMessageBox.information(self, "Размер сохранен", f"Текущий размер окна ({width}×{height}) сохранен в конфигурацию")
     
     def save_window_size_to_config(self, width: int, height: int):
-        """Сохраняет размер окна в конфигурационный файл"""
-        try:
-            # Проверяем, нужно ли запоминать размер окна
-            remember_size = self.cfg.get("window", {}).get("remember_size", True)
-            
-            if not remember_size:
-                # Если remember_size = false, не сохраняем размер окна
-                return
-            
-            self.cfg["window"] = {
-                "width": width,
-                "height": height,
-                "remember_size": True
-            }
-            
-            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.cfg, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"⚠️ Не удалось сохранить размер окна: {e}")
+        """Размер окна НЕ сохраняется - приложение всегда открывается с размером из config_qt.json"""
+        # Метод оставлен для совместимости, но ничего не делает
+        pass
 
     def lock_interface(self):
         """Блокировка интерфейса"""
@@ -2030,15 +2016,8 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.size_label.setText(f"📐 {self.width()}×{self.height()}")
     
     def closeEvent(self, event):
-        """Обработка закрытия окна - сохранение настроек"""
-        try:
-            # Сохраняем размер окна
-            self.save_window_size_to_config(self.width(), self.height())
-            self.save_ui_preferences()
-        except Exception as e:
-            print(f"⚠️ Не удалось сохранить настройки: {e}")
-        
-        # Закрываем окно
+        """Обработка закрытия окна - настройки НЕ сохраняются"""
+        # Настройки не сохраняются - приложение всегда открывается с настройками из config_qt.json
         event.accept()
 
     # =======================
@@ -3804,9 +3783,57 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
                     self.log_text.append("⚠️ Для использования AI-подсказок необходимо настроить API ключ")
                     self.log_text.append("   Нажмите '⚙️ Настройки AI' для конфигурации")
     
-    def on_toggle_ai_auto_classify(self, state: int):
-        """Включение/выключение автоматической AI классификации"""
-        self.ai_auto_classify = bool(state)
+    def on_ai_auto_classify_clicked(self, checked: bool):
+        """Обработчик клика на чекбокс автоматической AI классификации"""
+        if self.log_text:
+            self.log_text.append(f"🔧 DEBUG: clicked, checked={checked}")
+        
+        # Если пользователь пытается включить
+        if checked:
+            from .ai_classifier_qt import AIClassifierSettings
+            settings = AIClassifierSettings()
+            
+            if not settings.is_enabled():
+                # AI отключен - показываем предупреждение
+                if self.log_text:
+                    self.log_text.append("🔧 DEBUG: AI отключен, показываем предупреждение")
+                QMessageBox.warning(
+                    self,
+                    "AI не настроен",
+                    "❌ AI классификатор отключен.\n\n"
+                    "Для использования автоматической AI классификации:\n"
+                    "1. Откройте меню 'Поиск PDF и AI' → 'Настройки API и AI'\n"
+                    "2. Включите AI классификатор\n"
+                    "3. Выберите провайдера (Claude, GPT или Ollama)\n"
+                    "4. Укажите API ключ"
+                )
+                # Отменяем включение чекбокса
+                self.ai_auto_classify_checkbox.setChecked(False)
+                self.ai_auto_classify = False
+                return
+            
+            provider = settings.get_provider()
+            api_key = settings.get_api_key(provider)
+            
+            if not api_key:
+                # Нет API ключа - показываем предупреждение
+                if self.log_text:
+                    self.log_text.append("🔧 DEBUG: Нет API ключа, показываем предупреждение")
+                QMessageBox.warning(
+                    self,
+                    "API ключ не указан",
+                    "❌ API ключ не настроен.\n\n"
+                    "Для использования автоматической AI классификации:\n"
+                    "1. Откройте меню 'Поиск PDF и AI' → 'Настройки API и AI'\n"
+                    "2. Укажите API ключ для выбранного провайдера"
+                )
+                # Отменяем включение чекбокса
+                self.ai_auto_classify_checkbox.setChecked(False)
+                self.ai_auto_classify = False
+                return
+        
+        # Если дошли до сюда, значит можно изменить состояние
+        self.ai_auto_classify = checked
         self.save_ui_preferences()
         
         if self.log_text:
@@ -3945,8 +3972,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if not settings.is_enabled():
             self.ai_status_label.setText("Статус: ⚪ Отключен")
             self.ai_status_label.setStyleSheet("color: #6c7086;")
-            if hasattr(self, 'ai_auto_classify_checkbox'):
-                self.ai_auto_classify_checkbox.setEnabled(False)
+            # Чекбокс остается активным, чтобы показать подсказку при клике
             return
         
         provider = settings.get_provider()
@@ -3955,8 +3981,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if not api_key:
             self.ai_status_label.setText(f"Статус: 🟡 Не настроен")
             self.ai_status_label.setStyleSheet("color: #fab387;")
-            if hasattr(self, 'ai_auto_classify_checkbox'):
-                self.ai_auto_classify_checkbox.setEnabled(False)
+            # Чекбокс остается активным, чтобы показать подсказку при клике
         else:
             provider_names = {
                 "anthropic": "Claude",
@@ -3966,8 +3991,6 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             provider_name = provider_names.get(provider, provider)
             self.ai_status_label.setText(f"Статус: 🟢 Готов ({provider_name})")
             self.ai_status_label.setStyleSheet("color: #a6e3a1;")
-            if hasattr(self, 'ai_auto_classify_checkbox'):
-                self.ai_auto_classify_checkbox.setEnabled(True)
     
     def _open_file(self, file_path: str):
         """Открывает файл в системном приложении"""
@@ -3982,25 +4005,9 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             QMessageBox.warning(self, "Ошибка", f"Не удалось открыть файл:\n{e}")
 
     def save_ui_preferences(self):
-        try:
-            if "ui" not in self.cfg:
-                self.cfg["ui"] = {}
-            ui_settings = self.cfg["ui"]
-            ui_settings["theme"] = self.current_theme
-            ui_settings["scale_factor"] = round(self.scale_factor, 2)
-            # Экспертный режим не сохраняется - всегда сохраняем как "advanced"
-            ui_settings["view_mode"] = "advanced" if self.current_view_mode == "expert" else self.current_view_mode
-            ui_settings["log_timestamps"] = bool(self.log_with_timestamps if self.current_view_mode == "expert" else False)
-            ui_settings["auto_open_output"] = bool(self.auto_open_output if self.current_view_mode == "expert" else False)
-            ui_settings["auto_export_pdf"] = bool(self.auto_export_pdf if self.current_view_mode == "expert" else False)
-            ui_settings["ai_classifier_enabled"] = bool(self.ai_classifier_enabled if self.current_view_mode == "expert" else False)
-            ui_settings["ai_auto_classify"] = bool(self.ai_auto_classify if self.current_view_mode == "expert" else False)
-
-            cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
-            with open(cfg_path, "w", encoding="utf-8") as f:
-                json.dump(self.cfg, f, indent=2, ensure_ascii=False)
-        except Exception as e:
-            print(f"Не удалось сохранить настройки интерфейса: {e}")
+        """Настройки UI НЕ сохраняются - приложение всегда открывается с настройками из config_qt.json"""
+        # Метод оставлен для совместимости, но ничего не делает
+        pass
 
     def reveal_in_file_manager(self, target_path: str, select: bool = True) -> bool:
         """Открывает системный проводник и при необходимости выделяет файл."""

@@ -4,6 +4,7 @@
 """
 
 import os
+import json
 import platform
 import subprocess
 from typing import Optional, Dict, List
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTextEdit, QGroupBox, QComboBox, QListWidget,
     QListWidgetItem, QFileDialog, QMessageBox, QTabWidget,
-    QWidget, QGridLayout, QTextBrowser, QCheckBox
+    QWidget, QGridLayout, QTextBrowser, QCheckBox, QFormLayout, QDialogButtonBox
 )
 from PySide6.QtCore import Qt, Signal, QThread
 from PySide6.QtGui import QFont, QTextCursor
@@ -221,15 +222,16 @@ class PDFSearchDialog(QDialog):
         """Выполняет AI поиск"""
         from .pdf_search import AIPDFSearcher
         
-        # Получаем API ключ из конфига
+        # Получаем API ключ из нового централизованного конфига
+        api_keys = self.config.get("api_keys", {})
         provider = self.ai_provider_combo.currentText()
         api_key = None
         
         if "Anthropic" in provider:
-            api_key = self.config.get("pdf_search", {}).get("anthropic_api_key")
+            api_key = api_keys.get("anthropic")
             provider_name = "anthropic"
         else:
-            api_key = self.config.get("pdf_search", {}).get("openai_api_key")
+            api_key = api_keys.get("openai")
             provider_name = "openai"
         
         if not api_key:
@@ -414,33 +416,56 @@ class PDFSearchDialog(QDialog):
                 self.parent_window.save_pdf_search_config(self.config)
 
 
-class PDFSearchSettingsDialog(QDialog):
-    """Диалог настроек поиска PDF"""
+class UnifiedSettingsDialog(QDialog):
+    """Единое окно настроек с вкладками для API ключей и AI классификатора"""
     
     def __init__(self, parent, config: dict):
         super().__init__(parent)
         self.config = config.copy()
+        self.parent_window = parent
         
-        self.setWindowTitle("⚙️ Настройки поиска PDF")
+        self.setWindowTitle("⚙️ Настройки API и AI")
         self.setModal(True)
-        self.resize(600, 400)
+        self.resize(700, 550)
         
         self._create_ui()
         self._load_settings()
     
     def _create_ui(self):
-        """Создает интерфейс"""
+        """Создает интерфейс с вкладками"""
         layout = QVBoxLayout(self)
         
-        # API ключи
-        api_group = QGroupBox("API ключи для AI поиска")
-        api_layout = QGridLayout()
+        self.tabs = QTabWidget()
         
+        # Вкладка 1: API ключи
+        self.api_keys_tab = self._create_api_keys_tab()
+        self.tabs.addTab(self.api_keys_tab, "🔑 API Ключи")
+        
+        # Вкладка 2: Настройки AI классификатора
+        self.ai_classifier_tab = self._create_ai_classifier_tab()
+        self.tabs.addTab(self.ai_classifier_tab, "🤖 AI Классификатор")
+        
+        layout.addWidget(self.tabs)
+        
+        # Кнопки
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self._save_all_settings)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _create_api_keys_tab(self):
+        """Создает единую вкладку для всех API ключей"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        api_group = QGroupBox("Ключи доступа для облачных сервисов")
+        api_layout = QGridLayout()
+
         # Anthropic
-        anthropic_label = QLabel("Anthropic Claude:")
+        anthropic_label = QLabel("Anthropic Claude API Key:")
         self.anthropic_key_input = QLineEdit()
         self.anthropic_key_input.setEchoMode(QLineEdit.Password)
-        self.anthropic_key_input.setPlaceholderText("sk-ant-api03-...")
+        self.anthropic_key_input.setPlaceholderText("sk-ant-...")
         
         show_anthropic_btn = QCheckBox("Показать")
         show_anthropic_btn.stateChanged.connect(
@@ -454,11 +479,11 @@ class PDFSearchSettingsDialog(QDialog):
         api_layout.addWidget(show_anthropic_btn, 0, 2)
         
         # OpenAI
-        openai_label = QLabel("OpenAI GPT:")
+        openai_label = QLabel("OpenAI GPT API Key:")
         self.openai_key_input = QLineEdit()
         self.openai_key_input.setEchoMode(QLineEdit.Password)
         self.openai_key_input.setPlaceholderText("sk-...")
-        
+
         show_openai_btn = QCheckBox("Показать")
         show_openai_btn.stateChanged.connect(
             lambda state: self.openai_key_input.setEchoMode(
@@ -472,48 +497,191 @@ class PDFSearchSettingsDialog(QDialog):
         
         api_group.setLayout(api_layout)
         layout.addWidget(api_group)
+
+        # Ollama
+        ollama_group = QGroupBox("Настройки для локальных моделей (Ollama)")
+        ollama_layout = QGridLayout()
+
+        ollama_label = QLabel("Ollama URL:")
+        self.ollama_url_input = QLineEdit()
+        self.ollama_url_input.setPlaceholderText("http://localhost:11434")
+
+        ollama_layout.addWidget(ollama_label, 0, 0)
+        ollama_layout.addWidget(self.ollama_url_input, 0, 1)
+
+        ollama_group.setLayout(ollama_layout)
+        layout.addWidget(ollama_group)
         
         # Помощь
         help_label = QLabel(
             "💡 <b>Как получить API ключи:</b><br>"
-            "• Anthropic: <a href='https://console.anthropic.com/'>console.anthropic.com</a><br>"
-            "• OpenAI: <a href='https://platform.openai.com/api-keys'>platform.openai.com/api-keys</a>"
+            "• <b>Anthropic:</b> <a href='https://console.anthropic.com/'>console.anthropic.com</a><br>"
+            "• <b>OpenAI:</b> <a href='https://platform.openai.com/api-keys'>platform.openai.com/api-keys</a><br>"
+            "• <b>Ollama:</b> <a href='https://ollama.ai/'>ollama.ai</a> (для локального запуска)"
         )
         help_label.setOpenExternalLinks(True)
         help_label.setWordWrap(True)
         layout.addWidget(help_label)
         
         layout.addStretch()
+        return tab
+
+    def _create_ai_classifier_tab(self):
+        """Создает вкладку настроек AI классификатора (без ключей)"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
         
-        # Кнопки
-        button_layout = QHBoxLayout()
+        desc = QLabel(
+            "Настройте параметры для автоматической классификации компонентов.\n"
+            "API ключи настраиваются на соседней вкладке 'API Ключи'."
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
         
-        save_btn = QPushButton("💾 Сохранить")
-        save_btn.clicked.connect(self.accept)
-        save_btn.setDefault(True)
+        form_group = QGroupBox("Параметры классификатора")
+        form = QFormLayout()
         
-        cancel_btn = QPushButton("Отмена")
-        cancel_btn.clicked.connect(self.reject)
+        # Провайдер
+        self.provider_combo = QComboBox()
+        self.provider_combo.addItems(["Anthropic Claude", "OpenAI GPT", "Ollama (локальный)"])
+        form.addRow("Провайдер AI:", self.provider_combo)
         
-        button_layout.addStretch()
-        button_layout.addWidget(save_btn)
-        button_layout.addWidget(cancel_btn)
-        layout.addLayout(button_layout)
+        # Модель
+        self.ai_model_input = QLineEdit()
+        self.ai_model_input.setPlaceholderText("По умолчанию (оставьте пустым)")
+        form.addRow("Модель (опционально):", self.ai_model_input)
+        
+        # Порог уверенности
+        self.ai_confidence_combo = QComboBox()
+        self.ai_confidence_combo.addItems(["Высокий (high)", "Средний (medium)", "Низкий (low)"])
+        form.addRow("Порог уверенности:", self.ai_confidence_combo)
+
+        form_group.setLayout(form)
+        layout.addWidget(form_group)
+        
+        # Справка по моделям
+        help_text = QTextBrowser()
+        help_text.setReadOnly(True)
+        help_text.setMaximumHeight(100)
+        help_text.setOpenExternalLinks(True)
+        help_text.setHtml("""
+<b>Модели по умолчанию:</b><br>
+• Anthropic: <code>claude-3-sonnet-20240229</code><br>
+• OpenAI: <code>gpt-4</code><br>
+• Ollama: <code>llama2</code>
+        """)
+        layout.addWidget(help_text)
+
+        layout.addStretch()
+        return tab
     
     def _load_settings(self):
-        """Загружает настройки"""
-        pdf_config = self.config.get("pdf_search", {})
-        self.anthropic_key_input.setText(pdf_config.get("anthropic_api_key", ""))
-        self.openai_key_input.setText(pdf_config.get("openai_api_key", ""))
+        """Загружает настройки из config_qt.json"""
+        # --- 1. Загрузка API ключей ---
+        # Сначала из новой централизованной секции
+        api_keys = self.config.get("api_keys", {})
+        
+        # Для обратной совместимости, ищем в старых секциях, если в новой пусто
+        pdf_search_conf = self.config.get("pdf_search", {})
+        ai_classifier_conf = self.config.get("ai_classifier", {})
+        ai_api_keys = ai_classifier_conf.get("api_keys", {})
+        
+        # Anthropic
+        anthropic_key = api_keys.get("anthropic") or \
+                        pdf_search_conf.get("anthropic_api_key") or \
+                        ai_api_keys.get("anthropic", "")
+        self.anthropic_key_input.setText(anthropic_key)
+        
+        # OpenAI
+        openai_key = api_keys.get("openai") or \
+                     pdf_search_conf.get("openai_api_key") or \
+                     ai_api_keys.get("openai", "")
+        self.openai_key_input.setText(openai_key)
+        
+        # Ollama
+        ollama_url = api_keys.get("ollama_url") or \
+                     ai_api_keys.get("ollama") or \
+                     "http://localhost:11434"
+        self.ollama_url_input.setText(ollama_url)
+        
+        # --- 2. Загрузка настроек AI Классификатора ---
+        settings = ai_classifier_conf # Используем уже загруженный конфиг
+        
+        provider_map = {"anthropic": 0, "openai": 1, "ollama": 2}
+        self.provider_combo.setCurrentIndex(provider_map.get(settings.get("provider"), 0))
+        
+        self.ai_model_input.setText(settings.get("model", ""))
+        
+        confidence_map = {"high": 0, "medium": 1, "low": 2}
+        self.ai_confidence_combo.setCurrentIndex(confidence_map.get(settings.get("confidence_threshold"), 1))
+
+    def _save_all_settings(self):
+        """Сохраняет все настройки в config_qt.json"""
+        # --- 1. Сохраняем API ключи в централизованную секцию ---
+        self.config["api_keys"] = {
+            "anthropic": self.anthropic_key_input.text().strip(),
+            "openai": self.openai_key_input.text().strip(),
+            "ollama_url": self.ollama_url_input.text().strip()
+        }
+
+        # --- 2. Сохраняем настройки AI классификатора ---
+        # Удаляем старые ключи из секции pdf_search для очистки
+        if "pdf_search" in self.config:
+            self.config["pdf_search"].pop("anthropic_api_key", None)
+            self.config["pdf_search"].pop("openai_api_key", None)
+
+        ai_provider_map = {0: "anthropic", 1: "openai", 2: "ollama"}
+        ai_confidence_map = {0: "high", 1: "medium", 2: "low"}
+        
+        ai_settings = {
+            "enabled": self.config.get("ai_classifier", {}).get("enabled", False),
+            "provider": ai_provider_map[self.provider_combo.currentIndex()],
+            "model": self.ai_model_input.text().strip(),
+            "auto_classify": self.config.get("ai_classifier", {}).get("auto_classify", False),
+            "confidence_threshold": ai_confidence_map[self.ai_confidence_combo.currentIndex()],
+            # ВАЖНО: секция api_keys здесь больше не нужна, т.к. они хранятся централизованно
+        }
+        self.config["ai_classifier"] = ai_settings
+        
+        # --- 3. Сохраняем весь файл config_qt.json ---
+        try:
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            
+            if hasattr(self.parent_window, 'log_text') and self.parent_window.log_text:
+                self.parent_window.log_text.append("✅ Настройки API и AI сохранены")
+            
+            if hasattr(self.parent_window, 'update_ai_status'):
+                self.parent_window.update_ai_status()
+                
+            self.accept()
+        except Exception as e:
+            QMessageBox.warning(self, "Ошибка", f"Не удалось сохранить настройки: {e}")
+
+    def get_config(self) -> dict:
+        """Возвращает обновленный конфиг"""
+        return self.config
+
+
+class PDFSearchSettingsDialog(QDialog):
+    """Диалог настроек поиска PDF (устаревший, используйте UnifiedSettingsDialog)"""
+    
+    def __init__(self, parent, config: dict):
+        super().__init__(parent)
+        # Перенаправляем на единое окно настроек
+        unified_dialog = UnifiedSettingsDialog(parent, config)
+        result = unified_dialog.exec()
+        # Для совместимости возвращаем конфиг
+        self.config = unified_dialog.get_config() if result == QDialog.Accepted else config
+        # Устанавливаем результат для этого диалога
+        if result == QDialog.Accepted:
+            self.accept()
+        else:
+            self.reject()
     
     def get_config(self) -> dict:
         """Возвращает обновленный конфиг"""
-        if "pdf_search" not in self.config:
-            self.config["pdf_search"] = {}
-        
-        self.config["pdf_search"]["anthropic_api_key"] = self.anthropic_key_input.text().strip()
-        self.config["pdf_search"]["openai_api_key"] = self.openai_key_input.text().strip()
-        
         return self.config
 
 

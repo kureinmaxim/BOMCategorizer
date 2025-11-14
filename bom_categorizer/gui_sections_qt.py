@@ -144,15 +144,6 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
 
     layout.addLayout(grid)
 
-    # Чекбокс суммарной комплектации
-    window.combine_check = QCheckBox("Суммарная комплектация")
-    window.combine_check.setChecked(window.combine)
-    window.combine_check.stateChanged.connect(
-        lambda state: setattr(window, 'combine', state == Qt.Checked)
-    )
-    window.lockable_widgets.append(window.combine_check)
-    layout.addWidget(window.combine_check)
-
     # Кнопки запуска
     action_layout = QHBoxLayout()
     action_layout.setSpacing(6)
@@ -167,6 +158,35 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     interactive_btn.clicked.connect(window.on_interactive_classify)
     window.lockable_widgets.append(interactive_btn)
     action_layout.addWidget(interactive_btn, 1)
+
+    export_pdf_button = QPushButton("📄 Экспорт в PDF")
+    export_pdf_button.setObjectName("exportPdfButton")
+    export_pdf_button.clicked.connect(window.export_last_result_to_pdf)
+    export_pdf_button.setToolTip(
+        "Конвертирует выходной Excel файл в PDF документ:\n"
+        "• Сохранение таблиц и форматирования\n"
+        "• Титульная страница со сводкой\n"
+        "• Удобно для печати и отправки"
+    )
+    export_pdf_button.setStyleSheet("""
+        QPushButton {
+            background-color: #f38ba8;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 5px 15px;
+            font-weight: bold;
+        }
+        QPushButton:hover {
+            background-color: #f5c2e7;
+        }
+        QPushButton:disabled {
+            background-color: #6c7086;
+            color: #45475a;
+        }
+    """)
+    window.lockable_widgets.append(export_pdf_button)
+    action_layout.addWidget(export_pdf_button, 1)
 
     layout.addLayout(action_layout)
 
@@ -308,9 +328,12 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     group = QGroupBox("Экспертные инструменты")
     layout = QVBoxLayout()
 
-    description = QLabel("Дополнительные настройки для опытных пользователей.")
-    description.setWordWrap(True)
-    layout.addWidget(description)
+    # Чекбокс суммарной комплектации
+    window.combine_check = QCheckBox("Суммарная комплектация")
+    window.combine_check.setChecked(window.combine)
+    window.combine_check.stateChanged.connect(window.on_toggle_combine)
+    window.lockable_widgets.append(window.combine_check)
+    layout.addWidget(window.combine_check)
 
     window.timestamp_checkbox = QCheckBox("Добавлять временные метки в лог")
     window.timestamp_checkbox.setToolTip("При включении все сообщения лога будут помечены временем.")
@@ -336,15 +359,15 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     
     # Интерактивная командная строка
     cli_layout = QHBoxLayout()
-    window.interactive_cli_checkbox = QCheckBox("💻 Интерактивная командная строка (расширенный CLI режим)")
-    window.interactive_cli_checkbox.setToolTip(
+    cli_label = QLabel("💻 Интерактивная командная строка:")
+    cli_label.setToolTip(
         "Открывает интерактивную консоль для управления приложением:\n"
         "• Выполнение команд для обработки файлов\n"
         "• Управление базой данных через CLI\n"
         "• Автодополнение и история команд\n"
         "• Быстрый доступ ко всем функциям"
     )
-    cli_layout.addWidget(window.interactive_cli_checkbox)
+    cli_layout.addWidget(cli_label)
     
     open_cli_button = QPushButton("Открыть CLI")
     open_cli_button.setObjectName("openCliButton")
@@ -356,42 +379,6 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     cli_layout.addStretch()
     
     layout.addLayout(cli_layout)
-    
-    # Экспорт в PDF
-    pdf_export_layout = QHBoxLayout()
-    pdf_label = QLabel("📄 Экспорт результата в PDF:")
-    pdf_label.setToolTip(
-        "Конвертирует выходной Excel файл в PDF документ:\n"
-        "• Сохранение таблиц и форматирования\n"
-        "• Титульная страница со сводкой\n"
-        "• Удобно для печати и отправки"
-    )
-    pdf_export_layout.addWidget(pdf_label)
-    
-    export_pdf_button = QPushButton("Экспортировать последний результат в PDF")
-    export_pdf_button.setObjectName("exportPdfButton")
-    export_pdf_button.clicked.connect(window.export_last_result_to_pdf)
-    export_pdf_button.setStyleSheet("""
-        QPushButton {
-            background-color: #f38ba8;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            padding: 5px 15px;
-            font-weight: bold;
-        }
-        QPushButton:hover {
-            background-color: #f5c2e7;
-        }
-        QPushButton:disabled {
-            background-color: #6c7086;
-            color: #45475a;
-        }
-    """)
-    pdf_export_layout.addWidget(export_pdf_button)
-    pdf_export_layout.addStretch()
-    
-    layout.addLayout(pdf_export_layout)
     
     # Опция автоматического экспорта в PDF
     window.auto_export_pdf_checkbox = QCheckBox("Автоматически создавать PDF после обработки")
@@ -429,35 +416,17 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     window.ai_classifier_checkbox.stateChanged.connect(window.on_toggle_ai_classifier)
     layout.addWidget(window.ai_classifier_checkbox)
     
-    # Кнопка настроек AI и статус
-    ai_controls_layout = QHBoxLayout()
-    
-    ai_settings_button = QPushButton("⚙️ Настройки AI")
-    ai_settings_button.setObjectName("aiSettingsButton")
-    # Масштабируем ширину кнопки в зависимости от scale_factor
-    button_width = int(150 * window.scale_factor)
-    ai_settings_button.setMinimumWidth(button_width)
-    ai_settings_button.clicked.connect(window.open_ai_settings)
-    ai_settings_button.setToolTip("Настройка провайдера AI, API ключей и параметров")
-    ai_controls_layout.addWidget(ai_settings_button)
-    
-    # Статус AI
-    window.ai_status_label = QLabel("Статус: ⚪ Не настроен")
-    window.ai_status_label.setStyleSheet("color: #6c7086;")
-    ai_controls_layout.addWidget(window.ai_status_label)
-    
-    ai_controls_layout.addStretch()
-    layout.addLayout(ai_controls_layout)
-    
     # Опция автоматической классификации
     window.ai_auto_classify_checkbox = QCheckBox("Автоматически классифицировать все неизвестные компоненты через AI")
     window.ai_auto_classify_checkbox.setToolTip(
         "⚠️ Экспериментально! При включении ВСЕ неизвестные компоненты будут автоматически\n"
         "отправлены на классификацию через AI без интерактивного запроса.\n"
-        "Требует API ключа. Может занять много времени и средств при большом количестве компонентов."
+        "Требует API ключа. Может занять много времени и средств при большом количестве компонентов.\n\n"
+        "При попытке включить без настроенного AI появится подсказка."
     )
-    window.ai_auto_classify_checkbox.setEnabled(False)  # Включается только если AI настроен
-    window.ai_auto_classify_checkbox.stateChanged.connect(window.on_toggle_ai_auto_classify)
+    # Чекбокс всегда активен - если AI не настроен, при клике появится подсказка
+    # Используем clicked вместо stateChanged для лучшего контроля
+    window.ai_auto_classify_checkbox.clicked.connect(window.on_ai_auto_classify_clicked)
     layout.addWidget(window.ai_auto_classify_checkbox)
 
     group.setLayout(layout)

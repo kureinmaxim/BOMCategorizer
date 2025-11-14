@@ -446,7 +446,7 @@ class PDFExporter:
             'CellStyle',
             parent=self.styles['Normal'],
             fontName=self.cyrillic_font,
-            fontSize=6.5 if is_compact else 8,
+            fontSize=5.5 if is_compact else 7,  # Уменьшен на 1
             leading=8 if is_compact else 10,  # межстрочный интервал
             wordWrap='CJK'  # перенос слов
         )
@@ -535,11 +535,11 @@ class PDFExporter:
             col_widths = [
                 15*mm,   # 1. № п/п (узкая)
                 72*mm,   # 2. Наименование ИВП (широкая)
-                42*mm,   # 3. ТУ (одинаковая с Источником)
-                42*mm,   # 4. Источник (одинаковая с ТУ)
+                42*mm,   # 3. ТУ
+                57*mm,   # 4. Источник (увеличена за счет № ТРУ)
                 12*mm,   # 5. шт. (минимальная)
                 48*mm,   # 6. Примечание (средняя)
-                30*mm,   # 7. № ТРУ (узкая)
+                15*mm,   # 7. № ТРУ (минимальная)
                 22*mm    # 8. Стоимость (узкая)
             ]
         elif num_cols == 7:
@@ -548,10 +548,10 @@ class PDFExporter:
                 15*mm,   # № п/п
                 75*mm,   # Наименование ИВП
                 60*mm,   # ТУ
-                35*mm,   # Источник
+                52*mm,   # Источник (увеличена за счет № ТРУ)
                 20*mm,   # шт.
                 50*mm,   # Примечание
-                32*mm    # № ТРУ
+                15*mm    # № ТРУ (минимальная)
             ]
         else:
             # Для других количеств колонок - равномерное распределение
@@ -574,7 +574,7 @@ class PDFExporter:
         
         # Базовый стиль таблицы (компактный для SUMMARY/SOURCES)
         header_font_size = 7 if is_compact else 9
-        body_font_size = 6.5 if is_compact else 8
+        body_font_size = 5.5 if is_compact else 7  # Уменьшен на 1
         v_padding = 2 if is_compact else 3
         h_padding = 2 if is_compact else 3
         
@@ -641,15 +641,14 @@ class PDFExporter:
         style.add('ROWBACKGROUNDS', (0, body_start_row), (-1, -1), [colors.white, colors.HexColor('#f0f9ff')])
         
         # Выравнивание по центру для числовых колонок
-        if num_cols >= 5:
-            # Колонка № п/п (0) - центр
-            style.add('ALIGN', (0, body_start_row), (0, -1), 'CENTER')
-            # Колонка шт. (обычно 4) - центр
-            if num_cols > 4:
-                style.add('ALIGN', (4, body_start_row), (4, -1), 'CENTER')
-            # Колонка Стоимость (обычно последняя) - право
-            if num_cols == 8:
-                style.add('ALIGN', (7, body_start_row), (7, -1), 'RIGHT')
+        # Колонка № п/п (0) - центр (для всех случаев)
+        style.add('ALIGN', (0, body_start_row), (0, -1), 'CENTER')
+        # Колонка шт. (обычно 4) - центр
+        if num_cols > 4:
+            style.add('ALIGN', (4, body_start_row), (4, -1), 'CENTER')
+        # Колонка Стоимость (обычно последняя) - право
+        if num_cols == 8:
+            style.add('ALIGN', (7, body_start_row), (7, -1), 'RIGHT')
         
         table.setStyle(style)
         

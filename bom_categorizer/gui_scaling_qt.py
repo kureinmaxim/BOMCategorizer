@@ -354,7 +354,7 @@ def save_ui_preferences(window: 'BOMCategorizerMainWindow') -> None:
         ui_settings = window.cfg["ui"]
         ui_settings["theme"] = window.current_theme
         ui_settings["scale_factor"] = round(window.scale_factor, 2)
-        ui_settings["view_mode"] = window.current_view_mode
+        # view_mode НЕ сохраняется - всегда используется из config_qt.json
         ui_settings["log_timestamps"] = bool(window.log_with_timestamps if window.current_view_mode == "expert" else False)
         ui_settings["auto_open_output"] = bool(window.auto_open_output if window.current_view_mode == "expert" else False)
 

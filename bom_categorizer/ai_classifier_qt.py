@@ -235,45 +235,38 @@ class AIClassifierSettings:
             config_path = os.path.join(project_root, "config_qt.json")
         
         self.config_path = config_path
-        self.settings = self._load_settings()
+        self.full_config = self._load_full_config()
+        self.settings = self.full_config.get("ai_classifier", self._get_default_settings())
     
-    def _load_settings(self) -> Dict[str, Any]:
-        """Загрузить настройки из конфига"""
+    def _load_full_config(self) -> Dict[str, Any]:
+        """Загружает весь файл конфигурации"""
         try:
             if os.path.exists(self.config_path):
                 with open(self.config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                    return config.get("ai_classifier", {})
+                    return json.load(f)
         except Exception as e:
-            print(f"Ошибка загрузки настроек AI: {e}")
-        
-        # Настройки по умолчанию
+            print(f"Ошибка полной загрузки конфига: {e}")
+        return {}
+
+    def _get_default_settings(self) -> Dict[str, Any]:
+        """Возвращает настройки по умолчанию для секции ai_classifier"""
         return {
             "enabled": False,
             "provider": "anthropic",
             "model": "",
-            "api_keys": {
-                "anthropic": "",
-                "openai": "",
-                "ollama": "http://localhost:11434"
-            },
             "auto_classify": False,
             "confidence_threshold": "medium"
         }
-    
+
     def save_settings(self, settings: Dict[str, Any]) -> bool:
-        """Сохранить настройки в конфиг"""
+        """Сохранить настройки секции ai_classifier в конфиг"""
         try:
-            # Загружаем весь конфиг
-            with open(self.config_path, "r", encoding="utf-8") as f:
-                config = json.load(f)
+            # Обновляем секцию AI в полном конфиге
+            self.full_config["ai_classifier"] = settings
             
-            # Обновляем секцию AI
-            config["ai_classifier"] = settings
-            
-            # Сохраняем
+            # Сохраняем весь конфиг
             with open(self.config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
+                json.dump(self.full_config, f, indent=2, ensure_ascii=False)
             
             self.settings = settings
             return True
@@ -287,11 +280,16 @@ class AIClassifierSettings:
         return self.settings.get("provider", "anthropic")
     
     def get_api_key(self, provider: str = None) -> str:
-        """Получить API ключ для провайдера"""
+        """Получить API ключ из центральной секции api_keys"""
         if provider is None:
             provider = self.get_provider()
         
-        api_keys = self.settings.get("api_keys", {})
+        api_keys = self.full_config.get("api_keys", {})
+        
+        if provider == "ollama":
+            # Для Ollama ключ - это URL
+            return api_keys.get("ollama_url", "")
+        
         return api_keys.get(provider, "")
     
     def get_model(self) -> str:
