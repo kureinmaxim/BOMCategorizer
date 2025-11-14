@@ -586,7 +586,7 @@ class PDFExporter:
         
         # Если есть заголовок категории - добавляем стили для него
         if has_category_header:
-            # Применяем стили ко всей строке заголовка
+            # Применяем стили ко всей строке заголовка категории
             style.add('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E8F4FF'))  # Светло-голубой фон
             style.add('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#2563eb'))
             style.add('ALIGN', (0, 0), (-1, 0), 'CENTER')
@@ -604,6 +604,11 @@ class PDFExporter:
                 # Убираем вертикальные границы между ячейками в строке заголовка
                 for i in range(num_cols - 1):
                     style.add('LINEAFTER', (i, 0), (i, 0), 0, colors.white)
+            
+            # ВАЖНО: Запрещаем разрыв между заголовком категории и заголовком столбцов
+            # Это гарантирует, что они останутся вместе
+            style.add('SPLITFIRST', (0, 0), (-1, 1), 0)  # Не разрывать первые 2 строки
+            style.add('SPLITLAST', (0, 0), (-1, 1), 0)
         
         # Стили для строки заголовков столбцов
         style.add('BACKGROUND', (0, header_row), (-1, header_row), colors.HexColor('#E0E0E0'))
@@ -801,32 +806,30 @@ class PDFExporter:
             
             sheet = wb[sheet_name]
             
-            # Заголовок листа (обычный размер для категорий)
-            sheet_title_style = ParagraphStyle(
-                'SheetTitle',
-                parent=self.styles['Heading2'],
-                fontName=self.cyrillic_font_bold,
-                fontSize=12,
-                textColor=colors.HexColor('#2563eb'),
-                spaceAfter=3,
-                spaceBefore=5,
-                alignment=TA_LEFT,
-                keepWithNext=True
-            )
-            
-            sheet_title = Paragraph(f"<b>{sheet_name}</b>", sheet_title_style)
-            story.append(sheet_title)
-            story.append(Spacer(1, 2*mm))
-            
             # Получаем данные из листа
             data = self._get_sheet_data(sheet)
             
             if data:
-                # Создаем таблицу (обычный режим)
-                table = self._create_table(data, sheet, is_compact=False)
+                # Создаем таблицу с заголовком категории внутри (обычный режим)
+                # Заголовок категории будет встроен в таблицу и повторяться на каждой странице
+                table = self._create_table(data, sheet, is_compact=False, sheet_name=sheet_name)
                 story.append(table)
             else:
-                # Если лист пустой
+                # Если лист пустой - показываем заголовок отдельно
+                sheet_title_style = ParagraphStyle(
+                    'SheetTitle',
+                    parent=self.styles['Heading2'],
+                    fontName=self.cyrillic_font_bold,
+                    fontSize=12,
+                    textColor=colors.HexColor('#2563eb'),
+                    spaceAfter=3,
+                    spaceBefore=5,
+                    alignment=TA_LEFT
+                )
+                sheet_title = Paragraph(f"<b>{sheet_name}</b>", sheet_title_style)
+                story.append(sheet_title)
+                story.append(Spacer(1, 2*mm))
+                
                 empty_style = ParagraphStyle('Empty', parent=self.styles['Normal'], fontName=self.cyrillic_font)
                 empty_text = Paragraph("<i>Лист пуст</i>", empty_style)
                 story.append(empty_text)
