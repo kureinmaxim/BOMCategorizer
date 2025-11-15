@@ -27,6 +27,7 @@ import json
 import os
 import sys
 import subprocess
+import re
 from datetime import datetime
 
 # Настройка UTF-8 для Windows консоли
@@ -316,6 +317,80 @@ def update_version(edition, new_version, update_date=True):
     return False
 
 
+def update_hardcoded_version(file_path, old_version_pattern, new_version, description):
+    """
+    Обновляет захардкоженную версию в Python файле
+    
+    Args:
+        file_path: путь к файлу
+        old_version_pattern: регулярное выражение для поиска старой версии
+        new_version: новая версия
+        description: описание файла для вывода
+    
+    Returns:
+        bool: True если обновление прошло успешно
+    """
+    if not os.path.exists(file_path):
+        safe_print(f"{Colors.YELLOW}{Emoji.WARN} Файл не найден: {file_path}{Colors.NC}")
+        return False
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Ищем и заменяем версию
+        new_content, count = re.subn(old_version_pattern, rf'\g<1>"{new_version}"', content)
+        
+        if count > 0:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            safe_print(f"{Colors.GREEN}   {Emoji.ARROW} {description}: обновлено {count} вхождени{'е' if count == 1 else 'й'} → {new_version}{Colors.NC}")
+            return True
+        else:
+            safe_print(f"{Colors.YELLOW}   {Emoji.INFO} {description}: версия не найдена для обновления{Colors.NC}")
+            return False
+    except Exception as e:
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка обновления {file_path}: {e}{Colors.NC}")
+        return False
+
+
+def sync_hardcoded_versions():
+    """Синхронизирует захардкоженные версии в Python файлах с шаблоном"""
+    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Синхронизация захардкоженных версий в коде:{Colors.NC}")
+    
+    # Читаем версию из шаблона Modern Edition
+    template_config = read_config_template('config_qt.json.template')
+    if not template_config:
+        safe_print(f"{Colors.RED}{Emoji.ERROR} Не удалось прочитать config_qt.json.template{Colors.NC}")
+        return False
+    
+    modern_version = template_config['app_info']['version']
+    safe_print(f"  Целевая версия Modern Edition: {Colors.GREEN}{modern_version}{Colors.NC}")
+    
+    # Обновляем gui_qt.py (fallback версия)
+    # Ищем: return {"app_info": {"version": "X.X.X"
+    pattern_gui = r'(return \{"app_info": \{"version": )"[^"]+"'
+    update_hardcoded_version(
+        'bom_categorizer/gui_qt.py',
+        pattern_gui,
+        modern_version,
+        'gui_qt.py (fallback)'
+    )
+    
+    # Обновляем config_manager.py (default config)
+    # Ищем: "version": "X.X.X" в блоке if "qt" in config_name
+    pattern_config = r'(if "qt" in config_name:[\s\S]{0,200}"version": )"[^"]+"'
+    update_hardcoded_version(
+        'bom_categorizer/config_manager.py',
+        pattern_config,
+        modern_version,
+        'config_manager.py (default config)'
+    )
+    
+    safe_print(f"{Colors.GREEN}   {Emoji.CHECK} Захардкоженные версии синхронизированы{Colors.NC}")
+    return True
+
+
 def sync_all():
     """Синхронизирует все файлы сборки и локальные config с шаблонами"""
     safe_print(f"\n{Colors.BOLD}{Emoji.SYNC} СИНХРОНИЗАЦИЯ ФАЙЛОВ СБОРКИ И ЛОКАЛЬНЫХ CONFIG{Colors.NC}\n")
@@ -374,6 +449,9 @@ def sync_all():
         else:
             safe_print(f"  {Colors.YELLOW}config_qt.json не найден (будет создан при первом запуске){Colors.NC}")
     
+    # Синхронизация захардкоженных версий в Python файлах
+    sync_hardcoded_versions()
+    
     # Синхронизация файлов сборки (.iss)
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Синхронизация файлов сборки:{Colors.NC}")
     
@@ -398,6 +476,7 @@ def sync_all():
     safe_print("=" * 70)
     safe_print(f"\n{Colors.GREEN}{Emoji.CHECK} Синхронизация завершена.{Colors.NC}")
     safe_print(f"{Colors.YELLOW}{Emoji.INFO} Локальные config обновлены (только секция app_info, личные настройки сохранены){Colors.NC}")
+    safe_print(f"{Colors.YELLOW}{Emoji.INFO} Захардкоженные версии в Python файлах обновлены автоматически{Colors.NC}")
     safe_print(f"{Colors.YELLOW}{Emoji.INFO} build_macos.sh автоматически читает версии из шаблонов{Colors.NC}\n")
 
 

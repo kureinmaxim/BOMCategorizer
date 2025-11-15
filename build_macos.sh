@@ -65,6 +65,22 @@ echo -e "${GREEN}✓ Выбрана версия: ${EDITION} v${VERSION}${NC}"
 echo -e "${BLUE}📦 DMG: ${DMG_NAME}.dmg${NC}"
 echo ""
 
+# Синхронизация локального конфига из шаблона перед сборкой
+echo -e "${BLUE}🔄 Синхронизация конфига из шаблона...${NC}"
+if [ ! -f "${CONFIG_FILE}" ]; then
+    # Если конфига нет - создаем из шаблона
+    if [ -f "${CONFIG_FILE}.template" ]; then
+        cp "${CONFIG_FILE}.template" "${CONFIG_FILE}"
+        echo -e "${GREEN}  ✓ Создан ${CONFIG_FILE} из шаблона${NC}"
+    else
+        echo -e "${YELLOW}  ⚠️  Шаблон не найден: ${CONFIG_FILE}.template${NC}"
+    fi
+fi
+
+# Синхронизируем версию через update_version.py
+python3 update_version.py sync 2>&1 | grep -E "(config_qt.json|config.json|Синхронизация)" || true
+echo -e "${GREEN}  ✓ Конфиг синхронизирован${NC}"
+
 # Проверка виртуального окружения
 if [ ! -d "venv" ]; then
     echo -e "${RED}❌ Виртуальное окружение не найдено!${NC}"
@@ -140,6 +156,19 @@ else
 fi
 
 echo -e "${GREEN}✅ .app bundle создан успешно${NC}"
+
+# Проверка версии в bundle
+echo -e "${BLUE}🔍 Проверка версии в bundle...${NC}"
+BUNDLE_CONFIG="dist/${APP_NAME}.app/Contents/Resources/${CONFIG_FILE}"
+if [ -f "${BUNDLE_CONFIG}" ]; then
+    BUNDLE_VERSION=$(python3 -c "import json; print(json.load(open('${BUNDLE_CONFIG}'))['app_info']['version'])" 2>/dev/null || echo "N/A")
+    echo -e "${GREEN}  ✓ Версия в bundle: ${BUNDLE_VERSION}${NC}"
+    if [ "${BUNDLE_VERSION}" != "${VERSION}" ]; then
+        echo -e "${RED}  ⚠️  ВНИМАНИЕ: Версия в bundle (${BUNDLE_VERSION}) не совпадает с ожидаемой (${VERSION})!${NC}"
+    fi
+else
+    echo -e "${YELLOW}  ⚠️  Конфиг не найден в bundle: ${BUNDLE_CONFIG}${NC}"
+fi
 
 # Очистка ненужных GUI файлов после сборки
 echo -e "${BLUE}🧹 Очистка ненужных GUI файлов...${NC}"

@@ -65,12 +65,24 @@ from . import search_methods_qt
 
 def load_config() -> dict:
     """Загружает конфигурацию из config_qt.json (Modern Edition)"""
+    # Пробуем несколько путей для поиска config_qt.json
+    # 1. Рядом с модулем (разработка)
     cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+    
+    # 2. В случае .app bundle на macOS (Contents/Resources/)
+    if not os.path.exists(cfg_path) and getattr(sys, 'frozen', False):
+        # Если приложение упаковано
+        if platform.system() == 'Darwin':  # macOS
+            # В .app bundle ресурсы находятся в Contents/Resources/
+            bundle_dir = os.path.dirname(os.path.dirname(sys.executable))
+            cfg_path = os.path.join(bundle_dir, "Resources", "config_qt.json")
+    
     try:
         with open(cfg_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return {"app_info": {"version": "4.0.0", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+        # Fallback с актуальной версией
+        return {"app_info": {"version": "4.3.6", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
