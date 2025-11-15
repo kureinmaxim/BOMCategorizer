@@ -2259,7 +2259,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Создаем диалог
             dialog = QDialog(self)
             dialog.setWindowTitle("Статистика базы данных")
-            dialog.resize(600, 500)
+            dialog.resize(650, 550)
             
             layout = QVBoxLayout()
             
@@ -2267,11 +2267,17 @@ class BOMCategorizerMainWindow(QMainWindow):
             text_widget = QTextEdit()
             text_widget.setReadOnly(True)
             text_widget.setPlainText(stats_text)
-            text_widget.setFont(QFont("Consolas", 10))
+            # Крупный фиксированный шрифт для читаемости
+            stats_font = QFont("Menlo" if sys.platform == "darwin" else "Consolas" if sys.platform == "win32" else "Monospace")
+            stats_font.setPointSize(14)
+            text_widget.setFont(stats_font)
             layout.addWidget(text_widget)
             
             # Кнопка закрытия
             close_btn = QPushButton("Закрыть")
+            button_font = QFont()
+            button_font.setPointSize(12)
+            close_btn.setFont(button_font)
             close_btn.clicked.connect(dialog.accept)
             layout.addWidget(close_btn)
             
@@ -2310,10 +2316,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Создаем диалог
             dialog = QDialog(self)
             dialog.setWindowTitle("👁️ Просмотр базы данных")
-            # Масштабируем размер диалога пропорционально scale_factor
-            dialog_width = max(900, int(900 * self.scale_factor))
-            dialog_height = max(700, int(700 * self.scale_factor))
-            dialog.resize(dialog_width, dialog_height)
+            dialog.resize(900, 700)
 
             layout = QVBoxLayout()
 
@@ -2321,8 +2324,8 @@ class BOMCategorizerMainWindow(QMainWindow):
             info_label = QLabel()
             info_label.setProperty("class", "bold")
             
-            # Применяем шрифт с учетом scale_factor (увеличен с 0.8 на 1.0)
-            info_font_size = max(9, int(11 * self.scale_factor))
+            # Применяем шрифт на 20% меньше основного scale_factor
+            info_font_size = max(7, int(10 * self.scale_factor * 0.8))
             info_label.setFont(QFont(get_system_font(), info_font_size))
             
             info_text = f"""
@@ -2343,7 +2346,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Подсказка
             hint_label = QLabel("💡 Дважды кликните на строку с файлом-источником, чтобы открыть его в проводнике")
-            hint_font_size = max(9, int(10 * self.scale_factor))
+            hint_font_size = max(7, int(10 * self.scale_factor * 0.9))
             hint_label.setFont(QFont(get_system_font(), hint_font_size))
             hint_label.setStyleSheet("color: #89b4fa; font-style: italic; padding: 5px;")
             history_layout.addWidget(hint_label)
@@ -2354,16 +2357,11 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setColumnCount(5)
                 history_table.setHorizontalHeaderLabels(["Версия", "Дата/Время", "Действие", "Источник", "Добавлено"])
                 
-                # Применяем шрифт к таблице с полным scale_factor (без уменьшения)
-                table_font_size = max(10, int(12 * self.scale_factor))
+                # Применяем шрифт к таблице - scale_factor
+                table_font_size = max(7, int(11 * self.scale_factor))
                 table_font = QFont(get_system_font(), table_font_size)
                 history_table.setFont(table_font)
-                
-                # Увеличиваем шрифт заголовков таблицы
-                header_font_size = max(10, int(13 * self.scale_factor))
-                header_font = QFont(get_system_font(), header_font_size)
-                header_font.setBold(True)
-                history_table.horizontalHeader().setFont(header_font)
+                history_table.horizontalHeader().setFont(table_font)
                 
                 history_table.horizontalHeader().setStretchLastSection(False)
                 history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -2375,9 +2373,7 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
                 history_table.verticalHeader().setVisible(False)
-                # Масштабируем высоту строк пропорционально scale_factor
-                row_height = max(28, int(32 * self.scale_factor))
-                history_table.verticalHeader().setDefaultSectionSize(row_height)
+                history_table.verticalHeader().setDefaultSectionSize(28)
                 history_table.setAlternatingRowColors(True)
                 history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
                 history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -2388,33 +2384,28 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
                 history_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
                 history_table.setCursor(Qt.PointingHandCursor)  # Курсор-указатель для подсказки о клике
-                
-                # Масштабируем padding пропорционально scale_factor
-                header_padding = max(6, int(8 * self.scale_factor))
-                item_padding = max(4, int(6 * self.scale_factor))
-                
-                history_table.setStyleSheet(f"""
-                    QTableWidget {{
+                history_table.setStyleSheet("""
+                    QTableWidget {
                         background-color: #1f2335;
                         alternate-background-color: #262a3d;
                         color: #cdd6f4;
                         border: 1px solid #2e3247;
                         gridline-color: #2e3247;
-                    }}
-                    QHeaderView::section {{
+                    }
+                    QHeaderView::section {
                         background-color: #313244;
                         color: #f5e0dc;
-                        padding: {header_padding}px;
+                        padding: 6px 8px;
                         border: none;
                         font-weight: 600;
-                    }}
-                    QTableWidget::item {{
-                        padding: {item_padding}px;
-                    }}
-                    QTableWidget::item:selected {{
+                    }
+                    QTableWidget::item {
+                        padding: 4px 6px;
+                    }
+                    QTableWidget::item:selected {
                         background-color: #3b4376;
                         color: #f8faff;
-                    }}
+                    }
                 """)
 
                 # Маппинг действий на русские названия
@@ -2520,16 +2511,11 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             export_btn = QPushButton("📤 Экспорт в Excel")
             export_btn.clicked.connect(lambda: self.export_database())
-            # Применяем шрифт к кнопкам с полным scale_factor
-            button_font_size = max(10, int(11 * self.scale_factor))
-            button_font = QFont(get_system_font(), button_font_size)
-            export_btn.setFont(button_font)
             button_layout.addWidget(export_btn)
             
             button_layout.addStretch()
             
             close_btn = QPushButton("Закрыть")
-            close_btn.setFont(button_font)
             close_btn.clicked.connect(dialog.accept)
             button_layout.addWidget(close_btn)
             
