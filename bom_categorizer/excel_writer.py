@@ -479,7 +479,8 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                       'group_type',  # служебная колонка типа из заголовка
                       'original_note',  # оригинальное примечание (использовано для подборов)
                       'has_explicit_qty',  # техническая колонка для определения явного количества
-                      '_extracted_tu_']  # техническая колонка для извлечения ТУ (не показываем пользователю)
+                      '_extracted_tu_',  # техническая колонка для извлечения ТУ (не показываем пользователю)
+                      '_normalized_desc_']  # техническая колонка для агрегации дубликатов
     
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
     pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
@@ -499,23 +500,45 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         result_df = result_df.drop(columns=['№ п/п'])
     result_df.insert(0, '№ п/п', range(1, len(result_df) + 1))
     
+    # ВАЖНО: Сначала нормализуем регистр ключевых колонок (для уже обработанных файлов)
+    # Это должно быть ДО создания final_cols
+    cols_lower = {col.lower(): col for col in result_df.columns}
+    
+    # Проверяем и переименовываем № ТРУ
+    if '№ тру' in cols_lower:
+        existing_col = cols_lower['№ тру']
+        if existing_col != '№ ТРУ':
+            result_df = result_df.rename(columns={existing_col: '№ ТРУ'})
+    else:
+        # Колонки нет - создаем пустую
+        result_df['№ ТРУ'] = ''
+    
+    # Проверяем и переименовываем Стоимость
+    if 'стоимость' in cols_lower:
+        existing_col = cols_lower['стоимость']
+        if existing_col != 'Стоимость':
+            result_df = result_df.rename(columns={existing_col: 'Стоимость'})
+    else:
+        # Колонки нет - создаем пустую
+        result_df['Стоимость'] = ''
+    
     # Упорядочить колонки в правильном порядке
     # Код МР после ТУ, Примечание в конце
     desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Код МР', 'Источник', 'шт.']
     
     ordered_cols = [col for col in desired_order if col in result_df.columns]
     remaining_cols = [col for col in result_df.columns 
-                      if col not in ordered_cols and col not in cols_to_remove and col != 'Примечание']
+                      if col not in ordered_cols and col not in cols_to_remove and col != 'Примечание' 
+                      and col not in ['№ ТРУ', 'Стоимость']]  # Исключаем, чтобы добавить в конец
     
     # Примечание добавляем в конец, затем пустые колонки № ТРУ и Стоимость
     final_cols = ordered_cols + remaining_cols
     if 'Примечание' in result_df.columns:
         final_cols.append('Примечание')
     
-    # Добавить пустые колонки для заполнения пользователем
-    result_df['№ ТРУ'] = ''
-    result_df['Стоимость'] = ''
-    final_cols.extend(['№ ТРУ', 'Стоимость'])
+    # Добавляем № ТРУ и Стоимость в конец
+    final_cols.append('№ ТРУ')
+    final_cols.append('Стоимость')
     
     result_df = result_df[final_cols]
     

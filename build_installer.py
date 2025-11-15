@@ -66,6 +66,8 @@ FILES_TO_COPY = [
     "split_bom.py",
     "config.json",
     "config_qt.json",  # Modern Edition config
+    "config.json.template",  # Шаблон конфигурации для Standard Edition
+    "config_qt.json.template",  # Шаблон конфигурации для Modern Edition
     "component_database_template.json",  # Шаблон БД (пустая база для новых установок)
     "merge_component_database.py",  # Скрипт слияния баз данных при обновлении
     "requirements_install.txt",  # Используем облегченную версию без тестовых зависимостей

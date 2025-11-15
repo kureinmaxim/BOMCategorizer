@@ -40,7 +40,7 @@ def initialize_config_from_template(config_name="config.json"):
         if "qt" in config_name:
             default_config = {
                 "app_info": {
-                    "version": "4.3.7",
+                    "version": "4.3.8",
                     "edition": "Modern Edition",
                     "developer": "Куреин М.Н.",
                     "developer_en": "Kurein M.N."
@@ -50,15 +50,15 @@ def initialize_config_from_template(config_name="config.json"):
                     "require_pin": True
                 },
                 "window": {
-                    "width": 720,
-                    "height": 900,
+                    "width": 730,
+                    "height": 550,
                     "remember_size": True
                 },
                 "ui": {
                     "theme": "dark",
                     "font_size": 12,
                     "scale_factor": 1.0,
-                    "view_mode": "advanced",
+                    "view_mode": "simple",
                     "log_timestamps": False,
                     "auto_open_output": False,
                     "auto_export_pdf": False,

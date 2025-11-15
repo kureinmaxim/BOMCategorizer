@@ -82,7 +82,7 @@ def load_config() -> dict:
             return json.load(f)
     except Exception:
         # Fallback с актуальной версией
-        return {"app_info": {"version": "4.3.7", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+        return {"app_info": {"version": "4.3.8", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
