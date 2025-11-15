@@ -136,6 +136,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.current_file_multiplier = 1
         self.selected_file_index: Optional[int] = None
         self.processing_dialog_ref = None  # Ссылка на диалог обработки (для плавного перехода)
+        self.last_input_file = None  # Последний добавленный входной файл (для истории БД)
 
         # Сравнение файлов
         self.compare_file1 = ""
@@ -601,6 +602,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             for file_path in files:
                 if file_path not in self.input_files:
                     self.input_files[file_path] = 1
+                    self.last_input_file = file_path  # Сохраняем последний добавленный файл
 
             self.update_listbox()
             self.update_output_filename()
@@ -1842,7 +1844,7 @@ class BOMCategorizerMainWindow(QMainWindow):
                 save_component_database(
                     db, 
                     action="import_from_file", 
-                    source=os.path.basename(output_file),
+                    source=os.path.abspath(output_file),  # Сохраняем полный путь для истории
                     component_names=added_component_names[:50]  # Первые 50 для истории
                 )
                 progress_text.append(f"✅ База данных обновлена! Добавлено {added_count} новых компонентов.")
@@ -2308,7 +2310,10 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Создаем диалог
             dialog = QDialog(self)
             dialog.setWindowTitle("👁️ Просмотр базы данных")
-            dialog.resize(900, 700)
+            # Масштабируем размер диалога пропорционально scale_factor
+            dialog_width = max(900, int(900 * self.scale_factor))
+            dialog_height = max(700, int(700 * self.scale_factor))
+            dialog.resize(dialog_width, dialog_height)
 
             layout = QVBoxLayout()
 
@@ -2316,8 +2321,8 @@ class BOMCategorizerMainWindow(QMainWindow):
             info_label = QLabel()
             info_label.setProperty("class", "bold")
             
-            # Применяем шрифт на 20% меньше основного scale_factor
-            info_font_size = max(7, int(10 * self.scale_factor * 0.8))
+            # Применяем шрифт с учетом scale_factor (увеличен с 0.8 на 1.0)
+            info_font_size = max(9, int(11 * self.scale_factor))
             info_label.setFont(QFont(get_system_font(), info_font_size))
             
             info_text = f"""
@@ -2338,7 +2343,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Подсказка
             hint_label = QLabel("💡 Дважды кликните на строку с файлом-источником, чтобы открыть его в проводнике")
-            hint_font_size = max(7, int(10 * self.scale_factor * 0.9))
+            hint_font_size = max(9, int(10 * self.scale_factor))
             hint_label.setFont(QFont(get_system_font(), hint_font_size))
             hint_label.setStyleSheet("color: #89b4fa; font-style: italic; padding: 5px;")
             history_layout.addWidget(hint_label)
@@ -2349,11 +2354,16 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setColumnCount(5)
                 history_table.setHorizontalHeaderLabels(["Версия", "Дата/Время", "Действие", "Источник", "Добавлено"])
                 
-                # Применяем шрифт к таблице - scale_factor
-                table_font_size = max(7, int(11 * self.scale_factor * 1))  #
+                # Применяем шрифт к таблице с полным scale_factor (без уменьшения)
+                table_font_size = max(10, int(12 * self.scale_factor))
                 table_font = QFont(get_system_font(), table_font_size)
                 history_table.setFont(table_font)
-                history_table.horizontalHeader().setFont(table_font)
+                
+                # Увеличиваем шрифт заголовков таблицы
+                header_font_size = max(10, int(13 * self.scale_factor))
+                header_font = QFont(get_system_font(), header_font_size)
+                header_font.setBold(True)
+                history_table.horizontalHeader().setFont(header_font)
                 
                 history_table.horizontalHeader().setStretchLastSection(False)
                 history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -2365,7 +2375,9 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
                 history_table.verticalHeader().setVisible(False)
-                history_table.verticalHeader().setDefaultSectionSize(28)
+                # Масштабируем высоту строк пропорционально scale_factor
+                row_height = max(28, int(32 * self.scale_factor))
+                history_table.verticalHeader().setDefaultSectionSize(row_height)
                 history_table.setAlternatingRowColors(True)
                 history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
                 history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -2376,28 +2388,33 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
                 history_table.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
                 history_table.setCursor(Qt.PointingHandCursor)  # Курсор-указатель для подсказки о клике
-                history_table.setStyleSheet("""
-                    QTableWidget {
+                
+                # Масштабируем padding пропорционально scale_factor
+                header_padding = max(6, int(8 * self.scale_factor))
+                item_padding = max(4, int(6 * self.scale_factor))
+                
+                history_table.setStyleSheet(f"""
+                    QTableWidget {{
                         background-color: #1f2335;
                         alternate-background-color: #262a3d;
                         color: #cdd6f4;
                         border: 1px solid #2e3247;
                         gridline-color: #2e3247;
-                    }
-                    QHeaderView::section {
+                    }}
+                    QHeaderView::section {{
                         background-color: #313244;
                         color: #f5e0dc;
-                        padding: 6px 8px;
+                        padding: {header_padding}px;
                         border: none;
                         font-weight: 600;
-                    }
-                    QTableWidget::item {
-                        padding: 4px 6px;
-                    }
-                    QTableWidget::item:selected {
+                    }}
+                    QTableWidget::item {{
+                        padding: {item_padding}px;
+                    }}
+                    QTableWidget::item:selected {{
                         background-color: #3b4376;
                         color: #f8faff;
-                    }
+                    }}
                 """)
 
                 # Маппинг действий на русские названия
@@ -2440,15 +2457,54 @@ class BOMCategorizerMainWindow(QMainWindow):
                     if source_item:
                         source_path = source_item.text()
                         # Проверяем, что это путь к файлу (не "-" и содержит расширение)
-                        if source_path != '-' and os.path.exists(source_path):
+                        if source_path == '-' or not source_path:
+                            return
+                        
+                        # Если путь абсолютный и существует - открываем
+                        if os.path.isabs(source_path) and os.path.exists(source_path):
                             self.reveal_in_file_manager(source_path, select=True)
-                        elif source_path != '-':
-                            # Если файл не существует, показываем сообщение
-                            QMessageBox.information(
-                                dialog,
-                                "Файл не найден",
-                                f"Файл-источник не найден:\n{source_path}\n\nВозможно, он был перемещен или удален."
-                            )
+                            return
+                        
+                        # Если путь относительный (только имя файла) - пытаемся найти в известных местах
+                        if not os.path.isabs(source_path):
+                            search_locations = [
+                                os.getcwd(),  # Текущая рабочая директория
+                                os.path.expanduser("~/Desktop"),  # Рабочий стол
+                                os.path.expanduser("~/Documents"),  # Документы
+                                os.path.expanduser("~/Downloads"),  # Загрузки
+                            ]
+                            
+                            # Также добавляем папку последнего выбранного файла (если есть)
+                            if hasattr(self, 'last_input_file') and self.last_input_file:
+                                last_dir = os.path.dirname(self.last_input_file)
+                                if last_dir and last_dir not in search_locations:
+                                    search_locations.insert(0, last_dir)
+                            
+                            # Ищем файл в этих папках
+                            found_path = None
+                            for location in search_locations:
+                                potential_path = os.path.join(location, source_path)
+                                if os.path.exists(potential_path):
+                                    found_path = potential_path
+                                    break
+                            
+                            if found_path:
+                                self.reveal_in_file_manager(found_path, select=True)
+                                return
+                        
+                        # Файл не найден нигде
+                        QMessageBox.information(
+                            dialog,
+                            "Файл не найден",
+                            f"Файл-источник не найден:\n{source_path}\n\n"
+                            f"Возможно, он был перемещен или удален.\n\n"
+                            f"Проверенные места:\n"
+                            f"• Абсолютный путь\n"
+                            f"• Текущая директория\n"
+                            f"• Рабочий стол\n"
+                            f"• Документы\n"
+                            f"• Загрузки"
+                        )
                 
                 history_table.doubleClicked.connect(open_source_file)
                 history_layout.addWidget(history_table)
@@ -2464,8 +2520,8 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             export_btn = QPushButton("📤 Экспорт в Excel")
             export_btn.clicked.connect(lambda: self.export_database())
-            # Применяем шрифт к кнопкам - на 20% меньше основного scale_factor
-            button_font_size = max(7, int(9 * self.scale_factor * 0.8))
+            # Применяем шрифт к кнопкам с полным scale_factor
+            button_font_size = max(10, int(11 * self.scale_factor))
             button_font = QFont(get_system_font(), button_font_size)
             export_btn.setFont(button_font)
             button_layout.addWidget(export_btn)
@@ -3516,6 +3572,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
                     if ext in supported_extensions:
                         if file_path not in self.input_files:
                             self.input_files[file_path] = 1
+                            self.last_input_file = file_path  # Сохраняем последний добавленный файл
                             files_added += 1
             
             if files_added > 0:
