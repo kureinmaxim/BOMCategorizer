@@ -441,10 +441,24 @@ class DocConversionDialog(QDialog):
         buttons_layout = QVBoxLayout()
         buttons_layout.setSpacing(8)
 
-        word_btn = QPushButton("Конвертировать с помощью Word (Windows)")
-        word_btn.setMinimumHeight(32)
-        word_btn.clicked.connect(self.on_word_conversion)
-        buttons_layout.addWidget(word_btn)
+        # Кнопка автоматической конвертации
+        import platform
+        if platform.system() == 'Windows':
+            auto_btn = QPushButton("Конвертировать с помощью Word")
+            auto_btn.setMinimumHeight(32)
+            auto_btn.setToolTip("Использует Microsoft Word для конвертации")
+            auto_btn.clicked.connect(self.on_word_conversion)
+            buttons_layout.addWidget(auto_btn)
+        else:
+            # На macOS/Linux используем LibreOffice
+            auto_btn = QPushButton("Конвертировать с помощью LibreOffice")
+            auto_btn.setMinimumHeight(32)
+            auto_btn.setToolTip(
+                "Использует LibreOffice для конвертации\n"
+                "(Бесплатный офисный пакет, если установлен)"
+            )
+            auto_btn.clicked.connect(self.on_word_conversion)  # Та же функция
+            buttons_layout.addWidget(auto_btn)
 
         manual_btn = QPushButton("Конвертировать вручную и продолжить")
         manual_btn.setMinimumHeight(32)

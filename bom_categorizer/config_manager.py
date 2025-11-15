@@ -40,7 +40,7 @@ def initialize_config_from_template(config_name="config.json"):
         if "qt" in config_name:
             default_config = {
                 "app_info": {
-                    "version": "4.3.6",
+                    "version": "4.3.7",
                     "edition": "Modern Edition",
                     "developer": "Куреин М.Н.",
                     "developer_en": "Kurein M.N."

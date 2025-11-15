@@ -82,7 +82,7 @@ def load_config() -> dict:
             return json.load(f)
     except Exception:
         # Fallback с актуальной версией
-        return {"app_info": {"version": "4.3.6", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+        return {"app_info": {"version": "4.3.7", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -152,12 +152,33 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.current_theme = self.cfg.get("ui", {}).get("theme", "dark")  # "dark" или "light"
 
         # Настройки отображения
-        self.base_font_size = 12
-        self.scale_levels: List[float] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25]
+        # На macOS используем размеры сопоставимые со стандартными приложениями
+        # ВНИМАНИЕ: Глобальный шрифт уже установлен в main(), здесь только для локального использования
+        if platform.system() == 'Darwin':  # macOS
+            # Проверяем, есть ли Retina дисплей (devicePixelRatio >= 2)
+            try:
+                from PySide6.QtGui import QGuiApplication
+                screens = QGuiApplication.screens()
+                if screens and screens[0].devicePixelRatio() >= 2:
+                    # Retina дисплей: 13pt (стандарт для macOS)
+                    self.base_font_size = 13
+                else:
+                    # Обычный дисплей
+                    self.base_font_size = 12
+            except:
+                # Если не удалось определить, используем стандартный размер
+                self.base_font_size = 13
+        else:  # Windows и Linux
+            self.base_font_size = 12
+        
+        self.scale_levels: List[float] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5]
         ui_settings = self.cfg.get("ui", {})
-        self.scale_factor = ui_settings.get("scale_factor", 0.8)  # По умолчанию 80%
+        # Дефолтный scale_factor: 1.0 для всех платформ (можно настроить в меню)
+        default_scale = 1.0 if platform.system() == 'Darwin' else 0.8
+        self.scale_factor = ui_settings.get("scale_factor", default_scale)
         if self.scale_factor not in self.scale_levels:
-            self.scale_factor = 0.8  # По умолчанию 80%
+            # Если значение некорректное, используем дефолт для ОС
+            self.scale_factor = default_scale
 
         self.current_view_mode = ui_settings.get("view_mode", "advanced")
         # Экспертный режим не сохраняется между запусками - всегда возвращаемся к расширенному
@@ -221,9 +242,19 @@ class BOMCategorizerMainWindow(QMainWindow):
     def apply_theme(self):
         """Применяет выбранную тему к приложению"""
         if self.current_theme == "dark":
-            self.setStyleSheet(DARK_THEME)
+            theme_style = DARK_THEME
         else:
-            self.setStyleSheet(LIGHT_THEME)
+            theme_style = LIGHT_THEME
+        
+        # На macOS удаляем все font-size из стилей, чтобы использовались
+        # программно установленные размеры (для правильной работы на Retina)
+        if platform.system() == 'Darwin':  # macOS
+            # Удаляем все строки с font-size из CSS
+            import re
+            # Удаляем font-size: XXpt; из стилей
+            theme_style = re.sub(r'\s*font-size:\s*\d+pt;', '', theme_style)
+        
+        self.setStyleSheet(theme_style)
 
     def toggle_theme(self):
         """Переключает между темной и светлой темой"""
@@ -817,7 +848,8 @@ class BOMCategorizerMainWindow(QMainWindow):
     
     def _convert_doc_files_with_word(self, doc_files: list) -> bool:
         """
-        Конвертирует .doc файлы в .docx используя Microsoft Word
+        Конвертирует .doc файлы в .docx используя Microsoft Word (Windows)
+        или LibreOffice (macOS/Linux)
         
         Args:
             doc_files: Список путей к .doc файлам
@@ -825,6 +857,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         Returns:
             True если конвертация успешна
         """
+        # На macOS/Linux используем LibreOffice
+        if platform.system() != 'Windows':
+            return self._convert_doc_with_libreoffice(doc_files)
+        
+        # На Windows используем MS Word
+        # Импортируем win32com только на Windows
         try:
             import win32com.client
         except ImportError:
@@ -977,6 +1015,149 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Останавливаем таймер если пользователь закрыл вручную
         if auto_close_timer.isActive():
             auto_close_timer.stop()
+        
+        return success
+    
+    def _convert_doc_with_libreoffice(self, doc_files: list) -> bool:
+        """
+        Конвертирует .doc файлы в .docx используя LibreOffice (macOS/Linux)
+        
+        Args:
+            doc_files: Список путей к .doc файлам
+            
+        Returns:
+            True если конвертация успешна
+        """
+        # Проверяем наличие LibreOffice
+        libreoffice_paths = [
+            '/Applications/LibreOffice.app/Contents/MacOS/soffice',  # macOS
+            '/usr/bin/libreoffice',  # Linux
+            '/usr/bin/soffice',      # Linux альтернатива
+        ]
+        
+        soffice_path = None
+        for path in libreoffice_paths:
+            if os.path.exists(path):
+                soffice_path = path
+                break
+        
+        if not soffice_path:
+            # LibreOffice не найден
+            reply = QMessageBox.question(
+                self,
+                "LibreOffice не найден",
+                "LibreOffice не установлен на этом компьютере.\n\n"
+                "LibreOffice - это бесплатный офисный пакет,\n"
+                "который может конвертировать .doc в .docx.\n\n"
+                "Хотите скачать LibreOffice?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # Открываем страницу загрузки
+                import webbrowser
+                webbrowser.open('https://www.libreoffice.org/download/download/')
+            
+            return False
+        
+        # Создаем прогресс-диалог
+        progress_dialog = QDialog(self)
+        progress_dialog.setWindowTitle("Конвертация .doc файлов")
+        progress_dialog.setMinimumSize(600, 400)
+        progress_dialog.setModal(True)
+        
+        layout = QVBoxLayout(progress_dialog)
+        
+        status_label = QLabel("Подготовка...")
+        status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(status_label)
+        
+        log_text = QTextEdit()
+        log_text.setReadOnly(True)
+        layout.addWidget(log_text)
+        
+        close_btn = QPushButton("Закрыть")
+        close_btn.setEnabled(False)
+        close_btn.clicked.connect(progress_dialog.accept)
+        layout.addWidget(close_btn)
+        
+        progress_dialog.show()
+        QApplication.processEvents()
+        
+        # Конвертация
+        success = True
+        converted_files = []
+        
+        for i, doc_file in enumerate(doc_files, 1):
+            status_label.setText(f"Конвертация {i} из {len(doc_files)}...")
+            log_text.append(f"📄 {os.path.basename(doc_file)}")
+            QApplication.processEvents()
+            
+            try:
+                # Определяем выходной файл
+                docx_file = doc_file[:-4] + '.docx'  # .doc -> .docx
+                
+                # Конвертируем через LibreOffice в headless режиме
+                import subprocess
+                output_dir = os.path.dirname(doc_file)
+                
+                # Команда: soffice --headless --convert-to docx --outdir <dir> <file>
+                cmd = [
+                    soffice_path,
+                    '--headless',
+                    '--convert-to', 'docx',
+                    '--outdir', output_dir,
+                    doc_file
+                ]
+                
+                log_text.append(f"   Запуск конвертации...")
+                QApplication.processEvents()
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60  # 60 секунд таймаут
+                )
+                
+                if result.returncode == 0 and os.path.exists(docx_file):
+                    log_text.append(f"   ✅ Успешно: {os.path.basename(docx_file)}")
+                    converted_files.append((doc_file, docx_file))
+                    
+                    # Добавляем .docx в список файлов
+                    if doc_file in self.input_files:
+                        count = self.input_files[doc_file]
+                        del self.input_files[doc_file]
+                        self.input_files[docx_file] = count
+                else:
+                    log_text.append(f"   ❌ Ошибка конвертации")
+                    if result.stderr:
+                        log_text.append(f"   {result.stderr[:200]}")
+                    success = False
+                    
+            except subprocess.TimeoutExpired:
+                log_text.append(f"   ❌ Таймаут (файл слишком большой)")
+                success = False
+            except Exception as e:
+                log_text.append(f"   ❌ Ошибка: {str(e)}")
+                success = False
+            
+            QApplication.processEvents()
+        
+        # Обновляем список файлов
+        self.update_listbox()
+        
+        # Финальное сообщение
+        if success:
+            status_label.setText("✅ Конвертация завершена успешно!")
+            log_text.append("\n✅ Все файлы сконвертированы")
+            log_text.append("⏭️  Можно продолжить обработку")
+        else:
+            status_label.setText("⚠️ Конвертация завершена с ошибками")
+            log_text.append("\n⚠️ Некоторые файлы не удалось сконвертировать")
+        
+        close_btn.setEnabled(True)
+        progress_dialog.exec()
         
         return success
 
@@ -4057,11 +4238,62 @@ def main():
     # Инициализируем конфигурационные файлы из шаблонов (если их нет)
     initialize_all_configs()
     
+    # Импорты для настройки Qt
+    from PySide6.QtGui import QFont, QGuiApplication
+    
+    # ========== HIGH DPI SUPPORT ДЛЯ MACOS RETINA ==========
+    # Устанавливаем переменные окружения ДО импорта/создания QApplication
+    # Это критично для правильной работы на Retina дисплеях
+    import os as os_env
+    if platform.system() == 'Darwin':  # macOS
+        # Включаем автоматическое масштабирование для Retina
+        os_env.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
+        os_env.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
+        # Для Qt 6
+        os_env.environ['QT_SCALE_FACTOR_ROUNDING_POLICY'] = 'PassThrough'
+    
+    # КРИТИЧНО: эти атрибуты должны быть установлены ДО создания QApplication!
+    # Без них на macOS Retina шрифты будут выглядеть в 2 раза меньше
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    
+    # Для Qt 6: используем PassThrough для правильного масштабирования на Retina
+    try:
+        if hasattr(Qt, 'HighDpiScaleFactorRoundingPolicy'):
+            QApplication.setHighDpiScaleFactorRoundingPolicy(
+                Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+            )
+    except Exception:
+        pass  # Для совместимости со старыми версиями Qt
+    # ========================================================
+    
     app = QApplication(sys.argv)
 
     # Устанавливаем имя приложения
     app.setApplicationName("BOM Categorizer")
     app.setOrganizationName("Kurein M.N.")
+
+    # ========== УСТАНОВКА ГЛОБАЛЬНОГО ШРИФТА ДЛЯ MACOS RETINA ==========
+    # Устанавливаем шрифт ДО создания виджетов, чтобы все виджеты
+    # использовали правильный размер с самого начала
+    if platform.system() == 'Darwin':  # macOS
+        # Определяем размер для Retina (сопоставимый с другими macOS приложениями)
+        try:
+            screens = QGuiApplication.screens()
+            if screens and screens[0].devicePixelRatio() >= 2:
+                # Retina: используем 13pt (как в стандартных macOS приложениях)
+                base_size = 13
+            else:
+                base_size = 12
+        except:
+            base_size = 13  # Для надежности
+        
+        # Устанавливаем глобальный шрифт для приложения
+        app_font = QFont(get_system_font(), base_size)
+        app.setFont(app_font)
+        
+        print(f"🔤 macOS: Установлен глобальный шрифт {get_system_font()} размером {base_size}pt")
+    # ==================================================================
 
     # Создаем и показываем главное окно
     window = BOMCategorizerMainWindow()
