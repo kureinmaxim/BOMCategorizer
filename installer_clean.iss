@@ -11,6 +11,8 @@ Compression=lzma
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
+CloseApplications=yes
+RestartIfNeededByRun=yes
 SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\icon.ico
 
@@ -28,6 +30,17 @@ Name: "{group}\Uninstall BOM Categorizer Standard"; Filename: "{uninstallexe}"
 Name: "{userdesktop}\BOM Categorizer Standard"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
 
 [Code]
+function InitializeSetup(): Boolean;
+var
+  ErrorCode: Integer;
+begin
+  // Закрываем процессы приложения, если они запущены
+  // Это предотвращает ошибку "Access is denied" при замене файлов
+  Exec('taskkill', '/F /IM python.exe /FI "WINDOWTITLE eq BOM*"', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Exec('taskkill', '/F /IM run_app.bat', '', SW_HIDE, ewWaitUntilTerminated, ErrorCode);
+  Result := True;
+end;
+
 function FontsExist: Boolean;
 begin
   Result := DirExists(ExpandConstant('{src}\temp_installer\fonts'));

@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 import json
 import platform
 import subprocess
@@ -538,32 +539,65 @@ class PDFSearchDialog(QDialog):
             is_custom = item.data(Qt.UserRole + 1)  # Флаг пользовательской папки
             
             if path and os.path.exists(path) and is_custom:
-                custom_dirs.append(path)
+                # Нормализуем путь (убираем лишние слэши, приводим к абсолютному)
+                normalized_path = os.path.normpath(os.path.abspath(path))
+                custom_dirs.append(normalized_path)
         
-        # Обновляем конфиг
-        if "pdf_search" not in self.config:
-            self.config["pdf_search"] = {}
-        self.config["pdf_search"]["custom_directories"] = custom_dirs
-        
-        # Сохраняем файл
+        # Сохраняем файл - используем ту же логику, что и load_config()
         try:
-            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            # Используем функцию get_config_path() из gui_qt
+            from .gui_qt import get_config_path
+            config_path = get_config_path()
             
-            # Формируем сообщение
+            # Загружаем текущий конфиг из файла, чтобы сохранить все остальные настройки
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    full_config = json.load(f)
+            except FileNotFoundError:
+                # Если файла нет, используем текущий конфиг
+                full_config = self.config.copy()
+            except Exception as e:
+                # Если ошибка чтения, используем текущий конфиг
+                print(f"Ошибка чтения конфига: {e}")
+                full_config = self.config.copy()
+            
+            # Обновляем только секцию pdf_search
+            if "pdf_search" not in full_config:
+                full_config["pdf_search"] = {}
+            full_config["pdf_search"]["custom_directories"] = custom_dirs
+            
+            # Создаем папку, если её нет
+            config_dir = os.path.dirname(config_path)
+            if config_dir and not os.path.exists(config_dir):
+                os.makedirs(config_dir, exist_ok=True)
+            
+            # Сохраняем весь конфиг
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(full_config, f, indent=2, ensure_ascii=False)
+            
+            # Формируем сообщение с путем к файлу
             if custom_dirs:
                 msg = (f"✅ Сохранено {len(custom_dirs)} пользовательских папок в config_qt.json\n\n"
-                       "Папки:\n" + "\n".join([f"  👤 {os.path.basename(d)}" for d in custom_dirs[:5]]) + 
+                       f"📁 Путь к файлу:\n{config_path}\n\n"
+                       "Папки:\n" + "\n".join([f"  👤 {d}" for d in custom_dirs[:5]]) + 
                        (f"\n  ... и еще {len(custom_dirs) - 5}" if len(custom_dirs) > 5 else "") +
                        "\n\nСистемные папки (💾 📄 📁) не сохраняются - "
                        "они используются автоматически.")
             else:
-                msg = ("⚠️ Нет пользовательских папок для сохранения\n\n"
+                msg = (f"⚠️ Нет пользовательских папок для сохранения\n\n"
+                       f"📁 Путь к файлу:\n{config_path}\n\n"
                        "Добавьте папки кнопкой ➕ - они будут помечены иконкой 👤\n"
                        "Системные папки (💾 📄 📁) сохранять не нужно.")
             
             QMessageBox.information(self, "Сохранено", msg)
+            
+            # Обновляем конфиг в памяти
+            self.config = full_config
+            
+            # Обновляем конфиг в родительском окне
+            if hasattr(self.parent_window, 'cfg'):
+                self.parent_window.cfg = full_config
+                self.parent_window.config = full_config  # Псевдоним для совместимости
             
             # Перезагружаем список, чтобы показать обновленные данные
             self._load_default_search_dirs()
@@ -572,7 +606,8 @@ class PDFSearchDialog(QDialog):
             QMessageBox.critical(
                 self,
                 "Ошибка",
-                f"Не удалось сохранить конфигурацию:\n{str(e)}"
+                f"Не удалось сохранить конфигурацию:\n{str(e)}\n\n"
+                f"Путь: {config_path if 'config_path' in locals() else 'не определен'}"
             )
     
     def open_local_file(self, item: QListWidgetItem):

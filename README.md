@@ -1,6 +1,6 @@
 # 📦 BOM Categorizer
 
-**Версия:** Standard 3.2.2 / Modern Edition 4.0.0 | **Дата:** 08.11.2025 | **Разработчик:** Куреин М.Н.
+**Версия:** Standard 3.3.0 / Modern Edition 4.4.1 | **Дата:** 16.11.2025 | **Разработчик:** Куреин М.Н.
 
 ---
 
@@ -24,8 +24,8 @@
 
 | Версия | GUI | Дизайн | Статус |
 |--------|-----|--------|--------|
-| **Standard v3.2.2** | Tkinter | Классический | ✅ Стабильная |
-| **Modern Edition v4.0.0** | PySide6 (Qt) | Современный | 🔬 Экспериментальная |
+| **Standard v3.3.0** | Tkinter | Классический | ✅ Стабильная |
+| **Modern Edition v4.4.1** | PySide6 (Qt) | Современный | ✅ Стабильная |
 
 **✅ Обе версии:**
 - Используют одинаковую бизнес-логику и базу данных
@@ -38,15 +38,15 @@
 
 | Версия | Файл инсталлятора | Путь установки | Имя в меню Пуск |
 |--------|-------------------|----------------|-----------------|
-| **Standard v3.2.2** | `BOMCategorizerSetup.exe` | `%APPDATA%\BOMCategorizer` | "BOM Categorizer Standard" |
-| **Modern Edition v4.0.0** | `BOMCategorizerModernSetup.exe` | `%APPDATA%\BOMCategorizerModern` | "BOM Categorizer Modern Edition" |
+| **Standard v3.3.0** | `BOMCategorizerSetup.exe` | `%APPDATA%\BOMCategorizer` | "BOM Categorizer Standard" |
+| **Modern Edition v4.4.1** | `BOMCategorizerModernSetup.exe` | `%APPDATA%\BOMCategorizerModern` | "BOM Categorizer Modern Edition" |
 
 #### macOS (2 DMG образа)
 
 | Версия | Файл DMG | Имя приложения | Bundle ID |
 |--------|----------|----------------|-----------|
-| **Standard v3.2.2** | `BOMCategorizer-3.2.2-macOS-Standard.dmg` | "BOM Categorizer Standard.app" | `com.kurein.bomcategorizer` |
-| **Modern Edition v4.0.0** | `BOMCategorizer-4.0.0-macOS-Modern.dmg` | "BOM Categorizer Modern Edition.app" | `com.kurein.bomcategorizer.modern` |
+| **Standard v3.3.0** | `BOMCategorizer-3.3.0-macOS-Standard.dmg` | "BOM Categorizer Standard.app" | `com.kurein.bomcategorizer` |
+| **Modern Edition v4.4.1** | `BOMCategorizer-4.4.1-macOS-Modern.dmg` | "BOM Categorizer Modern Edition.app" | `com.kurein.bomcategorizer.modern` |
 
 **Параллельная установка:**
 - ✅ Разные пути установки - не конфликтуют
@@ -432,10 +432,10 @@ chmod +x build_macos.sh  # Один раз
   ВЫБЕРИТЕ ВЕРСИЮ ДЛЯ СБОРКИ:
 ============================================================
 
-  [1] Standard v3.2.2
+  [1] Standard v3.3.0
       Tkinter GUI (стабильная версия)
 
-  [2] Modern Edition v4.0.0
+  [2] Modern Edition v4.4.1
       PySide6 GUI (современный дизайн)
 
 ============================================================
@@ -444,8 +444,8 @@ chmod +x build_macos.sh  # Один раз
 ```
 
 **Результат:**
-- **Standard:** `BOMCategorizerSetup.exe` (Windows) / `BOMCategorizer-3.2.2-macOS-Standard.dmg` (macOS)
-- **Modern Edition:** `BOMCategorizerModernSetup.exe` (Windows) / `BOMCategorizer-4.0.0-macOS-Modern.dmg` (macOS)
+- **Standard:** `BOMCategorizerSetup.exe` (Windows) / `BOMCategorizer-3.3.0-macOS-Standard.dmg` (macOS)
+- **Modern Edition:** `BOMCategorizerModernSetup.exe` (Windows) / `BOMCategorizer-4.4.1-macOS-Modern.dmg` (macOS)
 
 ### ⚠️ Полная пересборка (только при проблемах):
 
@@ -1166,6 +1166,7 @@ python app_qt.py
 - 📝 [TXT_EXPORT_GUIDE.md](docs/TXT_EXPORT_GUIDE.md) - Экспорт результатов в текстовые файлы
 - 📋 [CLASSIFICATION_RULES.md](docs/CLASSIFICATION_RULES.md) - Полный справочник правил классификации компонентов
 - 🗄️ [DATABASE_MANAGEMENT_GUIDE.md](docs/DATABASE_MANAGEMENT_GUIDE.md) - Управление базой данных: всё в одном руководстве
+- 🔍 [PDF_SEARCH_GUIDE.md](docs/PDF_SEARCH_GUIDE.md) - Полное руководство по поиску PDF документации
 
 ### Для разработчиков:
 - 🔧 [BUILD.md](BUILD.md) - Сборка инсталлятора (Windows и macOS, обе версии)
@@ -1176,25 +1177,29 @@ python app_qt.py
 - 📊 [ANALYSIS_PROJECT.md](ANALYSIS_PROJECT.md) - Детальный анализ кодовой базы
 - 📜 [CHANGELOG.md](CHANGELOG.md) - История изменений
 
-## 🆕 Что нового в v3.2.2 / v4.0.0
+## 🆕 Что нового в v3.3.0 / v4.4.1
 
 ### 🎊 Главное: Две версии приложения!
 
-Проект теперь поддерживает **две параллельные версии**:
+Проект поддерживает **две параллельные версии**:
 
-#### ✅ Standard v3.2.2 (Tkinter)
+#### ✅ Standard v3.3.0 (Tkinter)
 - Классический проверенный интерфейс
 - Стабильная работа
 - Меньший размер установщика
-- Все функции v3.1.2
+- Все функции предыдущих версий
 
-#### ✨ Modern Edition v4.0.0 (PySide6)
+#### ✨ Modern Edition v4.4.1 (PySide6)
 - Современный Material-inspired дизайн
 - Приглушенная цветовая палитра (комфорт для глаз)
 - Увеличенные шрифты (13-14pt) для лучшей читаемости
 - QSS стили (аналог CSS для Qt)
 - Hover-эффекты и плавные переходы
 - Лучшая поддержка HiDPI/Retina дисплеев
+- ✅ **Исправлено:** Правильное сохранение настроек в установленных версиях
+- ✅ **Улучшено:** Масштабирование шрифтов в диалогах
+- ✅ **Добавлено:** Поиск PDF документации (локальный и AI)
+- ✅ **Добавлено:** Глобальный поиск по файлам и базе данных
 
 **📦 Сборка инсталляторов:**
 - Windows: `build_installer.py` - диалог выбора версии

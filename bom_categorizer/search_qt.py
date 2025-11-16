@@ -8,6 +8,7 @@
 """
 
 import os
+import platform
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -66,7 +67,11 @@ class GlobalSearchDialog(QDialog):
         self.tree.setHeaderLabels(["Источник", "Совпадений", "Детали"])
         
         # Применяем крупный шрифт к дереву для читаемости (базовый 14pt)
-        tree_font_size = max(13, int(14 * self.scale_factor))
+        # Для Windows уменьшаем на 3 пункта (было 2, теперь еще на 1 меньше)
+        base_font_size = 14
+        if platform.system() == 'Windows':
+            base_font_size = 11  # Уменьшаем на 3 пункта для Windows
+        tree_font_size = max(10, int(base_font_size * self.scale_factor))
         tree_font = QFont(get_system_font(), tree_font_size)
         self.tree.setFont(tree_font)
         

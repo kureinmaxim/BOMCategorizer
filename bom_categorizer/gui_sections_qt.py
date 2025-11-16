@@ -497,17 +497,28 @@ def create_footer(window: 'BOMCategorizerMainWindow') -> QWidget:
     info_layout.addStretch()
 
     # Информация о расположении (кликабельная метка)
+    # Для Modern Edition проверяем путь к config_qt.json
+    from .gui_qt import get_config_path
+    config_path = get_config_path()
     db_path = get_database_path()
-    if "%APPDATA%" in db_path or "AppData" in db_path:
+    
+    # Определяем, установленная версия или разработка
+    is_installed = "%APPDATA%" in config_path or "AppData" in config_path or "Application Support" in config_path
+    
+    if is_installed:
+        # Для установленной версии Modern Edition открываем папку установки (где config_qt.json)
         location_label = QLabel("Установка (%APPDATA%)")
         location_label.setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; } QLabel:hover { color: #74c7ec; }")
+        location_label.setToolTip("Нажмите для открытия папки установки Modern Edition\n(где находится config_qt.json)")
+        location_label.mousePressEvent = lambda event: window.on_open_install_folder()
     else:
+        # Для режима разработки открываем папку базы данных
         location_label = QLabel("Локальная")
         location_label.setStyleSheet("QLabel { color: #f9e2af; font-weight: bold; } QLabel:hover { color: #f9e2af; }")
+        location_label.setToolTip("Нажмите для открытия папки с выделенным файлом базы данных")
+        location_label.mousePressEvent = lambda event: window.on_open_db_folder()
     
     location_label.setCursor(Qt.PointingHandCursor)
-    location_label.setToolTip("Нажмите для открытия папки с выделенным файлом базы данных")
-    location_label.mousePressEvent = lambda event: window.on_open_db_folder()
     info_layout.addWidget(location_label)
 
     # Размер окна (кликабельная метка)

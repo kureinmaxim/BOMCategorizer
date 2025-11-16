@@ -63,26 +63,73 @@ from . import gui_sections_qt
 from . import search_methods_qt
 
 
+def get_config_path() -> str:
+    """Определяет путь к config_qt.json (Modern Edition)"""
+    # 1. Рядом с модулем (разработка)
+    dev_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+    if os.path.exists(dev_path):
+        return dev_path
+    
+    # 2. В папке установки для Windows (установленная версия)
+    if platform.system() == 'Windows':
+        appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
+        installed_path = os.path.join(appdata, 'BOMCategorizerModern', 'config_qt.json')
+        installed_dir = os.path.dirname(installed_path)
+        # Если папка установки существует или файл существует
+        if os.path.exists(installed_dir) or os.path.exists(installed_path):
+            return installed_path
+        # Если мы в установленной версии (есть маркер .installed)
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        installed_marker = os.path.join(base_dir, ".installed")
+        if os.path.exists(installed_marker):
+            os.makedirs(installed_dir, exist_ok=True)
+            return installed_path
+    
+    # 3. В папке Application Support для macOS (установленная версия)
+    if platform.system() == 'Darwin':  # macOS
+        app_support = os.path.expanduser('~/Library/Application Support')
+        installed_path = os.path.join(app_support, 'BOMCategorizerModern', 'config_qt.json')
+        installed_dir = os.path.dirname(installed_path)
+        # Если папка установки существует или файл существует
+        if os.path.exists(installed_dir) or os.path.exists(installed_path):
+            return installed_path
+        # Если мы в установленной версии (есть маркер .installed или frozen)
+        if getattr(sys, 'frozen', False):
+            os.makedirs(installed_dir, exist_ok=True)
+            return installed_path
+        # Проверяем маркер установки
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        installed_marker = os.path.join(base_dir, ".installed")
+        if os.path.exists(installed_marker):
+            os.makedirs(installed_dir, exist_ok=True)
+            return installed_path
+    
+    # 4. В случае .app bundle на macOS (Contents/Resources/) - только если frozen
+    if getattr(sys, 'frozen', False):
+        if platform.system() == 'Darwin':  # macOS
+            bundle_dir = os.path.dirname(os.path.dirname(sys.executable))
+            bundle_path = os.path.join(bundle_dir, "Resources", "config_qt.json")
+            if os.path.exists(bundle_path):
+                return bundle_path
+    
+    # По умолчанию - путь разработки
+    return dev_path
+
+
 def load_config() -> dict:
     """Загружает конфигурацию из config_qt.json (Modern Edition)"""
-    # Пробуем несколько путей для поиска config_qt.json
-    # 1. Рядом с модулем (разработка)
-    cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+    cfg_path = get_config_path()
     
-    # 2. В случае .app bundle на macOS (Contents/Resources/)
-    if not os.path.exists(cfg_path) and getattr(sys, 'frozen', False):
-        # Если приложение упаковано
-        if platform.system() == 'Darwin':  # macOS
-            # В .app bundle ресурсы находятся в Contents/Resources/
-            bundle_dir = os.path.dirname(os.path.dirname(sys.executable))
-            cfg_path = os.path.join(bundle_dir, "Resources", "config_qt.json")
+    # Если файл найден - загружаем
+    if os.path.exists(cfg_path):
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
     
-    try:
-        with open(cfg_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        # Fallback с актуальной версией
-        return {"app_info": {"version": "4.4.0", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+    # Fallback с актуальной версией
+    return {"app_info": {"version": "4.4.1", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -1565,6 +1612,23 @@ class BOMCategorizerMainWindow(QMainWindow):
                 raise RuntimeError("Не удалось открыть проводник.")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку:\n{str(e)}")
+    
+    def on_open_install_folder(self):
+        """Открыть папку установки Modern Edition (где находится config_qt.json)"""
+        try:
+            # Для Modern Edition открываем папку установки, а не папку базы данных
+            config_path = get_config_path()
+            install_dir = os.path.dirname(config_path)
+            
+            # Если папка не существует, создаем её
+            if not os.path.exists(install_dir):
+                os.makedirs(install_dir, exist_ok=True)
+            
+            # Открываем папку установки
+            if not self.reveal_in_file_manager(install_dir, select=False):
+                raise RuntimeError("Не удалось открыть проводник.")
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку установки:\n{str(e)}")
 
     def on_replace_database(self):
         """Заменить текущую базу данных на другую из JSON файла"""
@@ -1956,10 +2020,27 @@ class BOMCategorizerMainWindow(QMainWindow):
     def save_pdf_search_config(self, config: dict):
         """Сохраняет конфигурацию поиска PDF"""
         try:
-            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            # Используем ту же логику определения пути, что и load_config()
+            config_path = get_config_path()
+            
+            # Загружаем текущий конфиг, чтобы сохранить все остальные настройки
+            try:
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    full_config = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                full_config = config.copy()
+            
+            # Обновляем конфиг из переданного параметра
+            full_config.update(config)
+            
             with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=2, ensure_ascii=False)
-            self.log_text.append("✅ Настройки поиска PDF сохранены\n")
+                json.dump(full_config, f, indent=2, ensure_ascii=False)
+            
+            # Обновляем конфиг в памяти
+            self.cfg = full_config
+            self.config = full_config
+            
+            self.log_text.append(f"✅ Настройки поиска PDF сохранены в {config_path}\n")
         except Exception as e:
             self.log_text.append(f"⚠️ Ошибка сохранения настроек: {e}\n")
 
@@ -2388,7 +2469,11 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setHorizontalHeaderLabels(["Версия", "Дата/Время", "Действие", "Источник", "Добавлено"])
                 
                 # Применяем крупный шрифт к таблице для читаемости (базовый 14pt)
-                table_font_size = max(13, int(14 * self.scale_factor))
+                # Для Windows уменьшаем на 3 пункта (было 2, теперь еще на 1 меньше)
+                base_font_size = 14
+                if platform.system() == 'Windows':
+                    base_font_size = 11  # Уменьшаем на 3 пункта для Windows
+                table_font_size = max(10, int(base_font_size * self.scale_factor))
                 table_font = QFont(get_system_font(), table_font_size)
                 history_table.setFont(table_font)
                 # Заголовки таблицы чуть крупнее и жирные

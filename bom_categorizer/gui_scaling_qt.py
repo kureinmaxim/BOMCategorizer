@@ -349,6 +349,8 @@ def set_view_mode(window: 'BOMCategorizerMainWindow', mode: str) -> None:
 def save_ui_preferences(window: 'BOMCategorizerMainWindow') -> None:
     """Сохраняет настройки интерфейса"""
     try:
+        from .gui_qt import get_config_path
+        
         if "ui" not in window.cfg:
             window.cfg["ui"] = {}
         ui_settings = window.cfg["ui"]
@@ -358,9 +360,28 @@ def save_ui_preferences(window: 'BOMCategorizerMainWindow') -> None:
         ui_settings["log_timestamps"] = bool(window.log_with_timestamps if window.current_view_mode == "expert" else False)
         ui_settings["auto_open_output"] = bool(window.auto_open_output if window.current_view_mode == "expert" else False)
 
-        cfg_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+        # Используем ту же логику определения пути, что и load_config()
+        cfg_path = get_config_path()
+        
+        # Загружаем текущий конфиг, чтобы сохранить все остальные настройки
+        try:
+            with open(cfg_path, 'r', encoding='utf-8') as f:
+                full_config = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            full_config = window.cfg.copy()
+        
+        # Обновляем только секцию ui
+        full_config["ui"] = ui_settings
+        # Сохраняем остальные секции из window.cfg
+        for key, value in window.cfg.items():
+            if key != "ui":
+                full_config[key] = value
+        
         with open(cfg_path, "w", encoding="utf-8") as f:
-            json.dump(window.cfg, f, indent=2, ensure_ascii=False)
+            json.dump(full_config, f, indent=2, ensure_ascii=False)
+        
+        # Обновляем конфиг в памяти
+        window.cfg = full_config
     except Exception as e:
         print(f"Не удалось сохранить настройки интерфейса: {e}")
 
