@@ -56,8 +56,8 @@ class GlobalSearchDialog(QDialog):
             summary_parts.append(f"Время: {results['duration_ms']} мс")
         summary_label = QLabel(" | ".join(summary_parts))
         summary_label.setWordWrap(True)
-        # Применяем шрифт к метке сводки (на 20% меньше основного, как в истории БД)
-        summary_font_size = max(7, int(9 * self.scale_factor * 0.8))
+        # Применяем крупный шрифт для читаемости (базовый 13pt)
+        summary_font_size = max(11, int(13 * self.scale_factor))
         summary_label.setFont(QFont(get_system_font(), summary_font_size))
         layout.addWidget(summary_label)
 
@@ -65,13 +65,16 @@ class GlobalSearchDialog(QDialog):
         self.tree.setColumnCount(3)
         self.tree.setHeaderLabels(["Источник", "Совпадений", "Детали"])
         
-        # Применяем шрифт к дереву (на 20% меньше основного, как в истории БД)
-        tree_font_size = max(7, int(12 * self.scale_factor * 1))
+        # Применяем крупный шрифт к дереву для читаемости (базовый 14pt)
+        tree_font_size = max(13, int(14 * self.scale_factor))
         tree_font = QFont(get_system_font(), tree_font_size)
         self.tree.setFont(tree_font)
         
+        # Заголовки чуть крупнее и жирные
         header = self.tree.header()
-        header.setFont(tree_font)
+        header_font = QFont(get_system_font(), tree_font_size + 1)
+        header_font.setBold(True)
+        header.setFont(header_font)
         header.setSectionResizeMode(0, QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
@@ -109,8 +112,8 @@ class GlobalSearchDialog(QDialog):
 
         info_label = QLabel("📁 Дважды щёлкните или нажмите Enter, чтобы открыть папку с выбранным файлом.")
         info_label.setWordWrap(True)
-        # Применяем шрифт к подсказке (на 20% меньше основного, как в истории БД)
-        info_font_size = max(7, int(11 * self.scale_factor * 0.8))
+        # Применяем крупный шрифт для подсказки (базовый 13pt)
+        info_font_size = max(11, int(13 * self.scale_factor))
         info_label.setFont(QFont(get_system_font(), info_font_size))
         info_label.setStyleSheet("color: #a6adc8;" if theme != "light" else "color: #4c4f69;")
         layout.addWidget(info_label)
@@ -120,8 +123,8 @@ class GlobalSearchDialog(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
 
-        # Применяем шрифт к кнопкам (на 20% меньше основного, как в истории БД)
-        button_font_size = max(7, int(9 * self.scale_factor * 0.8))
+        # Применяем крупный шрифт к кнопкам (базовый 13pt)
+        button_font_size = max(12, int(13 * self.scale_factor))
         button_font = QFont(get_system_font(), button_font_size)
 
         self.save_button = QPushButton("💾 Сохранить результаты...")

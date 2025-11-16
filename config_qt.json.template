@@ -1,6 +1,6 @@
 {
   "app_info": {
-    "version": "4.3.9",
+    "version": "4.4.0",
     "edition": "Modern Edition",
     "release_date": "16.11.2025",
     "developer": "Куреин М.Н.",
@@ -28,5 +28,8 @@
     "auto_export_pdf": false,
     "ai_classifier_enabled": false,
     "ai_auto_classify": false
+  },
+  "pdf_search": {
+    "custom_directories": []
   }
 }

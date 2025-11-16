@@ -82,7 +82,7 @@ def load_config() -> dict:
             return json.load(f)
     except Exception:
         # Fallback с актуальной версией
-        return {"app_info": {"version": "4.3.9", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+        return {"app_info": {"version": "4.4.0", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -2354,8 +2354,8 @@ class BOMCategorizerMainWindow(QMainWindow):
             info_label = QLabel()
             info_label.setProperty("class", "bold")
             
-            # Применяем шрифт на 20% меньше основного scale_factor
-            info_font_size = max(7, int(10 * self.scale_factor * 0.8))
+            # Применяем крупный шрифт для читаемости (базовый 14pt)
+            info_font_size = max(11, int(14 * self.scale_factor))
             info_label.setFont(QFont(get_system_font(), info_font_size))
             
             info_text = f"""
@@ -2376,7 +2376,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Подсказка
             hint_label = QLabel("💡 Дважды кликните на строку с файлом-источником, чтобы открыть его в проводнике")
-            hint_font_size = max(7, int(10 * self.scale_factor * 0.9))
+            hint_font_size = max(11, int(14 * self.scale_factor))
             hint_label.setFont(QFont(get_system_font(), hint_font_size))
             hint_label.setStyleSheet("color: #89b4fa; font-style: italic; padding: 5px;")
             history_layout.addWidget(hint_label)
@@ -2387,11 +2387,14 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setColumnCount(5)
                 history_table.setHorizontalHeaderLabels(["Версия", "Дата/Время", "Действие", "Источник", "Добавлено"])
                 
-                # Применяем шрифт к таблице - scale_factor
-                table_font_size = max(7, int(11 * self.scale_factor))
+                # Применяем крупный шрифт к таблице для читаемости (базовый 14pt)
+                table_font_size = max(13, int(14 * self.scale_factor))
                 table_font = QFont(get_system_font(), table_font_size)
                 history_table.setFont(table_font)
-                history_table.horizontalHeader().setFont(table_font)
+                # Заголовки таблицы чуть крупнее и жирные
+                header_font = QFont(get_system_font(), table_font_size + 2)
+                header_font.setBold(True)
+                history_table.horizontalHeader().setFont(header_font)
                 
                 history_table.horizontalHeader().setStretchLastSection(False)
                 history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -2403,7 +2406,9 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
                 history_table.verticalHeader().setVisible(False)
-                history_table.verticalHeader().setDefaultSectionSize(28)
+                # Увеличенная высота строк для крупных шрифтов (базовая 40px)
+                row_height = max(36, int(40 * self.scale_factor))
+                history_table.verticalHeader().setDefaultSectionSize(row_height)
                 history_table.setAlternatingRowColors(True)
                 history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
                 history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -2539,13 +2544,19 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Кнопки
             button_layout = QHBoxLayout()
             
+            # Крупный шрифт для кнопок (базовый 14pt)
+            button_font_size = max(12, int(14 * self.scale_factor))
+            button_font = QFont(get_system_font(), button_font_size)
+            
             export_btn = QPushButton("📤 Экспорт в Excel")
+            export_btn.setFont(button_font)
             export_btn.clicked.connect(lambda: self.export_database())
             button_layout.addWidget(export_btn)
             
             button_layout.addStretch()
             
             close_btn = QPushButton("Закрыть")
+            close_btn.setFont(button_font)
             close_btn.clicked.connect(dialog.accept)
             button_layout.addWidget(close_btn)
             

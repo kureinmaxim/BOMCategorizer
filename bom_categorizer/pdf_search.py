@@ -45,12 +45,20 @@ class LocalPDFSearcher:
         # Нормализуем запрос (убираем пробелы, приводим к верхнему регистру)
         query_normalized = query.strip().upper()
         
+        # Проверяем, начинается ли сама base_directory с pdf*
+        base_name = os.path.basename(self.base_directory).lower()
+        is_pdf_folder = base_name.startswith('pdf')
+        
         # Ищем в папках, начинающихся с "pdf"
         for root, dirs, files in os.walk(self.base_directory):
-            # Фильтруем только папки, начинающиеся с "pdf"
             folder_name = os.path.basename(root).lower()
-            if not folder_name.startswith('pdf'):
-                # Ограничиваем поиск только папками с pdf в начале
+            
+            # Если мы уже внутри папки pdf*, то ищем везде рекурсивно
+            if is_pdf_folder or root == self.base_directory or folder_name.startswith('pdf'):
+                # Продолжаем поиск во всех подпапках
+                pass
+            else:
+                # Если не в папке pdf*, ограничиваем поиск только подпапками с префиксом pdf*
                 dirs[:] = [d for d in dirs if d.lower().startswith('pdf')]
                 continue
             
@@ -286,20 +294,64 @@ class AIPDFSearcher:
             }
 
 
-def get_default_pdf_directories() -> List[str]:
-    """Возвращает список директорий по умолчанию для поиска PDF"""
+def get_default_pdf_directories(config: Optional[Dict] = None) -> List[str]:
+    """
+    Возвращает список директорий по умолчанию для поиска PDF
+    
+    Ищет в:
+    1. Пользовательские папки из config.json (если указаны)
+    2. Папка базы данных + все подпапки с префиксом pdf* (любой регистр)
+    3. macOS: /Users/olgazaharova/Project + все подпапки с префиксом pdf*
+    4. Windows: C:\\Project + все подпапки с префиксом pdf*
+    
+    Args:
+        config: Словарь конфигурации (опционально)
+    """
     from .component_database import get_database_path
+    import sys
     
     directories = []
     
-    # Папка с базой данных
+    # 1. Пользовательские папки из конфига
+    if config:
+        custom_dirs = config.get("pdf_search", {}).get("custom_directories", [])
+        for custom_dir in custom_dirs:
+            if custom_dir and os.path.exists(custom_dir):
+                directories.append(custom_dir)
+    
+    # 2. Папка с базой данных и её подпапки с префиксом pdf*
     db_path = get_database_path()
     db_dir = os.path.dirname(db_path)
-    directories.append(db_dir)
     
-    # Родительская папка базы данных
-    parent_dir = os.path.dirname(db_dir)
-    directories.append(parent_dir)
+    # Добавляем саму папку БД
+    if os.path.exists(db_dir):
+        directories.append(db_dir)
+        
+        # Ищем подпапки с префиксом pdf* (любой регистр)
+        for item in os.listdir(db_dir):
+            item_path = os.path.join(db_dir, item)
+            if os.path.isdir(item_path) and item.lower().startswith('pdf'):
+                directories.append(item_path)
     
-    return directories
+    # 3. Дополнительные проектные папки
+    if sys.platform == "darwin":  # macOS
+        project_dir = "/Users/olgazaharova/Project"
+        if os.path.exists(project_dir):
+            # Ищем подпапки с префиксом pdf* (любой регистр)
+            for item in os.listdir(project_dir):
+                item_path = os.path.join(project_dir, item)
+                if os.path.isdir(item_path) and item.lower().startswith('pdf'):
+                    directories.append(item_path)
+    
+    elif sys.platform == "win32":  # Windows
+        project_dir = "C:\\Project"
+        if os.path.exists(project_dir):
+            # Ищем подпапки с префиксом pdf* (любой регистр)
+            for item in os.listdir(project_dir):
+                item_path = os.path.join(project_dir, item)
+                if os.path.isdir(item_path) and item.lower().startswith('pdf'):
+                    directories.append(item_path)
+    
+    # Возвращаем уникальные директории
+    return list(dict.fromkeys(directories))  # Убираем дубликаты, сохраняя порядок
 
