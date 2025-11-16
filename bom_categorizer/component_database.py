@@ -952,16 +952,23 @@ def import_database_from_excel(input_path: str, replace: bool = False) -> int:
     
     # Импортируем компоненты
     imported_count = 0
+    component_names = []
     for _, row in df.iterrows():
         component = str(row['Наименование компонента']).strip()
         category = str(row['Категория (ключ)']).strip()
         
         if component and category and category != 'nan':
             current_db[component] = category
+            component_names.append(component)
             imported_count += 1
     
-    # Сохраняем
-    save_component_database(current_db)
+    # Сохраняем с полным путем к файлу-источнику
+    save_component_database(
+        current_db, 
+        action="import_from_excel",
+        source=os.path.abspath(input_path),
+        component_names=component_names[:50]  # Первые 50 для истории
+    )
     
     return imported_count
 

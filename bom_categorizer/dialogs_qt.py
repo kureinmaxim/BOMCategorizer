@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 from typing import Optional, List, Tuple
 
 from PySide6.QtWidgets import (
@@ -126,7 +127,10 @@ class DatabaseStatsDialog(QDialog):
         self.scale_factor = getattr(parent, 'scale_factor', 1.0) if parent else 1.0
 
         self.setWindowTitle("Статистика базы данных")
-        self.setMinimumSize(600, 500)
+        # Масштабируем размер диалога пропорционально scale_factor
+        min_width = max(600, int(650 * self.scale_factor))
+        min_height = max(500, int(550 * self.scale_factor))
+        self.setMinimumSize(min_width, min_height)
         self.setModal(True)
 
         self._create_ui()
@@ -139,9 +143,9 @@ class DatabaseStatsDialog(QDialog):
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         
-        # Применяем шрифт с учётом scale_factor (базовый размер 9pt)
-        font = QFont()
-        font.setPointSize(max(8, int(9 * self.scale_factor)))
+        # Применяем моноширинный шрифт с учётом scale_factor для лучшего отображения
+        font = QFont("Menlo" if sys.platform == "darwin" else "Consolas" if sys.platform == "win32" else "Monospace")
+        font.setPointSize(max(10, int(12 * self.scale_factor)))
         text_edit.setFont(font)
 
         # Формируем текст статистики
@@ -153,7 +157,7 @@ class DatabaseStatsDialog(QDialog):
         # Кнопка закрытия
         close_btn = QPushButton("Закрыть")
         button_font = QFont()
-        button_font.setPointSize(max(8, int(9 * self.scale_factor)))
+        button_font.setPointSize(max(10, int(12 * self.scale_factor)))
         close_btn.setFont(button_font)
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn)
@@ -162,18 +166,30 @@ class DatabaseStatsDialog(QDialog):
 
     def _format_stats(self) -> str:
         """Форматирует статистику в текст"""
-        text = "=== СТАТИСТИКА БАЗЫ ДАННЫХ ===\n\n"
-        text += f"Версия БД: {self.stats.get('version', 'N/A')}\n"
-        text += f"Всего компонентов: {self.stats.get('total_components', 0)}\n\n"
+        metadata = self.stats.get('metadata', {})
+        
+        text = "📊 СТАТИСТИКА БАЗЫ ДАННЫХ\n"
+        text += "═" * 60 + "\n\n"
+        
+        # Общая информация
+        text += "ℹ️  Общая информация:\n"
+        text += f"   • Версия БД: {metadata.get('version', 'N/A')}\n"
+        text += f"   • Последнее обновление: {metadata.get('last_updated', 'N/A')}\n"
+        text += f"   • Всего компонентов: {metadata.get('total_components', 0)}\n\n"
 
         # Разбивка по категориям
-        categories = self.stats.get('categories', {})
+        categories = self.stats.get('by_category', {})
         if categories:
-            text += "Компоненты по категориям:\n"
-            for category, count in sorted(categories.items()):
-                text += f"  {category}: {count}\n"
+            text += "📦 Распределение по категориям:\n"
+            for category, count in sorted(categories.items(), key=lambda x: x[1], reverse=True):
+                # Визуальный прогресс-бар
+                bar_length = int((count / metadata.get('total_components', 1)) * 30)
+                bar = "█" * bar_length + "░" * (30 - bar_length)
+                percentage = (count / metadata.get('total_components', 1)) * 100 if metadata.get('total_components', 0) > 0 else 0
+                text += f"   • {category}: {count} ({percentage:.1f}%)\n"
+                text += f"     {bar}\n"
         else:
-            text += "Категории не определены\n"
+            text += "⚠️  Категории не определены\n"
 
         return text
 
@@ -441,10 +457,24 @@ class DocConversionDialog(QDialog):
         buttons_layout = QVBoxLayout()
         buttons_layout.setSpacing(8)
 
-        word_btn = QPushButton("Конвертировать с помощью Word (Windows)")
-        word_btn.setMinimumHeight(32)
-        word_btn.clicked.connect(self.on_word_conversion)
-        buttons_layout.addWidget(word_btn)
+        # Кнопка автоматической конвертации
+        import platform
+        if platform.system() == 'Windows':
+            auto_btn = QPushButton("Конвертировать с помощью Word")
+            auto_btn.setMinimumHeight(32)
+            auto_btn.setToolTip("Использует Microsoft Word для конвертации")
+            auto_btn.clicked.connect(self.on_word_conversion)
+            buttons_layout.addWidget(auto_btn)
+        else:
+            # На macOS/Linux используем LibreOffice
+            auto_btn = QPushButton("Конвертировать с помощью LibreOffice")
+            auto_btn.setMinimumHeight(32)
+            auto_btn.setToolTip(
+                "Использует LibreOffice для конвертации\n"
+                "(Бесплатный офисный пакет, если установлен)"
+            )
+            auto_btn.clicked.connect(self.on_word_conversion)  # Та же функция
+            buttons_layout.addWidget(auto_btn)
 
         manual_btn = QPushButton("Конвертировать вручную и продолжить")
         manual_btn.setMinimumHeight(32)

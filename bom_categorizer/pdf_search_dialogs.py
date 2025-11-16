@@ -16,16 +16,18 @@ from PySide6.QtWidgets import (
     QWidget, QGridLayout, QTextBrowser, QCheckBox, QFormLayout, QDialogButtonBox
 )
 from PySide6.QtCore import Qt, Signal, QThread
-from PySide6.QtGui import QFont, QTextCursor
+from PySide6.QtGui import QFont, QTextCursor, QColor
 
 
 class PDFSearchDialog(QDialog):
     """Главный диалог поиска PDF"""
     
-    def __init__(self, parent, config: dict):
+    def __init__(self, parent, config: dict, unlocked: bool = True, expert_mode: bool = True):
         super().__init__(parent)
         self.parent_window = parent
         self.config = config
+        self.unlocked = unlocked
+        self.expert_mode = expert_mode
         
         self.setWindowTitle("🔍 Поиск PDF документации")
         self.setModal(False)
@@ -58,22 +60,45 @@ class PDFSearchDialog(QDialog):
         # Вкладки для разных типов поиска
         self.tabs = QTabWidget()
         
-        # Вкладка локального поиска
+        # Вкладка локального поиска - доступна всегда
         self.local_tab = self._create_local_tab()
         self.tabs.addTab(self.local_tab, "📁 Локальный поиск")
         
-        # Вкладка AI поиска
-        self.ai_tab = self._create_ai_tab()
-        self.tabs.addTab(self.ai_tab, "🤖 AI поиск")
+        # Вкладка AI поиска - только для разблокированных экспертов
+        if self.unlocked and self.expert_mode:
+            self.ai_tab = self._create_ai_tab()
+            self.tabs.addTab(self.ai_tab, "🤖 AI поиск")
+        else:
+            # Создаем заглушку для AI вкладки
+            self.ai_tab = QWidget()
+            ai_layout = QVBoxLayout(self.ai_tab)
+            ai_layout.addStretch()
+            
+            lock_label = QLabel("🔒 AI поиск доступен только в экспертном режиме после разблокировки приложения")
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("color: #f38ba8; font-size: 14pt; font-weight: bold;")
+            ai_layout.addWidget(lock_label)
+            
+            hint_label = QLabel("Дважды кликните на имя разработчика для разблокировки")
+            hint_label.setAlignment(Qt.AlignCenter)
+            hint_label.setStyleSheet("color: #cdd6f4; font-size: 12pt;")
+            ai_layout.addWidget(hint_label)
+            
+            ai_layout.addStretch()
+            self.tabs.addTab(self.ai_tab, "🔒 AI поиск")
+            # Отключаем вкладку
+            self.tabs.setTabEnabled(1, False)
         
         layout.addWidget(self.tabs)
         
         # Кнопки
         button_layout = QHBoxLayout()
         
-        settings_btn = QPushButton("⚙️ Настройки")
-        settings_btn.clicked.connect(self.open_settings)
-        button_layout.addWidget(settings_btn)
+        # Кнопка настроек - только для разблокированных экспертов
+        if self.unlocked and self.expert_mode:
+            settings_btn = QPushButton("⚙️ Настройки")
+            settings_btn.clicked.connect(self.open_settings)
+            button_layout.addWidget(settings_btn)
         
         button_layout.addStretch()
         
@@ -88,21 +113,47 @@ class PDFSearchDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
-        # Настройки пути
-        path_group = QGroupBox("Путь для поиска")
-        path_layout = QHBoxLayout()
+        # Папки для поиска
+        path_group = QGroupBox("📂 Папки для поиска (поиск рекурсивно во всех)")
+        path_layout = QVBoxLayout()
         
-        self.local_path_input = QLineEdit()
-        self.local_path_input.setPlaceholderText("По умолчанию: папка с базой данных")
+        # Список папок
+        self.search_dirs_list = QListWidget()
+        self.search_dirs_list.setMaximumHeight(120)
+        self.search_dirs_list.setToolTip("Список папок, в которых будет выполняться поиск PDF файлов")
+        path_layout.addWidget(self.search_dirs_list)
         
-        browse_btn = QPushButton("📁 Обзор...")
-        browse_btn.clicked.connect(self.browse_local_path)
-        browse_btn.setFixedWidth(100)
+        # Кнопки управления путями
+        buttons_layout = QHBoxLayout()
         
-        path_layout.addWidget(self.local_path_input)
-        path_layout.addWidget(browse_btn)
+        add_dir_btn = QPushButton("➕ Добавить папку")
+        add_dir_btn.clicked.connect(self.add_search_directory)
+        add_dir_btn.setToolTip("Добавить временную папку для поиска")
+        buttons_layout.addWidget(add_dir_btn)
+        
+        remove_dir_btn = QPushButton("➖ Удалить")
+        remove_dir_btn.clicked.connect(self.remove_search_directory)
+        remove_dir_btn.setToolTip("Удалить выбранную папку из списка")
+        buttons_layout.addWidget(remove_dir_btn)
+        
+        save_to_config_btn = QPushButton("💾 Сохранить в конфиг")
+        save_to_config_btn.clicked.connect(self.save_search_dirs_to_config)
+        save_to_config_btn.setToolTip("Сохранить текущие папки в config_qt.json как пользовательские")
+        buttons_layout.addWidget(save_to_config_btn)
+        
+        reset_btn = QPushButton("🔄 Сброс")
+        reset_btn.clicked.connect(self.reset_search_directories)
+        reset_btn.setToolTip("Вернуть список папок по умолчанию")
+        buttons_layout.addWidget(reset_btn)
+        
+        buttons_layout.addStretch()
+        path_layout.addLayout(buttons_layout)
+        
         path_group.setLayout(path_layout)
         layout.addWidget(path_group)
+        
+        # Загружаем папки по умолчанию
+        self._load_default_search_dirs()
         
         # Результаты
         results_label = QLabel("Найденные файлы:")
@@ -178,41 +229,69 @@ class PDFSearchDialog(QDialog):
         
         if current_tab == 0:  # Локальный поиск
             self.run_local_search(query)
-        else:  # AI поиск
+        elif self.unlocked and self.expert_mode:  # AI поиск - только для разблокированных экспертов
             self.run_ai_search(query)
+        else:
+            # Вкладка AI заблокирована
+            QMessageBox.information(
+                self,
+                "AI поиск недоступен",
+                "AI поиск доступен только в экспертном режиме после разблокировки приложения.\n\n"
+                "Дважды кликните на имя разработчика для разблокировки."
+            )
     
     def run_local_search(self, query: str):
         """Выполняет локальный поиск"""
-        from .pdf_search import LocalPDFSearcher, get_default_pdf_directories
+        from .pdf_search import LocalPDFSearcher
         
-        # Определяем путь для поиска
-        search_path = self.local_path_input.text().strip()
-        if not search_path:
-            # Используем папки по умолчанию
-            search_dirs = get_default_pdf_directories()
-            search_path = search_dirs[0] if search_dirs else None
+        # Получаем список папок из интерфейса
+        search_dirs = []
+        for i in range(self.search_dirs_list.count()):
+            item = self.search_dirs_list.item(i)
+            path = item.data(Qt.UserRole)
+            if path and os.path.exists(path):
+                search_dirs.append(path)
         
-        if not search_path or not os.path.exists(search_path):
+        if not search_dirs:
             QMessageBox.warning(
                 self,
                 "Ошибка",
-                "Папка для поиска не найдена!\nУкажите путь вручную."
+                "Список папок для поиска пуст!\n\n"
+                "Нажмите '🔄 Сброс' для загрузки папок по умолчанию\n"
+                "или '➕ Добавить папку' для выбора своей папки."
             )
             return
         
-        # Выполняем поиск
-        searcher = LocalPDFSearcher(search_path)
-        results = searcher.search(query, min_match_length=3)
+        # Выполняем поиск во всех директориях
+        all_results = []
+        for directory in search_dirs:
+            searcher = LocalPDFSearcher(directory)
+            results = searcher.search(query, min_match_length=3)
+            all_results.extend(results)
+        
+        # Удаляем дубликаты по пути (если файл найден в нескольких директориях)
+        seen_paths = set()
+        unique_results = []
+        for result in all_results:
+            if result['path'] not in seen_paths:
+                seen_paths.add(result['path'])
+                unique_results.append(result)
         
         # Отображаем результаты
         self.local_results_list.clear()
         
-        if not results:
-            item = QListWidgetItem("❌ Файлы не найдены")
+        if not unique_results:
+            item = QListWidgetItem(f"❌ Файлы не найдены в {len(search_dirs)} папках")
             item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
             self.local_results_list.addItem(item)
         else:
-            for result in results:
+            # Добавляем заголовок с количеством результатов
+            header = QListWidgetItem(f"✅ Найдено {len(unique_results)} файлов в {len(search_dirs)} папках:")
+            header.setFlags(header.flags() & ~Qt.ItemIsEnabled)
+            header.setBackground(QColor("#313244"))
+            self.local_results_list.addItem(header)
+            
+            for result in unique_results:
                 item_text = f"📄 {result['filename']}\n   📁 {result['folder']} | 📊 {result['size']}"
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.UserRole, result['path'])
@@ -345,15 +424,156 @@ class PDFSearchDialog(QDialog):
         
         return html
     
-    def browse_local_path(self):
-        """Выбор папки для локального поиска"""
+    def _load_default_search_dirs(self):
+        """Загружает папки для поиска по умолчанию"""
+        from .pdf_search import get_default_pdf_directories
+        
+        self.search_dirs_list.clear()
+        
+        # Получаем пользовательские папки из конфига
+        custom_dirs_from_config = self.config.get("pdf_search", {}).get("custom_directories", [])
+        
+        # Получаем все папки (включая пользовательские)
+        all_dirs = get_default_pdf_directories(self.config)
+        
+        for directory in all_dirs:
+            if os.path.exists(directory):
+                # Проверяем, это пользовательская папка или системная
+                is_custom = directory in custom_dirs_from_config
+                
+                # Добавляем иконку в зависимости от типа папки
+                if is_custom:
+                    icon = "👤"  # Пользовательская папка
+                elif "pdf" in os.path.basename(directory).lower():
+                    icon = "📄"
+                elif "Project" in directory:
+                    icon = "📁"
+                elif "component_database" in directory or "BOMCategorizer" in directory:
+                    icon = "💾"
+                else:
+                    icon = "📂"
+                
+                item_text = f"{icon} {directory}"
+                item = QListWidgetItem(item_text)
+                item.setData(Qt.UserRole, directory)
+                item.setData(Qt.UserRole + 1, is_custom)  # Флаг: пользовательская папка
+                
+                tooltip = directory
+                if is_custom:
+                    tooltip += "\n(Пользовательская папка)"
+                else:
+                    tooltip += "\n(Системная папка по умолчанию)"
+                item.setToolTip(tooltip)
+                
+                self.search_dirs_list.addItem(item)
+        
+        # Если список пустой, показываем предупреждение
+        if self.search_dirs_list.count() == 0:
+            item = QListWidgetItem("⚠️ Папки для поиска не найдены")
+            item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
+            self.search_dirs_list.addItem(item)
+    
+    def add_search_directory(self):
+        """Добавляет новую папку для поиска"""
         folder = QFileDialog.getExistingDirectory(
             self,
             "Выберите папку для поиска PDF",
-            self.local_path_input.text() or ""
+            ""
         )
+        
         if folder:
-            self.local_path_input.setText(folder)
+            # Проверяем, не добавлена ли уже эта папка
+            for i in range(self.search_dirs_list.count()):
+                item = self.search_dirs_list.item(i)
+                existing_path = item.data(Qt.UserRole)
+                if existing_path == folder:
+                    QMessageBox.information(
+                        self,
+                        "Информация",
+                        "Эта папка уже есть в списке!"
+                    )
+                    return
+            
+            # Добавляем новую пользовательскую папку
+            item_text = f"👤 {folder}"
+            item = QListWidgetItem(item_text)
+            item.setData(Qt.UserRole, folder)
+            item.setData(Qt.UserRole + 1, True)  # Помечаем как пользовательскую
+            item.setToolTip(f"{folder}\n(Пользовательская папка - временно)")
+            self.search_dirs_list.addItem(item)
+    
+    def remove_search_directory(self):
+        """Удаляет выбранную папку из списка"""
+        current_item = self.search_dirs_list.currentItem()
+        if current_item:
+            self.search_dirs_list.takeItem(self.search_dirs_list.row(current_item))
+        else:
+            QMessageBox.warning(
+                self,
+                "Предупреждение",
+                "Выберите папку для удаления!"
+            )
+    
+    def reset_search_directories(self):
+        """Сбрасывает список папок к значениям по умолчанию"""
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            "Вернуть список папок к значениям по умолчанию?\n\n"
+            "Все временно добавленные папки будут удалены.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self._load_default_search_dirs()
+    
+    def save_search_dirs_to_config(self):
+        """Сохраняет ТОЛЬКО пользовательские папки в config_qt.json"""
+        # Собираем ТОЛЬКО пользовательские папки (с флагом is_custom = True)
+        custom_dirs = []
+        
+        for i in range(self.search_dirs_list.count()):
+            item = self.search_dirs_list.item(i)
+            path = item.data(Qt.UserRole)
+            is_custom = item.data(Qt.UserRole + 1)  # Флаг пользовательской папки
+            
+            if path and os.path.exists(path) and is_custom:
+                custom_dirs.append(path)
+        
+        # Обновляем конфиг
+        if "pdf_search" not in self.config:
+            self.config["pdf_search"] = {}
+        self.config["pdf_search"]["custom_directories"] = custom_dirs
+        
+        # Сохраняем файл
+        try:
+            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, indent=2, ensure_ascii=False)
+            
+            # Формируем сообщение
+            if custom_dirs:
+                msg = (f"✅ Сохранено {len(custom_dirs)} пользовательских папок в config_qt.json\n\n"
+                       "Папки:\n" + "\n".join([f"  👤 {os.path.basename(d)}" for d in custom_dirs[:5]]) + 
+                       (f"\n  ... и еще {len(custom_dirs) - 5}" if len(custom_dirs) > 5 else "") +
+                       "\n\nСистемные папки (💾 📄 📁) не сохраняются - "
+                       "они используются автоматически.")
+            else:
+                msg = ("⚠️ Нет пользовательских папок для сохранения\n\n"
+                       "Добавьте папки кнопкой ➕ - они будут помечены иконкой 👤\n"
+                       "Системные папки (💾 📄 📁) сохранять не нужно.")
+            
+            QMessageBox.information(self, "Сохранено", msg)
+            
+            # Перезагружаем список, чтобы показать обновленные данные
+            self._load_default_search_dirs()
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось сохранить конфигурацию:\n{str(e)}"
+            )
     
     def open_local_file(self, item: QListWidgetItem):
         """Открывает PDF файл"""
@@ -392,6 +612,13 @@ class PDFSearchDialog(QDialog):
     
     def save_ai_results(self):
         """Сохраняет результаты AI поиска"""
+        # Проверка доступности (только для разблокированных экспертов)
+        if not (self.unlocked and self.expert_mode):
+            return
+        
+        if not hasattr(self, 'ai_results_browser'):
+            return
+        
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Сохранить результаты",
@@ -407,6 +634,16 @@ class PDFSearchDialog(QDialog):
     
     def open_settings(self):
         """Открывает настройки"""
+        # Проверка доступности (настройки только для разблокированных экспертов)
+        if not (self.unlocked and self.expert_mode):
+            QMessageBox.information(
+                self,
+                "Настройки недоступны",
+                "Настройки API доступны только в экспертном режиме после разблокировки приложения.\n\n"
+                "Дважды кликните на имя разработчика для разблокировки."
+            )
+            return
+        
         dialog = PDFSearchSettingsDialog(self, self.config)
         if dialog.exec() == QDialog.Accepted:
             # Обновляем конфиг
@@ -437,11 +674,15 @@ class UnifiedSettingsDialog(QDialog):
         
         self.tabs = QTabWidget()
         
-        # Вкладка 1: API ключи
+        # Вкладка 1: Пути поиска PDF
+        self.pdf_paths_tab = self._create_pdf_paths_tab()
+        self.tabs.addTab(self.pdf_paths_tab, "📂 Пути PDF")
+        
+        # Вкладка 2: API ключи
         self.api_keys_tab = self._create_api_keys_tab()
         self.tabs.addTab(self.api_keys_tab, "🔑 API Ключи")
         
-        # Вкладка 2: Настройки AI классификатора
+        # Вкладка 3: Настройки AI классификатора
         self.ai_classifier_tab = self._create_ai_classifier_tab()
         self.tabs.addTab(self.ai_classifier_tab, "🤖 AI Классификатор")
         
@@ -452,6 +693,108 @@ class UnifiedSettingsDialog(QDialog):
         buttons.accepted.connect(self._save_all_settings)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _create_pdf_paths_tab(self):
+        """Создает вкладку управления путями поиска PDF"""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        desc = QLabel(
+            "📁 <b>Настройка пользовательских папок для поиска PDF</b><br><br>"
+            "Добавьте свои папки, в которых будет выполняться рекурсивный поиск PDF файлов.<br>"
+            "Эти папки будут использоваться дополнительно к стандартным (папка БД, Project/pdf* и т.д.)."
+        )
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        
+        # Список путей
+        paths_group = QGroupBox("Пользовательские папки")
+        paths_layout = QVBoxLayout()
+        
+        self.custom_paths_list = QListWidget()
+        self.custom_paths_list.setMinimumHeight(200)
+        paths_layout.addWidget(self.custom_paths_list)
+        
+        # Кнопки управления путями
+        buttons_layout = QHBoxLayout()
+        
+        add_path_btn = QPushButton("➕ Добавить папку")
+        add_path_btn.clicked.connect(self._add_custom_path)
+        buttons_layout.addWidget(add_path_btn)
+        
+        remove_path_btn = QPushButton("➖ Удалить выбранную")
+        remove_path_btn.clicked.connect(self._remove_custom_path)
+        buttons_layout.addWidget(remove_path_btn)
+        
+        clear_paths_btn = QPushButton("🗑️ Очистить все")
+        clear_paths_btn.clicked.connect(self._clear_custom_paths)
+        buttons_layout.addWidget(clear_paths_btn)
+        
+        buttons_layout.addStretch()
+        paths_layout.addLayout(buttons_layout)
+        
+        paths_group.setLayout(paths_layout)
+        layout.addWidget(paths_group)
+        
+        # Подсказка
+        hint_label = QLabel(
+            "💡 <b>Совет:</b> Вы можете также вручную редактировать файл <code>config_qt.json</code><br>"
+            "в разделе <code>\"pdf_search\" → \"custom_directories\"</code> для добавления путей."
+        )
+        hint_label.setWordWrap(True)
+        layout.addWidget(hint_label)
+        
+        layout.addStretch()
+        return tab
+    
+    def _add_custom_path(self):
+        """Добавляет новую пользовательскую папку"""
+        from PySide6.QtWidgets import QFileDialog
+        
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите папку для поиска PDF",
+            "",
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if folder:
+            # Проверяем, не добавлена ли уже эта папка
+            for i in range(self.custom_paths_list.count()):
+                if self.custom_paths_list.item(i).text() == folder:
+                    QMessageBox.information(
+                        self,
+                        "Информация",
+                        "Эта папка уже добавлена в список!"
+                    )
+                    return
+            
+            self.custom_paths_list.addItem(folder)
+    
+    def _remove_custom_path(self):
+        """Удаляет выбранную папку"""
+        current_item = self.custom_paths_list.currentItem()
+        if current_item:
+            self.custom_paths_list.takeItem(self.custom_paths_list.row(current_item))
+        else:
+            QMessageBox.warning(
+                self,
+                "Предупреждение",
+                "Выберите папку для удаления!"
+            )
+    
+    def _clear_custom_paths(self):
+        """Очищает весь список пользовательских папок"""
+        if self.custom_paths_list.count() > 0:
+            reply = QMessageBox.question(
+                self,
+                "Подтверждение",
+                "Удалить все пользовательские папки из списка?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self.custom_paths_list.clear()
 
     def _create_api_keys_tab(self):
         """Создает единую вкладку для всех API ключей"""
@@ -577,12 +920,19 @@ class UnifiedSettingsDialog(QDialog):
     
     def _load_settings(self):
         """Загружает настройки из config_qt.json"""
+        # --- 0. Загрузка пользовательских путей PDF ---
+        pdf_search_conf = self.config.get("pdf_search", {})
+        custom_dirs = pdf_search_conf.get("custom_directories", [])
+        self.custom_paths_list.clear()
+        for path in custom_dirs:
+            if path:  # Пропускаем пустые строки
+                self.custom_paths_list.addItem(path)
+        
         # --- 1. Загрузка API ключей ---
         # Сначала из новой централизованной секции
         api_keys = self.config.get("api_keys", {})
         
         # Для обратной совместимости, ищем в старых секциях, если в новой пусто
-        pdf_search_conf = self.config.get("pdf_search", {})
         ai_classifier_conf = self.config.get("ai_classifier", {})
         ai_api_keys = ai_classifier_conf.get("api_keys", {})
         
@@ -617,6 +967,17 @@ class UnifiedSettingsDialog(QDialog):
 
     def _save_all_settings(self):
         """Сохраняет все настройки в config_qt.json"""
+        # --- 0. Сохраняем пользовательские пути PDF ---
+        custom_dirs = []
+        for i in range(self.custom_paths_list.count()):
+            path = self.custom_paths_list.item(i).text()
+            if path:
+                custom_dirs.append(path)
+        
+        if "pdf_search" not in self.config:
+            self.config["pdf_search"] = {}
+        self.config["pdf_search"]["custom_directories"] = custom_dirs
+        
         # --- 1. Сохраняем API ключи в централизованную секцию ---
         self.config["api_keys"] = {
             "anthropic": self.anthropic_key_input.text().strip(),

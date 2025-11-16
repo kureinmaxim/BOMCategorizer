@@ -82,7 +82,7 @@ def load_config() -> dict:
             return json.load(f)
     except Exception:
         # Fallback с актуальной версией
-        return {"app_info": {"version": "4.3.6", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+        return {"app_info": {"version": "4.4.0", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -136,6 +136,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.current_file_multiplier = 1
         self.selected_file_index: Optional[int] = None
         self.processing_dialog_ref = None  # Ссылка на диалог обработки (для плавного перехода)
+        self.last_input_file = None  # Последний добавленный входной файл (для истории БД)
 
         # Сравнение файлов
         self.compare_file1 = ""
@@ -152,12 +153,33 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.current_theme = self.cfg.get("ui", {}).get("theme", "dark")  # "dark" или "light"
 
         # Настройки отображения
-        self.base_font_size = 12
-        self.scale_levels: List[float] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25]
+        # На macOS используем размеры сопоставимые со стандартными приложениями
+        # ВНИМАНИЕ: Глобальный шрифт уже установлен в main(), здесь только для локального использования
+        if platform.system() == 'Darwin':  # macOS
+            # Проверяем, есть ли Retina дисплей (devicePixelRatio >= 2)
+            try:
+                from PySide6.QtGui import QGuiApplication
+                screens = QGuiApplication.screens()
+                if screens and screens[0].devicePixelRatio() >= 2:
+                    # Retina дисплей: 13pt (стандарт для macOS)
+                    self.base_font_size = 13
+                else:
+                    # Обычный дисплей
+                    self.base_font_size = 12
+            except:
+                # Если не удалось определить, используем стандартный размер
+                self.base_font_size = 13
+        else:  # Windows и Linux
+            self.base_font_size = 12
+        
+        self.scale_levels: List[float] = [0.7, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5]
         ui_settings = self.cfg.get("ui", {})
-        self.scale_factor = ui_settings.get("scale_factor", 0.8)  # По умолчанию 80%
+        # Дефолтный scale_factor: 1.0 для всех платформ (можно настроить в меню)
+        default_scale = 1.0 if platform.system() == 'Darwin' else 0.8
+        self.scale_factor = ui_settings.get("scale_factor", default_scale)
         if self.scale_factor not in self.scale_levels:
-            self.scale_factor = 0.8  # По умолчанию 80%
+            # Если значение некорректное, используем дефолт для ОС
+            self.scale_factor = default_scale
 
         self.current_view_mode = ui_settings.get("view_mode", "advanced")
         # Экспертный режим не сохраняется между запусками - всегда возвращаемся к расширенному
@@ -221,9 +243,19 @@ class BOMCategorizerMainWindow(QMainWindow):
     def apply_theme(self):
         """Применяет выбранную тему к приложению"""
         if self.current_theme == "dark":
-            self.setStyleSheet(DARK_THEME)
+            theme_style = DARK_THEME
         else:
-            self.setStyleSheet(LIGHT_THEME)
+            theme_style = LIGHT_THEME
+        
+        # На macOS удаляем все font-size из стилей, чтобы использовались
+        # программно установленные размеры (для правильной работы на Retina)
+        if platform.system() == 'Darwin':  # macOS
+            # Удаляем все строки с font-size из CSS
+            import re
+            # Удаляем font-size: XXpt; из стилей
+            theme_style = re.sub(r'\s*font-size:\s*\d+pt;', '', theme_style)
+        
+        self.setStyleSheet(theme_style)
 
     def toggle_theme(self):
         """Переключает между темной и светлой темой"""
@@ -482,38 +514,46 @@ class BOMCategorizerMainWindow(QMainWindow):
         search_button.clicked.connect(self.on_global_search_triggered)
         self.global_search_input.returnPressed.connect(self.on_global_search_triggered)
         
-        # Глобальный поиск доступен во всех режимах
-        self.global_search_menu.setEnabled(True)
-        self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+        # Глобальный поиск скрыт в простом режиме, виден в расширенном и экспертном
+        is_advanced_or_expert = self.current_view_mode in ["advanced", "expert"]
+        self.global_search_menu.menuAction().setVisible(is_advanced_or_expert)
+        # Поле ввода активируется вместе с меню
+        if is_advanced_or_expert:
+            self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+            self.global_search_input.setEnabled(True)
+        else:
+            self.global_search_input.setEnabled(False)
         
         # Меню "Поиск PDF" (после глобального поиска)
         self.pdf_search_menu = menubar.addMenu("📄 Поиск PDF")
         
-        # Локальный поиск
-        local_pdf_action = QAction("📁 Локальный поиск PDF", self)
-        local_pdf_action.setToolTip("Поиск PDF файлов на компьютере в папках pdf_*, pdfBZ и т.д.")
-        local_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(0))
-        self.pdf_search_menu.addAction(local_pdf_action)
+        # Локальный поиск - доступен всегда
+        self.local_pdf_action = QAction("📁 Локальный поиск PDF", self)
+        self.local_pdf_action.setToolTip("Поиск PDF файлов на компьютере в папках pdf_*, pdfBZ и т.д.")
+        self.local_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(0))
+        self.pdf_search_menu.addAction(self.local_pdf_action)
         
-        # AI поиск
-        ai_pdf_action = QAction("🤖 AI поиск компонента", self)
-        ai_pdf_action.setToolTip("Поиск информации о компоненте через Anthropic Claude или OpenAI GPT")
-        ai_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(1))
-        self.pdf_search_menu.addAction(ai_pdf_action)
+        # AI поиск - только для экспертов после разблокировки
+        self.ai_pdf_action = QAction("🤖 AI поиск компонента", self)
+        self.ai_pdf_action.setToolTip("Поиск информации о компоненте через Anthropic Claude или OpenAI GPT (только экспертный режим после разблокировки)")
+        self.ai_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(1))
+        # Заблокирован до разблокировки приложения
+        self.ai_pdf_action.setEnabled(self.current_view_mode == "expert" and self.unlocked)
+        self.pdf_search_menu.addAction(self.ai_pdf_action)
         
         self.pdf_search_menu.addSeparator()
         
-        # Настройки поиска PDF
-        pdf_settings_action = QAction("⚙️ Настройки API ключей", self)
-        pdf_settings_action.triggered.connect(self.open_pdf_search_settings)
-        self.pdf_search_menu.addAction(pdf_settings_action)
+        # Настройки поиска PDF - только для экспертов после разблокировки
+        self.pdf_settings_action = QAction("⚙️ Настройки API ключей", self)
+        self.pdf_settings_action.setToolTip("Настройка API ключей для AI поиска (только экспертный режим после разблокировки)")
+        self.pdf_settings_action.triggered.connect(self.open_pdf_search_settings)
+        # Заблокирован до разблокировки приложения
+        self.pdf_settings_action.setEnabled(self.current_view_mode == "expert" and self.unlocked)
+        self.pdf_search_menu.addAction(self.pdf_settings_action)
         
-        # Меню PDF видимо всегда, но активно только в экспертном режиме
-        self.pdf_search_menu.setEnabled(self.current_view_mode == "expert")
-        if self.current_view_mode != "expert":
-            self.pdf_search_menu.setToolTip("Поиск PDF доступен только в Экспертном режиме")
-        else:
-            self.pdf_search_menu.setToolTip("Поиск PDF файлов на компьютере и через AI")
+        # Меню PDF доступно всегда (локальный поиск для всех, AI - только для экспертов после разблокировки)
+        self.pdf_search_menu.setEnabled(True)
+        self.pdf_search_menu.setToolTip("Локальный поиск PDF доступен всегда, AI поиск - в экспертном режиме после разблокировки")
 
     def _create_ui(self):
         """Создает элементы интерфейса"""
@@ -570,6 +610,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             for file_path in files:
                 if file_path not in self.input_files:
                     self.input_files[file_path] = 1
+                    self.last_input_file = file_path  # Сохраняем последний добавленный файл
 
             self.update_listbox()
             self.update_output_filename()
@@ -817,7 +858,8 @@ class BOMCategorizerMainWindow(QMainWindow):
     
     def _convert_doc_files_with_word(self, doc_files: list) -> bool:
         """
-        Конвертирует .doc файлы в .docx используя Microsoft Word
+        Конвертирует .doc файлы в .docx используя Microsoft Word (Windows)
+        или LibreOffice (macOS/Linux)
         
         Args:
             doc_files: Список путей к .doc файлам
@@ -825,6 +867,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         Returns:
             True если конвертация успешна
         """
+        # На macOS/Linux используем LibreOffice
+        if platform.system() != 'Windows':
+            return self._convert_doc_with_libreoffice(doc_files)
+        
+        # На Windows используем MS Word
+        # Импортируем win32com только на Windows
         try:
             import win32com.client
         except ImportError:
@@ -977,6 +1025,149 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Останавливаем таймер если пользователь закрыл вручную
         if auto_close_timer.isActive():
             auto_close_timer.stop()
+        
+        return success
+    
+    def _convert_doc_with_libreoffice(self, doc_files: list) -> bool:
+        """
+        Конвертирует .doc файлы в .docx используя LibreOffice (macOS/Linux)
+        
+        Args:
+            doc_files: Список путей к .doc файлам
+            
+        Returns:
+            True если конвертация успешна
+        """
+        # Проверяем наличие LibreOffice
+        libreoffice_paths = [
+            '/Applications/LibreOffice.app/Contents/MacOS/soffice',  # macOS
+            '/usr/bin/libreoffice',  # Linux
+            '/usr/bin/soffice',      # Linux альтернатива
+        ]
+        
+        soffice_path = None
+        for path in libreoffice_paths:
+            if os.path.exists(path):
+                soffice_path = path
+                break
+        
+        if not soffice_path:
+            # LibreOffice не найден
+            reply = QMessageBox.question(
+                self,
+                "LibreOffice не найден",
+                "LibreOffice не установлен на этом компьютере.\n\n"
+                "LibreOffice - это бесплатный офисный пакет,\n"
+                "который может конвертировать .doc в .docx.\n\n"
+                "Хотите скачать LibreOffice?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            
+            if reply == QMessageBox.Yes:
+                # Открываем страницу загрузки
+                import webbrowser
+                webbrowser.open('https://www.libreoffice.org/download/download/')
+            
+            return False
+        
+        # Создаем прогресс-диалог
+        progress_dialog = QDialog(self)
+        progress_dialog.setWindowTitle("Конвертация .doc файлов")
+        progress_dialog.setMinimumSize(600, 400)
+        progress_dialog.setModal(True)
+        
+        layout = QVBoxLayout(progress_dialog)
+        
+        status_label = QLabel("Подготовка...")
+        status_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(status_label)
+        
+        log_text = QTextEdit()
+        log_text.setReadOnly(True)
+        layout.addWidget(log_text)
+        
+        close_btn = QPushButton("Закрыть")
+        close_btn.setEnabled(False)
+        close_btn.clicked.connect(progress_dialog.accept)
+        layout.addWidget(close_btn)
+        
+        progress_dialog.show()
+        QApplication.processEvents()
+        
+        # Конвертация
+        success = True
+        converted_files = []
+        
+        for i, doc_file in enumerate(doc_files, 1):
+            status_label.setText(f"Конвертация {i} из {len(doc_files)}...")
+            log_text.append(f"📄 {os.path.basename(doc_file)}")
+            QApplication.processEvents()
+            
+            try:
+                # Определяем выходной файл
+                docx_file = doc_file[:-4] + '.docx'  # .doc -> .docx
+                
+                # Конвертируем через LibreOffice в headless режиме
+                import subprocess
+                output_dir = os.path.dirname(doc_file)
+                
+                # Команда: soffice --headless --convert-to docx --outdir <dir> <file>
+                cmd = [
+                    soffice_path,
+                    '--headless',
+                    '--convert-to', 'docx',
+                    '--outdir', output_dir,
+                    doc_file
+                ]
+                
+                log_text.append(f"   Запуск конвертации...")
+                QApplication.processEvents()
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=60  # 60 секунд таймаут
+                )
+                
+                if result.returncode == 0 and os.path.exists(docx_file):
+                    log_text.append(f"   ✅ Успешно: {os.path.basename(docx_file)}")
+                    converted_files.append((doc_file, docx_file))
+                    
+                    # Добавляем .docx в список файлов
+                    if doc_file in self.input_files:
+                        count = self.input_files[doc_file]
+                        del self.input_files[doc_file]
+                        self.input_files[docx_file] = count
+                else:
+                    log_text.append(f"   ❌ Ошибка конвертации")
+                    if result.stderr:
+                        log_text.append(f"   {result.stderr[:200]}")
+                    success = False
+                    
+            except subprocess.TimeoutExpired:
+                log_text.append(f"   ❌ Таймаут (файл слишком большой)")
+                success = False
+            except Exception as e:
+                log_text.append(f"   ❌ Ошибка: {str(e)}")
+                success = False
+            
+            QApplication.processEvents()
+        
+        # Обновляем список файлов
+        self.update_listbox()
+        
+        # Финальное сообщение
+        if success:
+            status_label.setText("✅ Конвертация завершена успешно!")
+            log_text.append("\n✅ Все файлы сконвертированы")
+            log_text.append("⏭️  Можно продолжить обработку")
+        else:
+            status_label.setText("⚠️ Конвертация завершена с ошибками")
+            log_text.append("\n⚠️ Некоторые файлы не удалось сконвертировать")
+        
+        close_btn.setEnabled(True)
+        progress_dialog.exec()
         
         return success
 
@@ -1661,7 +1852,7 @@ class BOMCategorizerMainWindow(QMainWindow):
                 save_component_database(
                     db, 
                     action="import_from_file", 
-                    source=os.path.basename(output_file),
+                    source=os.path.abspath(output_file),  # Сохраняем полный путь для истории
                     component_names=added_component_names[:50]  # Первые 50 для истории
                 )
                 progress_text.append(f"✅ База данных обновлена! Добавлено {added_count} новых компонентов.")
@@ -1746,7 +1937,10 @@ class BOMCategorizerMainWindow(QMainWindow):
         """
         from .pdf_search_dialogs import PDFSearchDialog
         
-        dialog = PDFSearchDialog(self, self.cfg)
+        # Передаем информацию о разблокировке и режиме
+        dialog = PDFSearchDialog(self, self.cfg, 
+                                 unlocked=self.unlocked, 
+                                 expert_mode=(self.current_view_mode == "expert"))
         dialog.tabs.setCurrentIndex(tab_index)
         dialog.show()  # Немодальный диалог
     
@@ -2001,8 +2195,15 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.run_action.setEnabled(False)
         if hasattr(self, 'mode_menu'):
             self.mode_menu.setEnabled(False)
-        if hasattr(self, 'global_search_menu'):
-            self.global_search_menu.setEnabled(False)
+        # Глобальный поиск скрывается через видимость в методе переключения режимов
+        if hasattr(self, 'global_search_input'):
+            self.global_search_input.setEnabled(False)
+        
+        # Блокировка AI функций до разблокировки (локальный поиск PDF остается доступным)
+        if hasattr(self, 'ai_pdf_action'):
+            self.ai_pdf_action.setEnabled(False)
+        if hasattr(self, 'pdf_settings_action'):
+            self.pdf_settings_action.setEnabled(False)
 
     def unlock_interface(self):
         """Разблокировка интерфейса"""
@@ -2016,8 +2217,20 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.run_action.setEnabled(True)
         if hasattr(self, 'mode_menu'):
             self.mode_menu.setEnabled(True)
+        
+        # Глобальный поиск виден в расширенном и экспертном режимах
         if hasattr(self, 'global_search_menu'):
-            self.global_search_menu.setEnabled(True)
+            is_advanced_or_expert = self.current_view_mode in ["advanced", "expert"]
+            self.global_search_menu.menuAction().setVisible(is_advanced_or_expert)
+            # Активируем поле ввода только в расширенном/экспертном режимах
+            if hasattr(self, 'global_search_input'):
+                self.global_search_input.setEnabled(is_advanced_or_expert)
+        
+        # AI функции доступны только в экспертном режиме
+        if hasattr(self, 'ai_pdf_action'):
+            self.ai_pdf_action.setEnabled(self.current_view_mode == "expert")
+        if hasattr(self, 'pdf_settings_action'):
+            self.pdf_settings_action.setEnabled(self.current_view_mode == "expert")
         
         self.unlocked = True
 
@@ -2076,7 +2289,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Создаем диалог
             dialog = QDialog(self)
             dialog.setWindowTitle("Статистика базы данных")
-            dialog.resize(600, 500)
+            dialog.resize(650, 550)
             
             layout = QVBoxLayout()
             
@@ -2084,11 +2297,17 @@ class BOMCategorizerMainWindow(QMainWindow):
             text_widget = QTextEdit()
             text_widget.setReadOnly(True)
             text_widget.setPlainText(stats_text)
-            text_widget.setFont(QFont("Consolas", 10))
+            # Крупный фиксированный шрифт для читаемости
+            stats_font = QFont("Menlo" if sys.platform == "darwin" else "Consolas" if sys.platform == "win32" else "Monospace")
+            stats_font.setPointSize(14)
+            text_widget.setFont(stats_font)
             layout.addWidget(text_widget)
             
             # Кнопка закрытия
             close_btn = QPushButton("Закрыть")
+            button_font = QFont()
+            button_font.setPointSize(12)
+            close_btn.setFont(button_font)
             close_btn.clicked.connect(dialog.accept)
             layout.addWidget(close_btn)
             
@@ -2135,8 +2354,8 @@ class BOMCategorizerMainWindow(QMainWindow):
             info_label = QLabel()
             info_label.setProperty("class", "bold")
             
-            # Применяем шрифт на 20% меньше основного scale_factor
-            info_font_size = max(7, int(10 * self.scale_factor * 0.8))
+            # Применяем крупный шрифт для читаемости (базовый 14pt)
+            info_font_size = max(11, int(14 * self.scale_factor))
             info_label.setFont(QFont(get_system_font(), info_font_size))
             
             info_text = f"""
@@ -2157,7 +2376,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Подсказка
             hint_label = QLabel("💡 Дважды кликните на строку с файлом-источником, чтобы открыть его в проводнике")
-            hint_font_size = max(7, int(10 * self.scale_factor * 0.9))
+            hint_font_size = max(11, int(14 * self.scale_factor))
             hint_label.setFont(QFont(get_system_font(), hint_font_size))
             hint_label.setStyleSheet("color: #89b4fa; font-style: italic; padding: 5px;")
             history_layout.addWidget(hint_label)
@@ -2168,11 +2387,14 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.setColumnCount(5)
                 history_table.setHorizontalHeaderLabels(["Версия", "Дата/Время", "Действие", "Источник", "Добавлено"])
                 
-                # Применяем шрифт к таблице - scale_factor
-                table_font_size = max(7, int(11 * self.scale_factor * 1))  #
+                # Применяем крупный шрифт к таблице для читаемости (базовый 14pt)
+                table_font_size = max(13, int(14 * self.scale_factor))
                 table_font = QFont(get_system_font(), table_font_size)
                 history_table.setFont(table_font)
-                history_table.horizontalHeader().setFont(table_font)
+                # Заголовки таблицы чуть крупнее и жирные
+                header_font = QFont(get_system_font(), table_font_size + 2)
+                header_font.setBold(True)
+                history_table.horizontalHeader().setFont(header_font)
                 
                 history_table.horizontalHeader().setStretchLastSection(False)
                 history_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -2184,7 +2406,9 @@ class BOMCategorizerMainWindow(QMainWindow):
                 history_table.horizontalHeader().setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
                 history_table.verticalHeader().setVisible(False)
-                history_table.verticalHeader().setDefaultSectionSize(28)
+                # Увеличенная высота строк для крупных шрифтов (базовая 40px)
+                row_height = max(36, int(40 * self.scale_factor))
+                history_table.verticalHeader().setDefaultSectionSize(row_height)
                 history_table.setAlternatingRowColors(True)
                 history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
                 history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -2259,15 +2483,54 @@ class BOMCategorizerMainWindow(QMainWindow):
                     if source_item:
                         source_path = source_item.text()
                         # Проверяем, что это путь к файлу (не "-" и содержит расширение)
-                        if source_path != '-' and os.path.exists(source_path):
+                        if source_path == '-' or not source_path:
+                            return
+                        
+                        # Если путь абсолютный и существует - открываем
+                        if os.path.isabs(source_path) and os.path.exists(source_path):
                             self.reveal_in_file_manager(source_path, select=True)
-                        elif source_path != '-':
-                            # Если файл не существует, показываем сообщение
-                            QMessageBox.information(
-                                dialog,
-                                "Файл не найден",
-                                f"Файл-источник не найден:\n{source_path}\n\nВозможно, он был перемещен или удален."
-                            )
+                            return
+                        
+                        # Если путь относительный (только имя файла) - пытаемся найти в известных местах
+                        if not os.path.isabs(source_path):
+                            search_locations = [
+                                os.getcwd(),  # Текущая рабочая директория
+                                os.path.expanduser("~/Desktop"),  # Рабочий стол
+                                os.path.expanduser("~/Documents"),  # Документы
+                                os.path.expanduser("~/Downloads"),  # Загрузки
+                            ]
+                            
+                            # Также добавляем папку последнего выбранного файла (если есть)
+                            if hasattr(self, 'last_input_file') and self.last_input_file:
+                                last_dir = os.path.dirname(self.last_input_file)
+                                if last_dir and last_dir not in search_locations:
+                                    search_locations.insert(0, last_dir)
+                            
+                            # Ищем файл в этих папках
+                            found_path = None
+                            for location in search_locations:
+                                potential_path = os.path.join(location, source_path)
+                                if os.path.exists(potential_path):
+                                    found_path = potential_path
+                                    break
+                            
+                            if found_path:
+                                self.reveal_in_file_manager(found_path, select=True)
+                                return
+                        
+                        # Файл не найден нигде
+                        QMessageBox.information(
+                            dialog,
+                            "Файл не найден",
+                            f"Файл-источник не найден:\n{source_path}\n\n"
+                            f"Возможно, он был перемещен или удален.\n\n"
+                            f"Проверенные места:\n"
+                            f"• Абсолютный путь\n"
+                            f"• Текущая директория\n"
+                            f"• Рабочий стол\n"
+                            f"• Документы\n"
+                            f"• Загрузки"
+                        )
                 
                 history_table.doubleClicked.connect(open_source_file)
                 history_layout.addWidget(history_table)
@@ -2281,12 +2544,13 @@ class BOMCategorizerMainWindow(QMainWindow):
             # Кнопки
             button_layout = QHBoxLayout()
             
-            export_btn = QPushButton("📤 Экспорт в Excel")
-            export_btn.clicked.connect(lambda: self.export_database())
-            # Применяем шрифт к кнопкам - на 20% меньше основного scale_factor
-            button_font_size = max(7, int(9 * self.scale_factor * 0.8))
+            # Крупный шрифт для кнопок (базовый 14pt)
+            button_font_size = max(12, int(14 * self.scale_factor))
             button_font = QFont(get_system_font(), button_font_size)
+            
+            export_btn = QPushButton("📤 Экспорт в Excel")
             export_btn.setFont(button_font)
+            export_btn.clicked.connect(lambda: self.export_database())
             button_layout.addWidget(export_btn)
             
             button_layout.addStretch()
@@ -3335,6 +3599,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
                     if ext in supported_extensions:
                         if file_path not in self.input_files:
                             self.input_files[file_path] = 1
+                            self.last_input_file = file_path  # Сохраняем последний добавленный файл
                             files_added += 1
             
             if files_added > 0:
@@ -3566,18 +3831,36 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if self.db_menu is not None:
             self.db_menu.menuAction().setVisible(not simple)
         
-        # PDF поиск и глобальный поиск - видимы всегда, но активны только в экспертном режиме
+        # PDF поиск - меню доступно всегда, но AI функции только для разблокированных экспертов
         if hasattr(self, 'pdf_search_menu') and self.pdf_search_menu is not None:
-            self.pdf_search_menu.setEnabled(expert)
-            if expert:
-                self.pdf_search_menu.setToolTip("Поиск PDF файлов на компьютере и через AI")
-            else:
-                self.pdf_search_menu.setToolTip("Поиск PDF доступен только в Экспертном режиме")
+            # Меню всегда активно (для локального поиска)
+            self.pdf_search_menu.setEnabled(True)
+            self.pdf_search_menu.setToolTip("Локальный поиск PDF доступен всегда, AI поиск - в экспертном режиме после разблокировки")
             
-        # Глобальный поиск доступен во всех режимах
+            # AI поиск и настройки API только для экспертов после разблокировки
+            if hasattr(self, 'ai_pdf_action'):
+                self.ai_pdf_action.setEnabled(expert and self.unlocked)
+            if hasattr(self, 'pdf_settings_action'):
+                self.pdf_settings_action.setEnabled(expert and self.unlocked)
+            
+        # Глобальный поиск виден только в расширенном и экспертном режимах
         if hasattr(self, 'global_search_menu'):
-            self.global_search_menu.setEnabled(True)
-            self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+            is_advanced_or_expert = self.current_view_mode in ["advanced", "expert"]
+            # Скрываем меню в простом режиме
+            self.global_search_menu.menuAction().setVisible(is_advanced_or_expert)
+            
+            # Поле ввода активно только если разблокировано И режим подходящий
+            if hasattr(self, 'global_search_input'):
+                is_input_enabled = is_advanced_or_expert and self.unlocked
+                self.global_search_input.setEnabled(is_input_enabled)
+            
+            # Обновляем tooltip
+            if not self.unlocked:
+                self.global_search_menu.setToolTip("Глобальный поиск доступен после разблокировки")
+            elif is_advanced_or_expert:
+                self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+            else:
+                self.global_search_menu.setToolTip("Глобальный поиск доступен в расширенном и экспертном режимах")
 
         if self.mode_label is not None:
             mode_titles = {
@@ -4057,11 +4340,62 @@ def main():
     # Инициализируем конфигурационные файлы из шаблонов (если их нет)
     initialize_all_configs()
     
+    # Импорты для настройки Qt
+    from PySide6.QtGui import QFont, QGuiApplication
+    
+    # ========== HIGH DPI SUPPORT ДЛЯ MACOS RETINA ==========
+    # Устанавливаем переменные окружения ДО импорта/создания QApplication
+    # Это критично для правильной работы на Retina дисплеях
+    import os as os_env
+    if platform.system() == 'Darwin':  # macOS
+        # Включаем автоматическое масштабирование для Retina
+        os_env.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
+        os_env.environ['QT_ENABLE_HIGHDPI_SCALING'] = '1'
+        # Для Qt 6
+        os_env.environ['QT_SCALE_FACTOR_ROUNDING_POLICY'] = 'PassThrough'
+    
+    # КРИТИЧНО: эти атрибуты должны быть установлены ДО создания QApplication!
+    # Без них на macOS Retina шрифты будут выглядеть в 2 раза меньше
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    
+    # Для Qt 6: используем PassThrough для правильного масштабирования на Retina
+    try:
+        if hasattr(Qt, 'HighDpiScaleFactorRoundingPolicy'):
+            QApplication.setHighDpiScaleFactorRoundingPolicy(
+                Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+            )
+    except Exception:
+        pass  # Для совместимости со старыми версиями Qt
+    # ========================================================
+    
     app = QApplication(sys.argv)
 
     # Устанавливаем имя приложения
     app.setApplicationName("BOM Categorizer")
     app.setOrganizationName("Kurein M.N.")
+
+    # ========== УСТАНОВКА ГЛОБАЛЬНОГО ШРИФТА ДЛЯ MACOS RETINA ==========
+    # Устанавливаем шрифт ДО создания виджетов, чтобы все виджеты
+    # использовали правильный размер с самого начала
+    if platform.system() == 'Darwin':  # macOS
+        # Определяем размер для Retina (сопоставимый с другими macOS приложениями)
+        try:
+            screens = QGuiApplication.screens()
+            if screens and screens[0].devicePixelRatio() >= 2:
+                # Retina: используем 13pt (как в стандартных macOS приложениях)
+                base_size = 13
+            else:
+                base_size = 12
+        except:
+            base_size = 13  # Для надежности
+        
+        # Устанавливаем глобальный шрифт для приложения
+        app_font = QFont(get_system_font(), base_size)
+        app.setFont(app_font)
+        
+        print(f"🔤 macOS: Установлен глобальный шрифт {get_system_font()} размером {base_size}pt")
+    # ==================================================================
 
     # Создаем и показываем главное окно
     window = BOMCategorizerMainWindow()

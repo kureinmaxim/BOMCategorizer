@@ -71,6 +71,7 @@ bom_categorizer_modules = [
     'bom_categorizer/main.py',
     f'bom_categorizer/{gui_module}',
     'bom_categorizer/component_database.py',
+    'bom_categorizer/config_manager.py',  # Для инициализации конфигов из шаблонов
     'bom_categorizer/classifiers.py',
     'bom_categorizer/parsers.py',
     'bom_categorizer/excel_writer.py',
@@ -80,12 +81,28 @@ bom_categorizer_modules = [
     'bom_categorizer/podborka_extractor.py',
 ]
 
-# Добавляем dialogs_qt.py для Modern Edition
+# Добавляем дополнительные модули для Modern Edition
 if dialogs_module:
-    bom_categorizer_modules.append(f'bom_categorizer/{dialogs_module}')
+    bom_categorizer_modules.extend([
+        f'bom_categorizer/{dialogs_module}',
+        'bom_categorizer/gui_scaling_qt.py',
+        'bom_categorizer/gui_sections_qt.py',
+        'bom_categorizer/gui_menu_qt.py',
+        'bom_categorizer/styles.py',
+        'bom_categorizer/workers_qt.py',
+        'bom_categorizer/drag_drop_qt.py',
+        'bom_categorizer/pdf_exporter.py',
+        'bom_categorizer/pdf_search.py',
+        'bom_categorizer/pdf_search_dialogs.py',
+        'bom_categorizer/search_qt.py',
+        'bom_categorizer/search_methods_qt.py',
+        'bom_categorizer/ai_classifier_qt.py',
+        'bom_categorizer/cli_interactive.py',
+    ])
 
 DATA_FILES = [
     ('', [config_file]),
+    ('', ['config.json.template', 'config_qt.json.template']),  # Шаблоны для инициализации
     ('bom_categorizer', bom_categorizer_modules),
 ]
 
