@@ -82,7 +82,7 @@ def load_config() -> dict:
             return json.load(f)
     except Exception:
         # Fallback с актуальной версией
-        return {"app_info": {"version": "4.3.8", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+        return {"app_info": {"version": "4.3.9", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -514,38 +514,46 @@ class BOMCategorizerMainWindow(QMainWindow):
         search_button.clicked.connect(self.on_global_search_triggered)
         self.global_search_input.returnPressed.connect(self.on_global_search_triggered)
         
-        # Глобальный поиск доступен во всех режимах
-        self.global_search_menu.setEnabled(True)
-        self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+        # Глобальный поиск скрыт в простом режиме, виден в расширенном и экспертном
+        is_advanced_or_expert = self.current_view_mode in ["advanced", "expert"]
+        self.global_search_menu.menuAction().setVisible(is_advanced_or_expert)
+        # Поле ввода активируется вместе с меню
+        if is_advanced_or_expert:
+            self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+            self.global_search_input.setEnabled(True)
+        else:
+            self.global_search_input.setEnabled(False)
         
         # Меню "Поиск PDF" (после глобального поиска)
         self.pdf_search_menu = menubar.addMenu("📄 Поиск PDF")
         
-        # Локальный поиск
-        local_pdf_action = QAction("📁 Локальный поиск PDF", self)
-        local_pdf_action.setToolTip("Поиск PDF файлов на компьютере в папках pdf_*, pdfBZ и т.д.")
-        local_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(0))
-        self.pdf_search_menu.addAction(local_pdf_action)
+        # Локальный поиск - доступен всегда
+        self.local_pdf_action = QAction("📁 Локальный поиск PDF", self)
+        self.local_pdf_action.setToolTip("Поиск PDF файлов на компьютере в папках pdf_*, pdfBZ и т.д.")
+        self.local_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(0))
+        self.pdf_search_menu.addAction(self.local_pdf_action)
         
-        # AI поиск
-        ai_pdf_action = QAction("🤖 AI поиск компонента", self)
-        ai_pdf_action.setToolTip("Поиск информации о компоненте через Anthropic Claude или OpenAI GPT")
-        ai_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(1))
-        self.pdf_search_menu.addAction(ai_pdf_action)
+        # AI поиск - только для экспертов после разблокировки
+        self.ai_pdf_action = QAction("🤖 AI поиск компонента", self)
+        self.ai_pdf_action.setToolTip("Поиск информации о компоненте через Anthropic Claude или OpenAI GPT (только экспертный режим после разблокировки)")
+        self.ai_pdf_action.triggered.connect(lambda: self.open_pdf_search_dialog(1))
+        # Заблокирован до разблокировки приложения
+        self.ai_pdf_action.setEnabled(self.current_view_mode == "expert" and self.unlocked)
+        self.pdf_search_menu.addAction(self.ai_pdf_action)
         
         self.pdf_search_menu.addSeparator()
         
-        # Настройки поиска PDF
-        pdf_settings_action = QAction("⚙️ Настройки API ключей", self)
-        pdf_settings_action.triggered.connect(self.open_pdf_search_settings)
-        self.pdf_search_menu.addAction(pdf_settings_action)
+        # Настройки поиска PDF - только для экспертов после разблокировки
+        self.pdf_settings_action = QAction("⚙️ Настройки API ключей", self)
+        self.pdf_settings_action.setToolTip("Настройка API ключей для AI поиска (только экспертный режим после разблокировки)")
+        self.pdf_settings_action.triggered.connect(self.open_pdf_search_settings)
+        # Заблокирован до разблокировки приложения
+        self.pdf_settings_action.setEnabled(self.current_view_mode == "expert" and self.unlocked)
+        self.pdf_search_menu.addAction(self.pdf_settings_action)
         
-        # Меню PDF видимо всегда, но активно только в экспертном режиме
-        self.pdf_search_menu.setEnabled(self.current_view_mode == "expert")
-        if self.current_view_mode != "expert":
-            self.pdf_search_menu.setToolTip("Поиск PDF доступен только в Экспертном режиме")
-        else:
-            self.pdf_search_menu.setToolTip("Поиск PDF файлов на компьютере и через AI")
+        # Меню PDF доступно всегда (локальный поиск для всех, AI - только для экспертов после разблокировки)
+        self.pdf_search_menu.setEnabled(True)
+        self.pdf_search_menu.setToolTip("Локальный поиск PDF доступен всегда, AI поиск - в экспертном режиме после разблокировки")
 
     def _create_ui(self):
         """Создает элементы интерфейса"""
@@ -1929,7 +1937,10 @@ class BOMCategorizerMainWindow(QMainWindow):
         """
         from .pdf_search_dialogs import PDFSearchDialog
         
-        dialog = PDFSearchDialog(self, self.cfg)
+        # Передаем информацию о разблокировке и режиме
+        dialog = PDFSearchDialog(self, self.cfg, 
+                                 unlocked=self.unlocked, 
+                                 expert_mode=(self.current_view_mode == "expert"))
         dialog.tabs.setCurrentIndex(tab_index)
         dialog.show()  # Немодальный диалог
     
@@ -2184,8 +2195,15 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.run_action.setEnabled(False)
         if hasattr(self, 'mode_menu'):
             self.mode_menu.setEnabled(False)
-        if hasattr(self, 'global_search_menu'):
-            self.global_search_menu.setEnabled(False)
+        # Глобальный поиск скрывается через видимость в методе переключения режимов
+        if hasattr(self, 'global_search_input'):
+            self.global_search_input.setEnabled(False)
+        
+        # Блокировка AI функций до разблокировки (локальный поиск PDF остается доступным)
+        if hasattr(self, 'ai_pdf_action'):
+            self.ai_pdf_action.setEnabled(False)
+        if hasattr(self, 'pdf_settings_action'):
+            self.pdf_settings_action.setEnabled(False)
 
     def unlock_interface(self):
         """Разблокировка интерфейса"""
@@ -2199,8 +2217,20 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.run_action.setEnabled(True)
         if hasattr(self, 'mode_menu'):
             self.mode_menu.setEnabled(True)
+        
+        # Глобальный поиск виден в расширенном и экспертном режимах
         if hasattr(self, 'global_search_menu'):
-            self.global_search_menu.setEnabled(True)
+            is_advanced_or_expert = self.current_view_mode in ["advanced", "expert"]
+            self.global_search_menu.menuAction().setVisible(is_advanced_or_expert)
+            # Активируем поле ввода только в расширенном/экспертном режимах
+            if hasattr(self, 'global_search_input'):
+                self.global_search_input.setEnabled(is_advanced_or_expert)
+        
+        # AI функции доступны только в экспертном режиме
+        if hasattr(self, 'ai_pdf_action'):
+            self.ai_pdf_action.setEnabled(self.current_view_mode == "expert")
+        if hasattr(self, 'pdf_settings_action'):
+            self.pdf_settings_action.setEnabled(self.current_view_mode == "expert")
         
         self.unlocked = True
 
@@ -3790,18 +3820,36 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if self.db_menu is not None:
             self.db_menu.menuAction().setVisible(not simple)
         
-        # PDF поиск и глобальный поиск - видимы всегда, но активны только в экспертном режиме
+        # PDF поиск - меню доступно всегда, но AI функции только для разблокированных экспертов
         if hasattr(self, 'pdf_search_menu') and self.pdf_search_menu is not None:
-            self.pdf_search_menu.setEnabled(expert)
-            if expert:
-                self.pdf_search_menu.setToolTip("Поиск PDF файлов на компьютере и через AI")
-            else:
-                self.pdf_search_menu.setToolTip("Поиск PDF доступен только в Экспертном режиме")
+            # Меню всегда активно (для локального поиска)
+            self.pdf_search_menu.setEnabled(True)
+            self.pdf_search_menu.setToolTip("Локальный поиск PDF доступен всегда, AI поиск - в экспертном режиме после разблокировки")
             
-        # Глобальный поиск доступен во всех режимах
+            # AI поиск и настройки API только для экспертов после разблокировки
+            if hasattr(self, 'ai_pdf_action'):
+                self.ai_pdf_action.setEnabled(expert and self.unlocked)
+            if hasattr(self, 'pdf_settings_action'):
+                self.pdf_settings_action.setEnabled(expert and self.unlocked)
+            
+        # Глобальный поиск виден только в расширенном и экспертном режимах
         if hasattr(self, 'global_search_menu'):
-            self.global_search_menu.setEnabled(True)
-            self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+            is_advanced_or_expert = self.current_view_mode in ["advanced", "expert"]
+            # Скрываем меню в простом режиме
+            self.global_search_menu.menuAction().setVisible(is_advanced_or_expert)
+            
+            # Поле ввода активно только если разблокировано И режим подходящий
+            if hasattr(self, 'global_search_input'):
+                is_input_enabled = is_advanced_or_expert and self.unlocked
+                self.global_search_input.setEnabled(is_input_enabled)
+            
+            # Обновляем tooltip
+            if not self.unlocked:
+                self.global_search_menu.setToolTip("Глобальный поиск доступен после разблокировки")
+            elif is_advanced_or_expert:
+                self.global_search_menu.setToolTip("Глобальный поиск по базе данных и файлам")
+            else:
+                self.global_search_menu.setToolTip("Глобальный поиск доступен в расширенном и экспертном режимах")
 
         if self.mode_label is not None:
             mode_titles = {

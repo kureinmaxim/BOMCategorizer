@@ -22,10 +22,12 @@ from PySide6.QtGui import QFont, QTextCursor
 class PDFSearchDialog(QDialog):
     """Главный диалог поиска PDF"""
     
-    def __init__(self, parent, config: dict):
+    def __init__(self, parent, config: dict, unlocked: bool = True, expert_mode: bool = True):
         super().__init__(parent)
         self.parent_window = parent
         self.config = config
+        self.unlocked = unlocked
+        self.expert_mode = expert_mode
         
         self.setWindowTitle("🔍 Поиск PDF документации")
         self.setModal(False)
@@ -58,22 +60,45 @@ class PDFSearchDialog(QDialog):
         # Вкладки для разных типов поиска
         self.tabs = QTabWidget()
         
-        # Вкладка локального поиска
+        # Вкладка локального поиска - доступна всегда
         self.local_tab = self._create_local_tab()
         self.tabs.addTab(self.local_tab, "📁 Локальный поиск")
         
-        # Вкладка AI поиска
-        self.ai_tab = self._create_ai_tab()
-        self.tabs.addTab(self.ai_tab, "🤖 AI поиск")
+        # Вкладка AI поиска - только для разблокированных экспертов
+        if self.unlocked and self.expert_mode:
+            self.ai_tab = self._create_ai_tab()
+            self.tabs.addTab(self.ai_tab, "🤖 AI поиск")
+        else:
+            # Создаем заглушку для AI вкладки
+            self.ai_tab = QWidget()
+            ai_layout = QVBoxLayout(self.ai_tab)
+            ai_layout.addStretch()
+            
+            lock_label = QLabel("🔒 AI поиск доступен только в экспертном режиме после разблокировки приложения")
+            lock_label.setAlignment(Qt.AlignCenter)
+            lock_label.setStyleSheet("color: #f38ba8; font-size: 14pt; font-weight: bold;")
+            ai_layout.addWidget(lock_label)
+            
+            hint_label = QLabel("Дважды кликните на имя разработчика для разблокировки")
+            hint_label.setAlignment(Qt.AlignCenter)
+            hint_label.setStyleSheet("color: #cdd6f4; font-size: 12pt;")
+            ai_layout.addWidget(hint_label)
+            
+            ai_layout.addStretch()
+            self.tabs.addTab(self.ai_tab, "🔒 AI поиск")
+            # Отключаем вкладку
+            self.tabs.setTabEnabled(1, False)
         
         layout.addWidget(self.tabs)
         
         # Кнопки
         button_layout = QHBoxLayout()
         
-        settings_btn = QPushButton("⚙️ Настройки")
-        settings_btn.clicked.connect(self.open_settings)
-        button_layout.addWidget(settings_btn)
+        # Кнопка настроек - только для разблокированных экспертов
+        if self.unlocked and self.expert_mode:
+            settings_btn = QPushButton("⚙️ Настройки")
+            settings_btn.clicked.connect(self.open_settings)
+            button_layout.addWidget(settings_btn)
         
         button_layout.addStretch()
         
@@ -178,8 +203,16 @@ class PDFSearchDialog(QDialog):
         
         if current_tab == 0:  # Локальный поиск
             self.run_local_search(query)
-        else:  # AI поиск
+        elif self.unlocked and self.expert_mode:  # AI поиск - только для разблокированных экспертов
             self.run_ai_search(query)
+        else:
+            # Вкладка AI заблокирована
+            QMessageBox.information(
+                self,
+                "AI поиск недоступен",
+                "AI поиск доступен только в экспертном режиме после разблокировки приложения.\n\n"
+                "Дважды кликните на имя разработчика для разблокировки."
+            )
     
     def run_local_search(self, query: str):
         """Выполняет локальный поиск"""
@@ -392,6 +425,13 @@ class PDFSearchDialog(QDialog):
     
     def save_ai_results(self):
         """Сохраняет результаты AI поиска"""
+        # Проверка доступности (только для разблокированных экспертов)
+        if not (self.unlocked and self.expert_mode):
+            return
+        
+        if not hasattr(self, 'ai_results_browser'):
+            return
+        
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Сохранить результаты",
@@ -407,6 +447,16 @@ class PDFSearchDialog(QDialog):
     
     def open_settings(self):
         """Открывает настройки"""
+        # Проверка доступности (настройки только для разблокированных экспертов)
+        if not (self.unlocked and self.expert_mode):
+            QMessageBox.information(
+                self,
+                "Настройки недоступны",
+                "Настройки API доступны только в экспертном режиме после разблокировки приложения.\n\n"
+                "Дважды кликните на имя разработчика для разблокировки."
+            )
+            return
+        
         dialog = PDFSearchSettingsDialog(self, self.config)
         if dialog.exec() == QDialog.Accepted:
             # Обновляем конфиг
