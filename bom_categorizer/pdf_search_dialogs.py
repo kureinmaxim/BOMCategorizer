@@ -429,12 +429,22 @@ class PDFSearchDialog(QDialog):
         from .pdf_search import get_default_pdf_directories
         
         self.search_dirs_list.clear()
-        dirs = get_default_pdf_directories(self.config)
         
-        for directory in dirs:
+        # Получаем пользовательские папки из конфига
+        custom_dirs_from_config = self.config.get("pdf_search", {}).get("custom_directories", [])
+        
+        # Получаем все папки (включая пользовательские)
+        all_dirs = get_default_pdf_directories(self.config)
+        
+        for directory in all_dirs:
             if os.path.exists(directory):
+                # Проверяем, это пользовательская папка или системная
+                is_custom = directory in custom_dirs_from_config
+                
                 # Добавляем иконку в зависимости от типа папки
-                if "pdf" in os.path.basename(directory).lower():
+                if is_custom:
+                    icon = "👤"  # Пользовательская папка
+                elif "pdf" in os.path.basename(directory).lower():
                     icon = "📄"
                 elif "Project" in directory:
                     icon = "📁"
@@ -446,7 +456,15 @@ class PDFSearchDialog(QDialog):
                 item_text = f"{icon} {directory}"
                 item = QListWidgetItem(item_text)
                 item.setData(Qt.UserRole, directory)
-                item.setToolTip(directory)
+                item.setData(Qt.UserRole + 1, is_custom)  # Флаг: пользовательская папка
+                
+                tooltip = directory
+                if is_custom:
+                    tooltip += "\n(Пользовательская папка)"
+                else:
+                    tooltip += "\n(Системная папка по умолчанию)"
+                item.setToolTip(tooltip)
+                
                 self.search_dirs_list.addItem(item)
         
         # Если список пустой, показываем предупреждение
@@ -476,11 +494,12 @@ class PDFSearchDialog(QDialog):
                     )
                     return
             
-            # Добавляем новую папку
-            item_text = f"➕ {folder}"
+            # Добавляем новую пользовательскую папку
+            item_text = f"👤 {folder}"
             item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, folder)
-            item.setToolTip(f"{folder}\n(временно добавлена)")
+            item.setData(Qt.UserRole + 1, True)  # Помечаем как пользовательскую
+            item.setToolTip(f"{folder}\n(Пользовательская папка - временно)")
             self.search_dirs_list.addItem(item)
     
     def remove_search_directory(self):
@@ -509,24 +528,19 @@ class PDFSearchDialog(QDialog):
             self._load_default_search_dirs()
     
     def save_search_dirs_to_config(self):
-        """Сохраняет текущие папки в config_qt.json"""
-        # Собираем все папки из списка
+        """Сохраняет ТОЛЬКО пользовательские папки в config_qt.json"""
+        # Собираем ТОЛЬКО пользовательские папки (с флагом is_custom = True)
         custom_dirs = []
+        
         for i in range(self.search_dirs_list.count()):
             item = self.search_dirs_list.item(i)
             path = item.data(Qt.UserRole)
-            if path and os.path.exists(path):
+            is_custom = item.data(Qt.UserRole + 1)  # Флаг пользовательской папки
+            
+            if path and os.path.exists(path) and is_custom:
                 custom_dirs.append(path)
         
-        if not custom_dirs:
-            QMessageBox.warning(
-                self,
-                "Предупреждение",
-                "Список папок пуст! Добавьте хотя бы одну папку."
-            )
-            return
-        
-        # Сохраняем в конфиг
+        # Обновляем конфиг
         if "pdf_search" not in self.config:
             self.config["pdf_search"] = {}
         self.config["pdf_search"]["custom_directories"] = custom_dirs
@@ -537,14 +551,21 @@ class PDFSearchDialog(QDialog):
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
             
-            QMessageBox.information(
-                self,
-                "Успех",
-                f"✅ Сохранено {len(custom_dirs)} папок в config_qt.json\n\n"
-                "Эти папки будут использоваться по умолчанию при следующем запуске."
-            )
+            # Формируем сообщение
+            if custom_dirs:
+                msg = (f"✅ Сохранено {len(custom_dirs)} пользовательских папок в config_qt.json\n\n"
+                       "Папки:\n" + "\n".join([f"  👤 {os.path.basename(d)}" for d in custom_dirs[:5]]) + 
+                       (f"\n  ... и еще {len(custom_dirs) - 5}" if len(custom_dirs) > 5 else "") +
+                       "\n\nСистемные папки (💾 📄 📁) не сохраняются - "
+                       "они используются автоматически.")
+            else:
+                msg = ("⚠️ Нет пользовательских папок для сохранения\n\n"
+                       "Добавьте папки кнопкой ➕ - они будут помечены иконкой 👤\n"
+                       "Системные папки (💾 📄 📁) сохранять не нужно.")
             
-            # Перезагружаем список
+            QMessageBox.information(self, "Сохранено", msg)
+            
+            # Перезагружаем список, чтобы показать обновленные данные
             self._load_default_search_dirs()
             
         except Exception as e:
