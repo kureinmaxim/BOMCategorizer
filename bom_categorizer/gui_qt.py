@@ -129,7 +129,7 @@ def load_config() -> dict:
             pass
     
     # Fallback с актуальной версией
-    return {"app_info": {"version": "4.4.1", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+    return {"app_info": {"version": "4.4.2", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -235,6 +235,13 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Проверка на корректность режима
         if self.current_view_mode not in ("simple", "advanced", "expert"):
             self.current_view_mode = "advanced"
+
+        # Сохраняем предпочтение пользователя, но при требовании PIN блокируем доступ к продвинутым режимам
+        self.preferred_view_mode = self.current_view_mode
+        self.pin_forced_simple = False
+        if self.require_pin and self.preferred_view_mode != "simple":
+            self.pin_forced_simple = True
+            self.current_view_mode = "simple"
 
         # Дополнительные опции отображения
         self.log_with_timestamps = bool(ui_settings.get("log_timestamps", False)) if self.current_view_mode == "expert" else False
@@ -421,6 +428,9 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.mode_menu.addAction(action)
             mode_group.addAction(action)
             self.view_mode_actions[key] = action
+
+        # Ограничиваем доступ к режимам до ввода PIN
+        self.update_mode_action_permissions()
 
         view_menu.addSeparator()
 
@@ -2265,55 +2275,22 @@ class BOMCategorizerMainWindow(QMainWindow):
         pass
 
     def lock_interface(self):
-        """Блокировка интерфейса"""
-        for widget in self.lockable_widgets:
-            widget.setEnabled(False)
-        
-        # Блокировка элементов меню до ввода PIN
-        if hasattr(self, 'open_action'):
-            self.open_action.setEnabled(False)
-        if hasattr(self, 'run_action'):
-            self.run_action.setEnabled(False)
-        if hasattr(self, 'mode_menu'):
-            self.mode_menu.setEnabled(False)
-        # Глобальный поиск скрывается через видимость в методе переключения режимов
-        if hasattr(self, 'global_search_input'):
-            self.global_search_input.setEnabled(False)
-        
-        # Блокировка AI функций до разблокировки (локальный поиск PDF остается доступным)
-        if hasattr(self, 'ai_pdf_action'):
-            self.ai_pdf_action.setEnabled(False)
-        if hasattr(self, 'pdf_settings_action'):
-            self.pdf_settings_action.setEnabled(False)
+        """Ограничивает доступ к расширенным режимам до ввода PIN"""
+        self.unlocked = False
+        self.update_mode_action_permissions()
+        self.apply_view_mode(initial=True)
 
     def unlock_interface(self):
         """Разблокировка интерфейса"""
-        for widget in self.lockable_widgets:
-            widget.setEnabled(True)
-        
-        # Разблокировка элементов меню после ввода PIN
-        if hasattr(self, 'open_action'):
-            self.open_action.setEnabled(True)
-        if hasattr(self, 'run_action'):
-            self.run_action.setEnabled(True)
-        if hasattr(self, 'mode_menu'):
-            self.mode_menu.setEnabled(True)
-        
-        # Глобальный поиск виден в расширенном и экспертном режимах
-        if hasattr(self, 'global_search_menu'):
-            is_advanced_or_expert = self.current_view_mode in ["advanced", "expert"]
-            self.global_search_menu.menuAction().setVisible(is_advanced_or_expert)
-            # Активируем поле ввода только в расширенном/экспертном режимах
-            if hasattr(self, 'global_search_input'):
-                self.global_search_input.setEnabled(is_advanced_or_expert)
-        
-        # AI функции доступны только в экспертном режиме
-        if hasattr(self, 'ai_pdf_action'):
-            self.ai_pdf_action.setEnabled(self.current_view_mode == "expert")
-        if hasattr(self, 'pdf_settings_action'):
-            self.pdf_settings_action.setEnabled(self.current_view_mode == "expert")
-        
         self.unlocked = True
+        self.update_mode_action_permissions()
+        self.apply_view_mode(initial=True)
+
+        # После разблокировки автоматически возвращаем сохраненный режим пользователя
+        if self.pin_forced_simple and self.preferred_view_mode != "simple":
+            preferred = self.preferred_view_mode
+            self.pin_forced_simple = False
+            self.set_view_mode(preferred)
 
     def resizeEvent(self, event):
         """Обработка изменения размера окна"""
@@ -3887,8 +3864,42 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             action.setChecked(key == self.current_view_mode)
             action.blockSignals(blocked)
 
+    def update_mode_action_permissions(self):
+        """Обновляет доступность пунктов меню смены режима"""
+        if not self.view_mode_actions:
+            return
+
+        locked = self.require_pin and not self.unlocked
+
+        for key, action in self.view_mode_actions.items():
+            if action is None:
+                continue
+            if key == "simple":
+                action.setEnabled(True)
+                action.setToolTip("")
+            else:
+                action.setEnabled(not locked)
+                if locked:
+                    action.setToolTip("Доступно после ввода PIN-кода")
+                else:
+                    action.setToolTip("")
+
+        if self.mode_menu is not None:
+            if locked:
+                self.mode_menu.setToolTip("Для переключения режимов введите PIN на панели разработчика")
+            else:
+                self.mode_menu.setToolTip("")
+
     def set_view_mode(self, mode: str):
         if mode not in ("simple", "advanced", "expert"):
+            return
+        if self.require_pin and not self.unlocked and mode != "simple":
+            QMessageBox.information(
+                self,
+                "Требуется PIN",
+                "Переключение в расширенный или экспертный режим доступно после ввода PIN-кода."
+            )
+            self.update_view_mode_actions()
             return
         if mode == self.current_view_mode:
             self.update_view_mode_actions()
@@ -3969,6 +3980,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             self.auto_open_output_checkbox.setChecked(self.auto_open_output if expert else False)
             self.auto_open_output_checkbox.blockSignals(False)
 
+        self.update_mode_action_permissions()
         self.update_view_mode_actions()
 
         if not initial:

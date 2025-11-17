@@ -32,7 +32,7 @@ class PDFSearchDialog(QDialog):
         
         self.setWindowTitle("🔍 Поиск PDF документации")
         self.setModal(False)
-        self.resize(900, 700)
+        self.resize(730, 900)  # Увеличена ширина на 30% (900 -> 1170)
         
         self._create_ui()
         
@@ -115,13 +115,15 @@ class PDFSearchDialog(QDialog):
         layout = QVBoxLayout(widget)
         
         # Папки для поиска
-        path_group = QGroupBox("📂 Папки для поиска (поиск рекурсивно во всех)")
+        path_group = QGroupBox("📂 Папки для поиска (рекурсивно)")
         path_layout = QVBoxLayout()
         
         # Список папок
         self.search_dirs_list = QListWidget()
-        self.search_dirs_list.setMaximumHeight(120)
-        self.search_dirs_list.setToolTip("Список папок, в которых будет выполняться поиск PDF файлов")
+        self.search_dirs_list.setMaximumHeight(156)  # Увеличено на 30% (120 -> 156)
+        self.search_dirs_list.setToolTip("Список папок, в которых будет выполняться поиск PDF файлов\nДвойной клик по пути откроет папку в проводнике")
+        # Обработчик двойного клика для открытия папки в проводнике
+        self.search_dirs_list.itemDoubleClicked.connect(self.open_search_directory)
         path_layout.addWidget(self.search_dirs_list)
         
         # Кнопки управления путями
@@ -162,6 +164,7 @@ class PDFSearchDialog(QDialog):
         layout.addWidget(results_label)
         
         self.local_results_list = QListWidget()
+        self.local_results_list.setMinimumHeight(200)  # Увеличена минимальная высота для результатов
         self.local_results_list.itemDoubleClicked.connect(self.open_local_file)
         layout.addWidget(self.local_results_list)
         
@@ -633,6 +636,18 @@ class PDFSearchDialog(QDialog):
             folder = os.path.dirname(file_path)
             self._open_file_in_system(folder)
     
+    def open_search_directory(self, item: QListWidgetItem):
+        """Открывает папку из списка поиска в проводнике/файловом менеджере"""
+        directory = item.data(Qt.UserRole)
+        if directory and os.path.exists(directory) and os.path.isdir(directory):
+            self._open_file_in_system(directory)
+        else:
+            QMessageBox.warning(
+                self,
+                "Ошибка",
+                f"Папка не найдена или недоступна:\n{directory}"
+            )
+    
     def _open_file_in_system(self, path: str):
         """Открывает файл или папку в системном приложении"""
         try:
@@ -698,7 +713,7 @@ class UnifiedSettingsDialog(QDialog):
         
         self.setWindowTitle("⚙️ Настройки API и AI")
         self.setModal(True)
-        self.resize(700, 550)
+        self.resize(730, 550)
         
         self._create_ui()
         self._load_settings()
