@@ -83,6 +83,19 @@ git push origin v4.4.2
 5. Перетащите файл `BOMCategorizerModernSetup.exe` в область "Attach binaries"
 6. Нажмите "Publish release"
 
+## Загрузка файла в существующий релиз
+
+Если релиз уже существует, используйте скрипт `upload_to_existing_release.ps1`:
+
+```powershell
+.\upload_to_existing_release.ps1 -Token "ваш_токен"
+```
+
+Этот скрипт:
+- Найдёт существующий релиз
+- Удалит старый файл установщика (если есть)
+- Загрузит новый файл `BOMCategorizerModernSetup.exe`
+
 ## Устранение проблем
 
 ### Ошибка: "File not found"
@@ -94,9 +107,11 @@ git push origin v4.4.2
 - Убедитесь, что токен имеет права `repo`
 - Токен мог истечь — создайте новый
 
-### Ошибка: "Release already exists"
-- Релиз с таким тегом уже существует
-- Удалите старый релиз на GitHub или используйте другую версию
+### Ошибка: "Release already exists" (422 Unprocessable Entity)
+- Релиз с таким тегом уже существует на GitHub
+- **Решение 1:** Используйте скрипт `upload_to_existing_release.ps1` для загрузки файла в существующий релиз
+- **Решение 2:** Удалите старый релиз на https://github.com/kureinmaxim/BOMCategorizer/releases и создайте новый
+- **Решение 3:** Обновите релиз вручную через веб-интерфейс (см. "Альтернативный способ" выше)
 
 ### Ошибка: "Tag not found"
 - Создайте и отправьте тег на GitHub перед созданием релиза:
