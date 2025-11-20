@@ -302,6 +302,9 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         
         result_df[desc_col_name] = [item[0] for item in cleaned_data]
     
+    # НЕ удаляем артикулы модулей! Каждый модуль с уникальным артикулом - отдельная строка
+    # Группировка будет только для ПОЛНОСТЬЮ ОДИНАКОВЫХ модулей
+    
     # НЕ добавляем префиксы категорий, так как clean_component_name уже удалил их
     # Компоненты должны остаться в своем "чистом" виде
     # Например: "МАТРИЦА ТРАНЗИСТОРНАЯ 1НТ251" остается как есть
@@ -323,36 +326,85 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         desc_idx = list(result_df.columns).index(desc_col_name)
         result_df.insert(desc_idx + 1, 'ТУ', tu_data)
     
-    if not has_primechanie_column and cleaned_data:
-        component_types = [item[2] for item in cleaned_data]
-        
-        # Определить стандартный тип для категории
-        category_standard_types = {
-            'Резисторы': 'Резистор',
-            'Конденсаторы': 'Конденсатор',
-            'Индуктивности': 'Дроссель',
-            'Микросхемы': 'Микросхема',
-            'Разъемы': 'Разъем',
-            'Полупроводники': '',  # Нет стандартного типа
-        }
-        
-        standard_type = category_standard_types.get(sheet_name, '')
-        
-        # Если тип компонента совпадает со стандартным - оставляем пустую ячейку
-        primechanie = []
-        for comp_type in component_types:
-            if not comp_type or comp_type == standard_type:
-                primechanie.append('')  # Пустая ячейка вместо прочерка
-            else:
-                primechanie.append(comp_type)
-        
-        # Найти позицию после ТУ
-        if 'ТУ' in result_df.columns:
-            tu_idx = list(result_df.columns).index('ТУ')
-            result_df.insert(tu_idx + 1, 'Примечание', primechanie)
+    if not has_primechanie_column:
+        # Для модулей питания используем reference в качестве Примечания
+        if sheet_name == 'Модули питания' and 'reference' in result_df.columns:
+            # Копируем reference в Примечание
+            primechanie = result_df['reference'].tolist()
+        elif cleaned_data:
+            component_types = [item[2] for item in cleaned_data]
+            
+            # Определить стандартный тип для категории
+            category_standard_types = {
+                'Резисторы': 'Резистор',
+                'Конденсаторы': 'Конденсатор',
+                'Индуктивности': 'Дроссель',
+                'Микросхемы': 'Микросхема',
+                'Разъемы': 'Разъем',
+                'Полупроводники': '',  # Нет стандартного типа
+            }
+            
+            standard_type = category_standard_types.get(sheet_name, '')
+            
+            # Если тип компонента совпадает со стандартным - оставляем пустую ячейку
+            primechanie = []
+            for comp_type in component_types:
+                if not comp_type or comp_type == standard_type:
+                    primechanie.append('')  # Пустая ячейка вместо прочерка
+                else:
+                    primechanie.append(comp_type)
         else:
-            desc_idx = list(result_df.columns).index(desc_col_name)
-            result_df.insert(desc_idx + 1, 'Примечание', primechanie)
+            primechanie = []
+        
+        # Вставить колонку Примечание, если есть данные
+        if primechanie:
+            # Найти позицию после ТУ
+            if 'ТУ' in result_df.columns:
+                tu_idx = list(result_df.columns).index('ТУ')
+                result_df.insert(tu_idx + 1, 'Примечание', primechanie)
+            else:
+                desc_idx = list(result_df.columns).index(desc_col_name)
+                result_df.insert(desc_idx + 1, 'Примечание', primechanie)
+    
+    # ГРУППИРОВКА: Группируем ТОЛЬКО полностью одинаковые компоненты
+    # (название + ТУ должны совпадать полностью, включая артикулы)
+    if desc_col_name in result_df.columns:
+        # Определяем колонки для группировки
+        group_cols = [desc_col_name, 'ТУ']
+        
+        # Находим колонку с quantity и примечанием
+        qty_col = find_column(['шт.', 'qty', 'quantity', '_merged_qty_'], result_df.columns)
+        # ВАЖНО: сначала ищем "Примечание", а не "reference"
+        ref_col = None
+        for col_name in ['Примечание', 'примечание']:
+            if col_name in result_df.columns:
+                ref_col = col_name
+                break
+        if not ref_col:
+            ref_col = find_column(['reference'], result_df.columns)
+        
+        if qty_col and ref_col:
+            # Проверяем, есть ли дубликаты для группировки
+            duplicates_mask = result_df.duplicated(subset=group_cols, keep=False)
+            if duplicates_mask.any():
+                # Агрегация: сумма для quantity, объединение для reference/Примечание
+                agg_dict = {
+                    qty_col: 'sum',
+                    ref_col: lambda x: ', '.join([str(v) for v in x if pd.notna(v) and str(v).strip()])
+                }
+                
+                # Добавляем все остальные колонки (берём первое значение)
+                # НО для 'reference' тоже применяем объединение (если не совпадает с ref_col)
+                for col in result_df.columns:
+                    if col not in group_cols and col not in [qty_col, ref_col]:
+                        # Если это 'reference' и он НЕ используется как ref_col, тоже объединяем
+                        if col == 'reference' and col != ref_col:
+                            agg_dict[col] = lambda x: ', '.join([str(v) for v in x if pd.notna(v) and str(v).strip()])
+                        else:
+                            agg_dict[col] = 'first'
+                
+                # Группируем
+                result_df = result_df.groupby(group_cols, as_index=False, dropna=False).agg(agg_dict)
     
     # Сортировка зависит от категории
     if sheet_name in ['Конденсаторы', 'Дроссели', 'Резисторы', 'Индуктивности']:

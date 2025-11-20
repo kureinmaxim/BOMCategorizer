@@ -97,9 +97,11 @@ def clean_component_name(original_text: str, note: str = "") -> str:
                 removed_prefix = comp_type
                 break
             
-            # Случай 2: ДРОССЕЛЬ или ИНДУКТИВНОСТЬ с прилагательным
+            # Случай 2: ДРОССЕЛЬ или ИНДУКТИВНОСТЬ - ВСЕГДА сохраняем префикс!
             if comp_type in ('ДРОССЕЛЬ', 'ИНДУКТИВНОСТЬ'):
                 remaining = text[len(comp_type):].strip()
+                prefix_capitalized = comp_type[0] + comp_type[1:].lower()
+                
                 # Проверяем первое слово после префикса
                 first_word_match = re.match(r'([а-яА-ЯёЁ]+)', remaining)
                 if first_word_match:
@@ -107,18 +109,21 @@ def clean_component_name(original_text: str, note: str = "") -> str:
                     # Список типичных прилагательных для дросселей/индуктивностей
                     adjectives = ['высокочастотный', 'низкочастотный', 'переменный', 
                                   'постоянный', 'регулируемый', 'мощный', 'малогабаритный']
-                    # Также проверяем окончание на -ный, -ой
+                    # Если есть прилагательное, нормализуем его регистр
                     if first_word in adjectives or first_word.endswith(('ный', 'ной')):
-                        # Сохраняем "Дроссель [прилагательное]" с нормализацией регистра
                         # "ДРОССЕЛЬ ВЫСОКОЧАСТОТНЫЙ ДМ-3-10" → "Дроссель высокочастотный ДМ-3-10"
-                        prefix_capitalized = comp_type[0] + comp_type[1:].lower()
-                        # Нормализуем регистр прилагательного
                         adj_end_pos = first_word_match.end()
                         adjective_normalized = first_word.lower()
                         rest = remaining[adj_end_pos:].strip()
                         text = f"{prefix_capitalized} {adjective_normalized} {rest}"
                         removed_prefix = comp_type
                         break
+                
+                # Нет прилагательного, но префикс СОХРАНЯЕМ
+                # "ДРОССЕЛЬ ДФК7,5-2Р/1,5" → "Дроссель ДФК7,5-2Р/1,5"
+                text = f"{prefix_capitalized} {remaining}"
+                removed_prefix = comp_type
+                break
             
             # Случай 3: Обычные префиксы (РЕЗИСТОР, КОНДЕНСАТОР и т.д.) - удаляем
             text = text[len(comp_type):].strip()
@@ -296,11 +301,13 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
         # Паттерн "ТУ 6329-019-07614320-99" - когда ТУ идет с пробелом перед цифрами
         # ВАЖНО: Этот паттерн должен быть ПЕРВЫМ, чтобы не спутать с другими
         (r'(ТУ\s+[\d\-\/]+)', re.IGNORECASE),                                            # ТУ 6329-019-07614320-99, ТУ 1234-567-89/02
+        # Цифра + буквы + точка (например, 1Х3.438.000ТУ) — СТАВИМ ДО контейнеров с буквенным префиксом!
+        (r'(\d+\s*[А-ЯЁа-яё]+\s*\d+\.\d+[\d\.\-\/А-ЯЁа-яёA-Za-z]*\s*ТУ[\d\.\-\/А-ЯЁа-яёA-Za-z]*)', re.IGNORECASE),
         # Буквенно-цифровые коды с точками (начинающиеся с букв или цифр)
         # Добавлено [\d\.\-\/А-ЯЁа-яёA-Za-z]* для захвата /02, /Д6 и т.д.
         (r'([А-ЯЁа-яё]{2,}\.\d+[\d\.\-\/А-ЯЁа-яёA-Za-z]*\s*ТУ[\d\.\-\/А-ЯЁа-яёA-Za-z]*)', re.IGNORECASE),        # АЛЯР.434110.005ТУ, дР3.362.029-01ТУ/02
         (r'([А-ЯЁа-яё]{1,2}\d+\.\d+[\d\.\-\/А-ЯЁа-яёA-Za-z]*\s*ТУ[\d\.\-\/А-ЯЁа-яёA-Za-z]*)', re.IGNORECASE),    # И93.456.000ТУ/02
-        (r'(\d+[А-ЯЁа-яё]+\d+\.\d+[\d\.\-\/А-ЯЁа-яёA-Za-z]*\s*ТУ[\d\.\-\/А-ЯЁа-яёA-Za-z]*)', re.IGNORECASE),     # 1Х3.438.000ТУ/Д6
+        (r'(\d+[А-ЯЁа-яё]+\d+\.\d+[\d\.\-\/А-ЯЁа-яёA-Za-z]*\s*ТУ[\d\.\-\/А-ЯЁа-яёA-Za-z]*)', re.IGNORECASE),     # 1Х3.438.000ТУ/Д6 (fallback без пробелов)
         (r'([А-ЯЁа-яё]{2,}[\d\.\-\/А-ЯЁа-яёA-Za-z]+\s*ТУ[\d\.\-\/А-ЯЁа-яёA-Za-z]*)', re.IGNORECASE),             # ШКАБ434110002ТУ, АЕЯР431200424-07ТУ/02
         (r'(\d+[А-ЯЁа-яё]+[\d\.\-\/А-ЯЁа-яёA-Za-z]+\s*ТУ[\d\.\-\/А-ЯЁа-яёA-Za-z]*)', re.IGNORECASE),             # Цифра+буквы+цифры без первой точки
     ]
@@ -312,10 +319,32 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
     for pattern, flags in tu_patterns:
         match = re.search(pattern, text_str, flags) if flags else re.search(pattern, text_str)
         if match:
+            matched_text = match.group(1)
+            
+            # ВАЖНО: Проверяем, что это НЕ часть артикула модуля питания!
+            # Артикулы модулей: МДМ30-1В05ТУП, МАА20-1С05СБП, МАС100-1ТУП и т.д.
+            # ТУ-коды: БКЯЮ.436630.001ТУ, АЛЯР.434110.005ТУ (содержат точки!)
+            
+            # Проверяем контекст: если перед найденным текстом есть префикс модуля
+            match_start = match.start(1)
+            context_before = text_str[:match_start] if match_start > 0 else ""
+            
+            # Паттерн артикулов модулей: МДМ, МАА, МАС, МД, МПМ и т.д.
+            module_prefix_pattern = re.compile(r'М[ДАФПАСЕ][МАДСИОЕ]?\d+[-\w]*$', re.IGNORECASE)
+            if module_prefix_pattern.search(context_before):
+                # Перед найденным "ТУ" есть префикс модуля - это артикул, пропускаем
+                continue
+            
+            # Также проверяем полный matched_text на паттерн артикула модуля
+            full_module_pattern = re.compile(r'^М[ДАФПАСЕ][МАДСИОЕ]?\d+[-\w]*ТУ[ПБФ]?$', re.IGNORECASE)
+            if full_module_pattern.match(matched_text):
+                # Это полный артикул модуля, не ТУ-код - пропускаем
+                continue
+            
             if pattern.startswith('ТУ'):
-                tu_code = 'ТУ ' + match.group(1)
+                tu_code = 'ТУ ' + matched_text
             else:
-                tu_code = match.group(1)
+                tu_code = matched_text
             clean_text = re.sub(pattern, '', clean_text, flags=flags) if flags else re.sub(pattern, '', clean_text)
             clean_text = clean_text.strip()
             break
