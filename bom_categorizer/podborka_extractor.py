@@ -23,6 +23,10 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame с добавленными элементами замен и подборов
     """
+    # ВРЕМЕННО ОТКЛЮЧЕНО: зависание при обработке реальных файлов
+    # TODO: найти причину зависания (возможно, бесконечный цикл в парсинге)
+    return df
+    
     if df.empty:
         return df
     
@@ -136,9 +140,9 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
             
             # Добавляем подборы с тегом (подбор)
             if podbor_items:
-                print(f"  [ПОДБОРЫ] {ref}: найдено {len(podbor_items)} номиналов (подбор)")
+                # print(f"  [ПОДБОРЫ] {ref}: найдено {len(podbor_items)} номиналов (подбор)")
                 for item in podbor_items:
-                    print(f"    -> {item}")
+                    # print(f"    -> {item}")
                     new_row = row.to_dict().copy()
                     new_row['description'] = item
                     new_row['reference'] = f"{ref} (п/б)"
@@ -164,7 +168,7 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
         
         # Добавляем найденные элементы
         if extracted_items:
-            print(f"  [ПОДБОРЫ] {ref}: найдено {len(extracted_items)} элементов {tag}")
+            # print(f"  [ПОДБОРЫ] {ref}: найдено {len(extracted_items)} элементов {tag}")
             for item in extracted_items:
                 # Распаковываем: для замен это (артикул, производитель), для подборов просто строка
                 if is_replacement and isinstance(item, tuple):
@@ -173,7 +177,7 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
                     item_desc = item if isinstance(item, str) else str(item)
                     item_manufacturer = ""
                 
-                print(f"    -> {item_desc}")
+                # print(f"    -> {item_desc}")
                 new_row = row.to_dict().copy()
                 
                 # Удаляем производителя из description подборного элемента (если есть)
