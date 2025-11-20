@@ -31,6 +31,7 @@ class ProcessingWorker(QThread):
             # Перехватываем stdout для получения прогресса
             old_stdout = sys.stdout
             old_stderr = sys.stderr
+            old_stdin = sys.stdin
             old_argv = sys.argv
             
             captured_output = StringIO()
@@ -38,14 +39,19 @@ class ProcessingWorker(QThread):
             try:
                 sys.stdout = captured_output
                 sys.stderr = captured_output
+                # КРИТИЧНО: Перенаправляем stdin на пустой StringIO, чтобы input() сразу вызывал EOFError
+                sys.stdin = StringIO()
                 sys.argv = ["split_bom.py"] + self.args
                 
                 # Отправляем начальное сообщение
                 self.progress.emit("⏳ Начинаем обработку файлов...\n")
                 self.progress.emit(f"Команда: split_bom {' '.join(self.args)}\n\n")
+                self.progress.emit("🔧 Запуск CLI...\n")
                 
                 # Запускаем обработку
                 cli_main()
+                
+                self.progress.emit("✅ CLI завершен успешно\n")
                 
                 # Восстанавливаем
                 sys.stdout = old_stdout
@@ -83,6 +89,7 @@ class ProcessingWorker(QThread):
             finally:
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
+                sys.stdin = old_stdin
                 sys.argv = old_argv
                 
         except SystemExit as e:

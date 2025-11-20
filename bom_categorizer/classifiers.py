@@ -253,7 +253,7 @@ def classify_row(
         return "cables"
     
     # Модули питания
-    if has_any(text_blob, ["модуль питания", "power module", "преобразователь питания", "dc/dc", "dc-dc"]):
+    if has_any(text_blob, ["модуль питания", "модуль электропитания", "электропитания модуль", "power module", "преобразователь питания", "dc/dc", "dc-dc"]):
         return "power_modules"
 
     # PRIORITY 1: Check context-specific categories FIRST (before generic prefixes)
