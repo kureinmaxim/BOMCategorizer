@@ -380,17 +380,83 @@ def parse_docx(path: str) -> pd.DataFrame:
             # Это случай когда:
             # - Первая строка: L1 | Дроссель высокочастотный ДМ – 3 – 10 ± 5% – В | (пусто) | (пусто)
             # - Вторая строка:    | «Н» ЦКСН.671342.001ТУ                        | 1      | (пусто)
+            # ИЛИ:
+            # - Первая строка: Z2–Z8 | Модуль электропитания МДМ100-1В3ЦФУ | (пусто) | (пусто)
+            # - Вторая строка:       | ИУЯР.436630.030ТУ                   | 7      | (пусто)
+            # ИЛИ (MBOK.docx):
+            # - Первая строка: X4 - Х7 | Разъем SMA-JYD 2500075148, | (пусто) | (пусто)
+            # - Вторая строка:         | ф. LANJIAN ELECTRONICS     | 4      | Доп. обозн: SMA-JYD
             if not ref.strip() and (name.strip() or note.strip()) and qty_raw.strip() and extracted:
                 last_item = extracted[-1]
                 # Проверяем, что предыдущая строка имела reference но НЕ имела явного qty
                 if last_item.get('reference', '').strip() and not last_item.get('has_explicit_qty', False):
-                    # Объединяем description
-                    current_desc = last_item.get('description', '').strip()
-                    additional_desc = name.strip() if name.strip() else note.strip()
-                    if current_desc and additional_desc:
-                        last_item['description'] = current_desc + ' ' + additional_desc
-                    elif additional_desc:
-                        last_item['description'] = additional_desc
+                    # ВАЖНО: Обрабатываем name И note отдельно!
+                    # name может содержать ТУ-код или описание
+                    # note (cell_note) может содержать подборы/примечание
+                    
+                    # Обрабатываем name (если есть)
+                    if name.strip():
+                        # ВАЖНО: Проверяем, не является ли name ТУ-кодом
+                        # ТУ-коды имеют формат: АЛЯР.436110.018ТУ, ИУЯР.436630.030ТУ и т.д.
+                        is_tu_code = bool(re.match(r'^[А-ЯЁ]{2,}\.\d+[\d\.]*\s*ТУ\s*$', name.strip(), re.IGNORECASE))
+                        
+                        # ВАЖНО: Проверяем, не является ли name производителем (ф. ...)
+                        is_manufacturer = bool(name.strip().startswith('ф.'))
+                        
+                        if is_tu_code:
+                            # Это ТУ-код - кладем его в note, а НЕ объединяем с description
+                            # Сохраняем существующее note/group_tu если оно уже есть
+                            existing_note = last_item.get('note', '').strip()
+                            if existing_note and existing_note != name.strip():
+                                # Объединяем с разделителем
+                                last_item['note'] = existing_note + ' | ' + name.strip()
+                            else:
+                                last_item['note'] = name.strip()
+                            # НЕ перезаписываем original_note если там уже есть подборы
+                            if not last_item.get('original_note', '').strip():
+                                last_item['original_note'] = name.strip()
+                        elif is_manufacturer:
+                            # Это производитель - извлекаем и кладем в note
+                            mfr_match = re.search(r'ф\.\s*(.+)', name.strip())
+                            if mfr_match:
+                                manufacturer = mfr_match.group(1).strip()
+                                existing_note = last_item.get('note', '').strip()
+                                if existing_note:
+                                    # Добавляем производителя ПОСЛЕ существующего note
+                                    last_item['note'] = existing_note + ' | ' + manufacturer
+                                else:
+                                    last_item['note'] = manufacturer
+                        else:
+                            # Это продолжение description - объединяем
+                            current_desc = last_item.get('description', '').strip()
+                            if current_desc and name.strip():
+                                last_item['description'] = current_desc + ' ' + name.strip()
+                            elif name.strip():
+                                last_item['description'] = name.strip()
+                    
+                    # КРИТИЧНО: Обрабатываем note (cell_note) - это может быть подборы/примечание
+                    if cell_note.strip():
+                        # Добавляем примечание из ячейки в original_note
+                        existing_original_note = last_item.get('original_note', '').strip()
+                        if existing_original_note:
+                            # Объединяем с предыдущим примечанием
+                            last_item['original_note'] = existing_original_note + ' ' + cell_note.strip()
+                        else:
+                            last_item['original_note'] = cell_note.strip()
+                        
+                        # Также обновляем note, если там нет ТУ/производителя
+                        # (для совместимости с извлечением подборов)
+                        current_note = last_item.get('note', '').strip()
+                        # Проверяем что current note - это ТУ или производитель
+                        has_tu_in_note = bool(current_note and ('ТУ' in current_note or re.search(r'[А-ЯЁ]{2,}\.\d+[\d\.\-]*ТУ', current_note)))
+                        looks_like_mfr = bool(current_note and len(current_note) < 50 and ',' not in current_note)
+                        
+                        if not has_tu_in_note and not looks_like_mfr:
+                            # В note нет ТУ/производителя - можно добавить cell_note
+                            if current_note:
+                                last_item['note'] = current_note + ' | ' + cell_note.strip()
+                            else:
+                                last_item['note'] = cell_note.strip()
                     
                     # Устанавливаем количество
                     try:
@@ -400,9 +466,14 @@ def parse_docx(path: str) -> pd.DataFrame:
                     except (ValueError, AttributeError):
                         last_item['qty'] = 1
                     
-                    # Обновляем note/original_note если они были во второй строке
-                    if note.strip():
-                        last_item['note'] = note.strip()
+                    # Обновляем note/original_note если они были во второй строке (и это НЕ ТУ-код и НЕ производитель)
+                    if note.strip() and not is_tu_code and not is_manufacturer:
+                        # Объединяем с существующим note через пробел
+                        existing_note = last_item.get('note', '').strip()
+                        if existing_note:
+                            last_item['note'] = existing_note + ' ' + note.strip()
+                        else:
+                            last_item['note'] = note.strip()
                         last_item['original_note'] = note.strip()
                     
                     continue  # Пропускаем эту строку, т.к. мы уже объединили с предыдущей
