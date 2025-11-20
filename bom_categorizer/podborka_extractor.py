@@ -49,12 +49,24 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
         # if 'C21' in ref or 'C22' in ref:
         #     print(f"  [DEBUG-C] {ref} - note: '{note[:60] if note else '(пусто)'}', len: {len(note)}")
         
-        # Проверяем, содержит ли примечание служебную фразу (не подборы!)
-        is_service_note = bool(note and ('допускается отсутствие' in note.lower() or 'справ.' in note.lower()))
-        
         # Проверяем есть ли подборы/замены в примечании
-        # НЕ извлекаем подборы из служебных фраз типа "допускается отсутствие"
-        has_podbor = bool(note and ref and (',' in note or ';' in note or 'замена' in note.lower()) and not is_service_note)
+        # Признаки подборов: запятые, точки с запятой, слово "замена"
+        has_separators = bool(note and (',' in note or ';' in note))
+        has_zamena = bool(note and 'замена' in note.lower())
+        
+        # Проверяем, содержит ли примечание служебную фразу (БЕЗ подборов!)
+        # ВАЖНО: "допуск. отсутствие" может быть в КОНЦЕ списка подборов!
+        # Пример: "121 кОм, 162 кОм; допуск. отсутствие" - это ПОДБОРЫ + пояснение
+        # НЕ считаем служебной, если есть номиналы (Ом, кОм, мкФ и т.д.)
+        has_nominals = bool(note and re.search(r'\d+(?:[,\.]\d+)?\s*(?:МОм|мом|кОм|ком|Ом|ом|мкФ|мкф|нФ|нф|пФ|пф|мГн|мгн|мкГн|мкгн)', note, re.IGNORECASE))
+        is_service_note = bool(note and not has_nominals and (
+            'допускается отсутствие' in note.lower() or 
+            'допуск. отсутствие' in note.lower() or 
+            'справ.' in note.lower()
+        ))
+        
+        # Извлекаем подборы если есть разделители ИЛИ замена, И это НЕ служебная фраза
+        has_podbor = bool(note and ref and (has_separators or has_zamena) and not is_service_note)
         
         # Если есть подборы - нужно обработать note у оригинального компонента
         # (чтобы список подборов не попал в ТУ/Примечание оригинала)
@@ -183,29 +195,36 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
                 # print(f"    -> {item_desc}")
                 new_row = row.to_dict().copy()
                 
-                # Удаляем производителя из description подборного элемента (если есть)
-                # Производитель будет в note, не нужно дублировать
-                # Стратегия: оставляем только артикул (все до первых двух+ пробелов или до "ф.")
-                # Примеры:
-                #   "PAT-0+           ф. Mini-Circuits" → "PAT-0+"
-                #   "PAT-10+. Mini-Circuits" → "PAT-10+"
-                #   "GRM1555C1H1R0B" → "GRM1555C1H1R0B"
-                
-                # 1. Если есть "ф." - отрезаем все до него
-                if ' ф.' in item_desc or '\tф.' in item_desc:
-                    item_desc_clean = re.split(r'\s+ф\.', item_desc)[0].strip()
-                # 2. Если есть 2+ пробела подряд - отрезаем все после них
-                elif re.search(r'\s{2,}', item_desc):
-                    item_desc_clean = re.split(r'\s{2,}', item_desc)[0].strip()
-                # 3. Если есть точка с пробелом или точка в конце - удаляем производителя после точки
-                elif '. ' in item_desc or item_desc.endswith('.'):
-                    # Удаляем "точка + пробел + слова" в конце
-                    item_desc_clean = re.sub(r'\.\s+[A-Z][A-Za-z\-\s]+$', '', item_desc, flags=re.IGNORECASE).strip()
+                # ВАЖНО: Для ПОДБОРОВ не нужно удалять производителя!
+                # Подборы - это полные описания резисторов/конденсаторов с номиналами
+                # Пример: "Резистор  Р1-12-0,125-121 кОм±1%-М" - оставляем как есть
+                # 
+                # Удаление производителя нужно ТОЛЬКО для замен (артикулов типа "PAT-0+ ф. Mini-Circuits")
+                if is_replacement:
+                    # Удаляем производителя из description замены
+                    # Стратегия: оставляем только артикул (все до первых двух+ пробелов или до "ф.")
+                    # Примеры:
+                    #   "PAT-0+           ф. Mini-Circuits" → "PAT-0+"
+                    #   "PAT-10+. Mini-Circuits" → "PAT-10+"
+                    
+                    # 1. Если есть "ф." - отрезаем все до него
+                    if ' ф.' in item_desc or '\tф.' in item_desc:
+                        item_desc_clean = re.split(r'\s+ф\.', item_desc)[0].strip()
+                    # 2. Если есть 2+ пробела подряд - отрезаем все после них
+                    elif re.search(r'\s{2,}', item_desc):
+                        item_desc_clean = re.split(r'\s{2,}', item_desc)[0].strip()
+                    # 3. Если есть точка с пробелом или точка в конце - удаляем производителя после точки
+                    elif '. ' in item_desc or item_desc.endswith('.'):
+                        # Удаляем "точка + пробел + слова" в конце
+                        item_desc_clean = re.sub(r'\.\s+[A-Z][A-Za-z\-\s]+$', '', item_desc, flags=re.IGNORECASE).strip()
+                    else:
+                        item_desc_clean = item_desc.strip()
+                    
+                    # Удаляем точку в конце (после всех обработок)
+                    item_desc_clean = item_desc_clean.rstrip('.')
                 else:
+                    # Для подборов оставляем description как есть
                     item_desc_clean = item_desc.strip()
-                
-                # Удаляем точку в конце (после всех обработок)
-                item_desc_clean = item_desc_clean.rstrip('.')
                 
                 new_row['description'] = item_desc_clean
                 # Устанавливаем reference с правильным тегом: (зам) для замен, (п/б) для подборов
@@ -576,6 +595,11 @@ def _extract_podbors(note: str, row: dict) -> list:
     ]
     for phrase in cleanup_phrases:
         note_cleaned = re.sub(phrase, '', note_cleaned, flags=re.IGNORECASE)
+    
+    # КРИТИЧНО: Убираем ТУ-код из НАЧАЛА примечания!
+    # Пример: "АЛЯР.434110.005ТУ 121 кОм, 162 кОм" → "121 кОм, 162 кОм"
+    # Это нужно сделать ДО извлечения номиналов, чтобы ТУ не мешал
+    note_cleaned = re.sub(r'^[А-ЯЁ]{4}\.\d{6}\.\d{3}ТУ\s*', '', note_cleaned, flags=re.IGNORECASE)
     
     # СНАЧАЛА извлекаем все номиналы из примечания
     # Это важно, чтобы запятая в "6,8Ом" не воспринималась как разделитель
