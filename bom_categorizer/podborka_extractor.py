@@ -23,14 +23,6 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame с добавленными элементами замен и подборов
     """
-    # ВРЕМЕННО ОТКЛЮЧЕНО: зависание происходит в самом начале обработки
-    # Даже с отладочными принтами функция виснет до первого вывода
-    # TODO: проблема в цикле for idx, row in df.iterrows() - возможно, коллизия имен или рекурсия
-    return df
-    
-    import time
-    _debug_mode = True
-    
     if df.empty:
         return df
     
@@ -131,8 +123,6 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
         is_replacement = has_zamena_keyword or has_dopusk_context
         
         # ОТЛАДКА
-        if _debug_mode:
-            print(f'  [DEBUG] {ref}: is_replacement={is_replacement}, len={len(note)}')
         
         # DEBUG для C2*
         # if 'C21' in ref or 'C22' in ref:
@@ -143,28 +133,13 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
             # ВАЖНО: Сначала ищем подборы номиналов ДО текста замены
             # Пример: "845 Ом, допускается замена перемычкой"
             # Результат: [("845 Ом", подбор), ("Перемычка", замена)]
-            if _debug_mode:
-                print(f'    -> Вызов _extract_podbors_before_replacement')
-                _start = time.time()
             
             podbor_items = _extract_podbors_before_replacement(note, row)
             
-            if _debug_mode:
-                _elapsed = time.time() - _start
-                print(f'    -> Готово за {_elapsed:.4f}с, найдено {len(podbor_items)} подборов')
-                if _elapsed > 1.0:
-                    print(f'    -> МЕДЛЕННО! note: {note[:80]}')
-                    return pd.concat([pd.DataFrame(new_rows), df.iloc[idx+1:]], ignore_index=True) if new_rows else df
             
-            if _debug_mode:
-                print(f'    -> Вызов _extract_replacements')
-                _start = time.time()
             
             replacement_items = _extract_replacements(note, row)
             
-            if _debug_mode:
-                _elapsed = time.time() - _start
-                print(f'    -> Готово за {_elapsed:.4f}с, найдено {len(replacement_items)} замен')
             
             # Добавляем подборы с тегом (подбор)
             if podbor_items:
@@ -635,6 +610,13 @@ def _extract_podbors(note: str, row: dict) -> list:
         part_lower = part.lower()
         skip_keywords = ['примечание', 'гост', 'ту ', 'осту']
         if any(kw in part_lower for kw in skip_keywords):
+            continue
+        
+        # КРИТИЧНО: Пропускаем ТУ-коды! 
+        # ТУ-коды НЕ являются подборами, это технические спецификации
+        # Паттерн: XXXX.NNNNNN.NNNТУ (4 буквы + точка + 6 цифр + точка + 3 цифры + ТУ)
+        # Примеры: ИУЯР.436610.015ТУ, БКЯЮ.436630.001ТУ
+        if re.match(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}ТУ', part, re.IGNORECASE):
             continue
         
         # Проверяем, является ли часть артикулом компонента
