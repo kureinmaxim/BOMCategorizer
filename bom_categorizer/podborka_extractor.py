@@ -4,9 +4,107 @@
 
 import re
 import pandas as pd
+import sys
+from functools import wraps
+import time
 
 
-def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
+# ============================================================
+# ЗАЩИТА ОТ ЗАВИСАНИЙ
+# ============================================================
+
+class TimeoutError(Exception):
+    """Исключение при превышении времени выполнения"""
+    pass
+
+
+def timeout_function(max_seconds=30):
+    """
+    Декоратор для ограничения времени выполнения функции.
+    Если функция выполняется дольше max_seconds, возвращает исходные данные.
+    
+    Важно: Это мягкий таймаут - он проверяет время между вызовами,
+    но не прерывает выполнение regex (для этого нужен отдельный механизм).
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            
+            # Добавляем start_time в kwargs для проверки внутри функции
+            kwargs['_start_time'] = start_time
+            kwargs['_max_seconds'] = max_seconds
+            
+            try:
+                result = func(*args, **kwargs)
+                elapsed = time.time() - start_time
+                if elapsed > max_seconds * 0.8:  # Предупреждение при 80% времени
+                    print(f"⚠️  Функция {func.__name__} выполнялась {elapsed:.1f}s (близко к лимиту {max_seconds}s)", 
+                          file=sys.stderr, flush=True)
+                return result
+            except TimeoutError:
+                print(f"⏱️  TIMEOUT: Функция {func.__name__} превысила лимит {max_seconds}s, возвращаю исходные данные",
+                      file=sys.stderr, flush=True)
+                # Возвращаем исходные данные (первый аргумент должен быть DataFrame)
+                if args:
+                    return args[0]
+                return pd.DataFrame()
+            except Exception as e:
+                print(f"❌ ОШИБКА в {func.__name__}: {e}", file=sys.stderr, flush=True)
+                # Возвращаем исходные данные
+                if args:
+                    return args[0]
+                return pd.DataFrame()
+        
+        return wrapper
+    return decorator
+
+
+def check_timeout(start_time, max_seconds, context=""):
+    """
+    Проверяет не истекло ли время выполнения.
+    Вызывается в критических точках внутри функции.
+    """
+    if start_time and max_seconds:
+        elapsed = time.time() - start_time
+        if elapsed > max_seconds:
+            raise TimeoutError(f"Превышен лимит времени в {context}: {elapsed:.1f}s > {max_seconds}s")
+
+
+def is_complex_string(text: str, max_length=500, max_dashes=10, max_repeating_chars=20) -> bool:
+    """
+    Проверяет, является ли строка слишком сложной для безопасной обработки regex.
+    
+    Args:
+        text: строка для проверки
+        max_length: максимальная безопасная длина
+        max_dashes: максимальное количество дефисов (вызывают backtracking)
+        max_repeating_chars: максимальное количество повторяющихся символов подряд
+        
+    Returns:
+        True если строка слишком сложная
+    """
+    if not text:
+        return False
+    
+    # Проверка длины
+    if len(text) > max_length:
+        return True
+    
+    # Проверка количества дефисов
+    if text.count('-') > max_dashes:
+        return True
+    
+    # Проверка повторяющихся символов (например, "--------------------")
+    for char in ['-', '_', '.', ',', ';', ' ']:
+        if char * max_repeating_chars in text:
+            return True
+    
+    return False
+
+
+@timeout_function(max_seconds=60)  # Максимум 60 секунд на обработку всего файла
+def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=None) -> pd.DataFrame:
     """
     Извлекает замены и подборы из примечания и добавляет их как отдельные строки
     
@@ -19,9 +117,17 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
     
     Args:
         df: DataFrame с распарсенными данными
+        _start_time: время начала (для проверки таймаута, добавляется автоматически)
+        _max_seconds: максимальное время (добавляется автоматически)
         
     Returns:
         DataFrame с добавленными элементами замен и подборов
+        
+    Note:
+        Функция защищена от зависаний:
+        - Общий таймаут 60 секунд
+        - Пропуск слишком сложных строк (длинных, с множеством дефисов)
+        - Защита от regex catastrophic backtracking
     """
     if df.empty:
         return df
@@ -33,6 +139,15 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
     new_rows = []
     
     for idx, row in df.iterrows():
+        # Проверка таймаута на каждой итерации
+        try:
+            check_timeout(_start_time, _max_seconds, f"iteration {idx}/{len(df)}")
+        except TimeoutError:
+            # Если превышен таймаут, возвращаем то что успели обработать
+            print(f"⏱️  TIMEOUT на итерации {idx}/{len(df)}, возвращаю частичный результат", 
+                  file=sys.stderr, flush=True)
+            return pd.DataFrame(new_rows)
+        
         # Проверяем наличие позиционного обозначения (основной элемент)
         ref = str(row.get('reference', '')).strip() if pd.notna(row.get('reference')) else ''
         
@@ -44,6 +159,14 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
             note = str(row.get('note')).strip()
         elif 'Примечание' in df.columns and pd.notna(row.get('Примечание')):
             note = str(row.get('Примечание')).strip()
+        
+        # Защита от сложных строк (могут вызвать зависание regex)
+        if is_complex_string(note):
+            print(f"⚠️  Пропускаю {ref}: note слишком сложная (len={len(note)}, dashes={note.count('-')})",
+                  file=sys.stderr, flush=True)
+            # Добавляем элемент как есть, без обработки подборов
+            new_rows.append(row.to_dict())
+            continue
         
         # DEBUG: Выводим информацию о строке
         # if 'C21' in ref or 'C22' in ref:
@@ -704,6 +827,12 @@ def _replace_artikul_in_description(description: str, new_artikul: str) -> str:
     """
     # Удаляем точку в конце артикула (если есть)
     new_artikul = new_artikul.rstrip('.')
+    
+    # ЗАЩИТА ОТ КАТАСТРОФИЧЕСКОГО BACKTRACKING:
+    # Если артикул или описание содержат слишком много дефисов (сложные артикулы типа "2100-L-3-2-1-5-1-2"),
+    # не пытаемся их обработать через regex, просто возвращаем новый артикул
+    if new_artikul.count('-') > 5 or description.count('-') > 5:
+        return new_artikul
     
     # Паттерн для поиска артикула в описании
     # Артикул: буквы/цифры/дефис/плюс, длина >= 3
