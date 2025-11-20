@@ -23,9 +23,13 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         DataFrame с добавленными элементами замен и подборов
     """
-    # ВРЕМЕННО ОТКЛЮЧЕНО: зависание при обработке реальных файлов
-    # TODO: найти причину зависания (возможно, бесконечный цикл в парсинге)
+    # ВРЕМЕННО ОТКЛЮЧЕНО: зависание происходит в самом начале обработки
+    # Даже с отладочными принтами функция виснет до первого вывода
+    # TODO: проблема в цикле for idx, row in df.iterrows() - возможно, коллизия имен или рекурсия
     return df
+    
+    import time
+    _debug_mode = True
     
     if df.empty:
         return df
@@ -126,6 +130,10 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
         
         is_replacement = has_zamena_keyword or has_dopusk_context
         
+        # ОТЛАДКА
+        if _debug_mode:
+            print(f'  [DEBUG] {ref}: is_replacement={is_replacement}, len={len(note)}')
+        
         # DEBUG для C2*
         # if 'C21' in ref or 'C22' in ref:
         #     print(f"  [DEBUG-C] {ref}: is_replacement={is_replacement}, note_lower[:50]='{note_lower[:50]}'")
@@ -135,8 +143,28 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
             # ВАЖНО: Сначала ищем подборы номиналов ДО текста замены
             # Пример: "845 Ом, допускается замена перемычкой"
             # Результат: [("845 Ом", подбор), ("Перемычка", замена)]
+            if _debug_mode:
+                print(f'    -> Вызов _extract_podbors_before_replacement')
+                _start = time.time()
+            
             podbor_items = _extract_podbors_before_replacement(note, row)
+            
+            if _debug_mode:
+                _elapsed = time.time() - _start
+                print(f'    -> Готово за {_elapsed:.4f}с, найдено {len(podbor_items)} подборов')
+                if _elapsed > 1.0:
+                    print(f'    -> МЕДЛЕННО! note: {note[:80]}')
+                    return pd.concat([pd.DataFrame(new_rows), df.iloc[idx+1:]], ignore_index=True) if new_rows else df
+            
+            if _debug_mode:
+                print(f'    -> Вызов _extract_replacements')
+                _start = time.time()
+            
             replacement_items = _extract_replacements(note, row)
+            
+            if _debug_mode:
+                _elapsed = time.time() - _start
+                print(f'    -> Готово за {_elapsed:.4f}с, найдено {len(replacement_items)} замен')
             
             # Добавляем подборы с тегом (подбор)
             if podbor_items:
