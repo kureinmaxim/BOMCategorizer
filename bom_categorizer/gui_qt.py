@@ -1973,11 +1973,7 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         query = self.global_search_input.text().strip()
         if not query:
-            QMessageBox.information(
-                self,
-                "Глобальный поиск",
-                "Введите ключевое слово для поиска."
-            )
+            self.statusBar().showMessage("⚠ Введите ключевое слово для поиска", 3000)
             self.global_search_input.setFocus()
             return
 
@@ -1988,11 +1984,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             QApplication.restoreOverrideCursor()
 
         if results["total_matches"] == 0 and not results["notes"]:
-            QMessageBox.information(
-                self,
-                "Глобальный поиск",
-                f"Совпадений по запросу «{query}» не найдено."
-            )
+            self.statusBar().showMessage(f"ℹ Совпадений по запросу «{query}» не найдено", 4000)
             self.global_search_input.setFocus()
             self.global_search_input.selectAll()
             return
@@ -2188,11 +2180,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             log_content = self.log_text.toPlainText()
             
             if not log_content.strip():
-                QMessageBox.information(
-                    self,
-                    "Информация",
-                    "Лог выполнения пуст"
-                )
+                self.statusBar().showMessage("ℹ Лог выполнения пуст", 3000)
                 return
             
             # Создаем временный файл
@@ -2260,14 +2248,14 @@ class BOMCategorizerMainWindow(QMainWindow):
         """Устанавливает размер окна"""
         self.resize(width, height)
         self.save_window_size_to_config(width, height)
-        QMessageBox.information(self, "Размер окна", f"Размер окна изменен на {width}×{height}")
+        self.statusBar().showMessage(f"✓ Размер окна изменен на {width}×{height}", 3000)
     
     def save_current_window_size(self):
         """Сохраняет текущий размер окна"""
         width = self.width()
         height = self.height()
         self.save_window_size_to_config(width, height)
-        QMessageBox.information(self, "Размер сохранен", f"Текущий размер окна ({width}×{height}) сохранен в конфигурацию")
+        self.statusBar().showMessage(f"✓ Текущий размер окна ({width}×{height}) сохранен", 3000)
     
     def save_window_size_to_config(self, width: int, height: int):
         """Размер окна НЕ сохраняется - приложение всегда открывается с размером из config_qt.json"""
@@ -3438,7 +3426,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         import re
         plain_text = re.sub('<[^<]+?>', '', text)
         clipboard.setText(plain_text)
-        QMessageBox.information(self, "Скопировано", "Информация скопирована в буфер обмена!")
+        self.statusBar().showMessage("✓ Информация скопирована в буфер обмена", 3000)
     
     def show_dragdrop_help(self):
         """Показывает руководство по использованию Drag & Drop"""
@@ -3667,12 +3655,10 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             if files_added > 0:
                 self.update_listbox()
                 self.update_output_filename()
-                # Показываем уведомление
-                QMessageBox.information(
-                    self,
-                    "Файлы добавлены",
-                    f"Добавлено файлов: {files_added}\n\n"
-                    f"Используйте Ctrl+R для запуска обработки."
+                # Показываем уведомление в status bar (автоматически исчезнет через 5 секунд)
+                self.statusBar().showMessage(
+                    f"✓ Добавлено файлов: {files_added}. Используйте Ctrl+R для запуска обработки.",
+                    5000  # 5 секунд
                 )
             else:
                 QMessageBox.warning(
