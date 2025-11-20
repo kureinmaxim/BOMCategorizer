@@ -75,6 +75,9 @@ def is_complex_string(text: str, max_length=500, max_dashes=10, max_repeating_ch
     """
     Проверяет, является ли строка слишком сложной для безопасной обработки regex.
     
+    ВАЖНО: Не блокирует списки артикулов через запятую/точку с запятой,
+    т.к. это валидные подборы, которые можно безопасно разбить по разделителю.
+    
     Args:
         text: строка для проверки
         max_length: максимальная безопасная длина
@@ -82,16 +85,34 @@ def is_complex_string(text: str, max_length=500, max_dashes=10, max_repeating_ch
         max_repeating_chars: максимальное количество повторяющихся символов подряд
         
     Returns:
-        True если строка слишком сложная
+        True если строка слишком сложная и НЕ является списком подборов
     """
     if not text:
         return False
+    
+    # ИСКЛЮЧЕНИЕ: Если строка содержит много запятых/точек с запятой,
+    # это скорее всего список подборов (например, "2100-L-3-2-1-1-1-2, 2100-L-3-2-1-2-1-2, ...")
+    # Такие строки БЕЗОПАСНЫ - мы просто разобьем их по разделителям
+    comma_count = text.count(',')
+    semicolon_count = text.count(';')
+    total_separators = comma_count + semicolon_count
+    
+    # Если есть >= 3 разделителей, считаем это списком артикулов
+    if total_separators >= 3:
+        # Проверяем, что это действительно список (не один длинный паттерн)
+        # Разбиваем по запятой/точке с запятой и проверяем длину частей
+        parts = re.split(r'[,;]\s*', text)
+        if len(parts) >= 3:
+            # Если большинство частей короткие (< 100 символов), это список
+            short_parts = sum(1 for p in parts if len(p.strip()) < 100)
+            if short_parts >= len(parts) * 0.7:  # 70% частей короткие
+                return False  # Это безопасный список, не блокируем
     
     # Проверка длины
     if len(text) > max_length:
         return True
     
-    # Проверка количества дефисов
+    # Проверка количества дефисов (только если это НЕ список артикулов)
     if text.count('-') > max_dashes:
         return True
     
@@ -345,11 +366,37 @@ def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=Non
                     
                     # Удаляем точку в конце (после всех обработок)
                     item_desc_clean = item_desc_clean.rstrip('.')
+                    
+                    new_row['description'] = item_desc_clean
                 else:
-                    # Для подборов оставляем description как есть
+                    # Для ПОДБОРОВ: копируем описание из оригинала и заменяем артикул
+                    # Это сохраняет префикс типа "Аттенюатор оптический" или "Резистор"
+                    original_desc = str(row.get('description', '')).strip()
                     item_desc_clean = item_desc.strip()
-                
-                new_row['description'] = item_desc_clean
+                    
+                    # Если item_desc выглядит как полное описание (содержит пробелы, префикс компонента),
+                    # используем его как есть (это случай для резисторов/конденсаторов/аттенюаторов с номиналами)
+                    if ' ' in item_desc_clean and any(prefix in item_desc_clean.lower() for prefix in ['резистор', 'конденсатор', 'дроссель', 'аттенюатор', 'адаптер', 'коммутатор']):
+                        new_row['description'] = item_desc_clean
+                    else:
+                        # Иначе это просто артикул (например, "2100-L-3-2-1-1-1-2")
+                        # Заменяем артикул в оригинальном описании, сохраняя префикс
+                        if original_desc and item_desc_clean:
+                            new_desc = _replace_artikul_in_description(original_desc, item_desc_clean)
+                            if new_desc and new_desc != original_desc:
+                                new_row['description'] = new_desc
+                            else:
+                                # Если замена не удалась, просто добавляем новый артикул к префиксу
+                                # Извлекаем префикс из оригинала (первое слово или два)
+                                words = original_desc.split()
+                                if len(words) >= 2 and not any(c in words[0] for c in ['-', '/']):
+                                    # Первые 1-2 слова - это префикс (например, "Аттенюатор оптический")
+                                    prefix = ' '.join(words[:2]) if len(words) > 1 else words[0]
+                                    new_row['description'] = f"{prefix} {item_desc_clean}"
+                                else:
+                                    new_row['description'] = item_desc_clean
+                        else:
+                            new_row['description'] = item_desc_clean
                 # Устанавливаем reference с правильным тегом: (зам) для замен, (п/б) для подборов
                 ref_tag = '(зам)' if is_replacement else '(п/б)'
                 new_row['reference'] = f"{ref} {ref_tag}"
@@ -817,6 +864,7 @@ def _replace_artikul_in_description(description: str, new_artikul: str) -> str:
         "PAT-0+ ф. Mini-Circuits" + "PAT-1+" → "PAT-1+ ф. Mini-Circuits"
         "GRM1885C2A100J, ф. Murata" + "GRM1885C2A150J" → "GRM1885C2A150J, ф. Murata"
         "Конденсатор К53-65 100 мкФ" + "К53-65А" → "Конденсатор К53-65А 100 мкФ"
+        "Аттенюатор оптический 2100-L-3-2-1-5-1-2" + "2100-L-3-2-1-1-1-2" → "Аттенюатор оптический 2100-L-3-2-1-1-1-2"
     
     Args:
         description: Оригинальное описание компонента
@@ -828,35 +876,48 @@ def _replace_artikul_in_description(description: str, new_artikul: str) -> str:
     # Удаляем точку в конце артикула (если есть)
     new_artikul = new_artikul.rstrip('.')
     
-    # ЗАЩИТА ОТ КАТАСТРОФИЧЕСКОГО BACKTRACKING:
-    # Если артикул или описание содержат слишком много дефисов (сложные артикулы типа "2100-L-3-2-1-5-1-2"),
-    # не пытаемся их обработать через regex, просто возвращаем новый артикул
-    if new_artikul.count('-') > 5 or description.count('-') > 5:
-        return new_artikul
+    # БЫСТРЫЙ ПУТЬ для артикулов с множеством дефисов (типа "2100-L-3-2-1-5-1-2"):
+    # Используем простой поиск последнего "токена" из цифр/букв/дефисов
+    # Это БЕЗОПАСНО и быстро, без риска backtracking
+    if new_artikul.count('-') > 3 or description.count('-') > 3:
+        # Разбиваем описание на слова
+        words = description.split()
+        # Ищем слово, которое выглядит как артикул (содержит дефисы и цифры)
+        for i in range(len(words)):
+            word = words[i].rstrip(',.')
+            # Если это артикул (содержит дефисы, цифры и буквы)
+            if '-' in word and any(c.isdigit() for c in word) and any(c.isalpha() for c in word):
+                # Заменяем это слово на новый артикул
+                words[i] = words[i].replace(word, new_artikul)
+                return ' '.join(words)
+        
+        # Если не нашли артикул в словах, возвращаем описание + новый артикул
+        # Извлекаем префикс (первые 1-2 слова без дефисов)
+        prefix_words = []
+        for word in words:
+            if '-' not in word and '/' not in word:
+                prefix_words.append(word)
+                if len(prefix_words) >= 2:
+                    break
+            else:
+                break
+        
+        if prefix_words:
+            return ' '.join(prefix_words) + ' ' + new_artikul
+        else:
+            return new_artikul
     
-    # Паттерн для поиска артикула в описании
-    # Артикул: буквы/цифры/дефис/плюс, длина >= 3
-    # Должен быть до запятой, "ф.", или в начале строки
+    # ОБЫЧНЫЙ ПУТЬ для простых артикулов (без множества дефисов):
+    # Используем regex только для коротких/простых паттернов
     
-    # Попытка 1: Артикул в начале строки до первой запятой или "ф."
-    match = re.search(r'^([A-Z0-9А-ЯЁ\-\+]+(?:\s*[A-Z0-9А-ЯЁ\-\+]+)*?)(?:\s*[,.]|\s+ф\.)', 
-                     description, re.IGNORECASE)
-    if match:
-        old_artikul = match.group(1).strip()
-        # Проверяем что найденный артикул содержит и буквы и цифры
-        if re.search(r'[A-Za-zА-ЯЁа-яё]', old_artikul) and re.search(r'\d', old_artikul):
-            # Заменяем старый артикул на новый
-            new_desc = description.replace(old_artikul, new_artikul, 1)
-            return new_desc
-    
-    # Попытка 2: Артикул в начале строки (если нет запятой/ф.)
-    match = re.search(r'^([A-Z0-9А-ЯЁ\-\+]+)', description, re.IGNORECASE)
-    if match:
-        old_artikul = match.group(1).strip()
-        if len(old_artikul) >= 3:
-            if re.search(r'[A-Za-zА-ЯЁа-яё]', old_artikul) and re.search(r'\d', old_artikul):
-                new_desc = description.replace(old_artikul, new_artikul, 1)
-                return new_desc
+    # Попытка 1: Простой артикул в конце описания (после последнего пробела)
+    words = description.split()
+    if len(words) > 0:
+        last_word = words[-1].rstrip(',.')
+        # Если последнее слово похоже на артикул
+        if len(last_word) >= 3 and any(c.isdigit() for c in last_word) and any(c.isalpha() for c in last_word):
+            words[-1] = words[-1].replace(last_word, new_artikul)
+            return ' '.join(words)
     
     # Попытка 3: Если в description есть производитель (ф. ...) - добавляем его к новому артикулу
     # Это для случаев когда подборный артикул не похож на оригинальный
