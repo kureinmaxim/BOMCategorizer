@@ -450,8 +450,14 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
         module_article_pattern = re.compile(r'М[ДАФПАСЕ][МАДСИОЕ]?\d+[-\w]+[ТУП|СБП|СУФ|ТУФ|СБН|ФБП]', re.IGNORECASE)
         has_module_article = module_article_pattern.search(desc_str)
         
-        if not has_module_article:
-            # Нет артикула модуля - нормализуем пробелы вокруг дефисов (всегда " - ")
+        # Также НЕ нормализуем дефисы для артикулов разъемов:
+        # СНП347-14ВП31-1, ШП1-56-12К, 2РМ18БПН4Г1В1В и т.д.
+        # Паттерн: буквы+цифры-буквы+цифры-... (например СНП347-14ВП31-1)
+        connector_article_pattern = re.compile(r'[А-ЯЁ]{2,}\d+[-\d]+[А-ЯЁ]+[-\d]+(?:[А-ЯЁ]+)?', re.IGNORECASE)
+        has_connector_article = connector_article_pattern.search(desc_str)
+        
+        if not has_module_article and not has_connector_article:
+            # Нет артикула модуля/разъема - нормализуем пробелы вокруг дефисов (всегда " - ")
             # Это решает проблему: "P1 - 12 - 0,125 - 1" vs "P1 - 12 - 0,125-1" -> "P1 - 12 - 0,125 - 1"
             desc_str = re.sub(r'\s*-\s*', ' - ', desc_str)
         
