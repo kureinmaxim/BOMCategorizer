@@ -255,9 +255,18 @@ def extract_podbor_elements(df: pd.DataFrame) -> pd.DataFrame:
                     elif 'note' in row.index and pd.notna(row.get('note')):
                         # Проверяем, что note содержит ТУ или производителя (а не подборы/замены)
                         note_val = str(row.get('note')).strip()
-                        # Паттерн ТУ: АЛЯР.434110.005 ТУ или АЛЯР.431320.420ТУ
-                        # Или производитель: Mini-Circuits, Hittite, и т.д.
-                        if 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
+                        
+                        # ВАЖНО: Если в note несколько ТУ через |, берём ПОСЛЕДНИЙ (правильный)
+                        # Пример: "ОЖ0.467.093ТУ | АЛЯР.434110.005ТУ" → берём "АЛЯР.434110.005ТУ"
+                        if '|' in note_val:
+                            note_parts = note_val.split('|')
+                            # Ищем последнюю часть с ТУ
+                            for part in reversed(note_parts):
+                                part = part.strip()
+                                if 'ту' in part.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', part):
+                                    new_row['note'] = part
+                                    break
+                        elif 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
                             # Это ТУ - копируем его
                             new_row['note'] = note_val
                         elif 'замена' in note_val.lower():
@@ -382,7 +391,18 @@ def _copy_tu_and_manufacturer(new_row: dict, original_row: dict):
             new_row['ТУ'] = tu_val
     elif 'note' in original_row.index and pd.notna(original_row.get('note')):
         note_val = str(original_row.get('note')).strip()
-        if 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
+        
+        # ВАЖНО: Если в note несколько ТУ через |, берём ПОСЛЕДНИЙ (правильный)
+        # Пример: "ОЖ0.467.093ТУ | АЛЯР.434110.005ТУ" → берём "АЛЯР.434110.005ТУ"
+        if '|' in note_val:
+            note_parts = note_val.split('|')
+            # Ищем последнюю часть с ТУ
+            for part in reversed(note_parts):
+                part = part.strip()
+                if 'ту' in part.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', part):
+                    new_row['note'] = part
+                    break
+        elif 'ту' in note_val.lower() or re.search(r'[А-ЯЁ]{4}\.\d{6}\.\d{3}', note_val):
             new_row['note'] = note_val
         elif manufacturer_from_desc:
             new_row['note'] = manufacturer_from_desc
