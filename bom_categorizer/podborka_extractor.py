@@ -773,6 +773,7 @@ def _extract_podbors(note: str, row: dict) -> list:
     
     # СНАЧАЛА извлекаем все номиналы из примечания
     # Это важно, чтобы запятая в "6,8Ом" не воспринималась как разделитель
+    # ВАЖНО: Также захватываем допуск и модель после номинала, если они есть
     extracted_nominals = []
     for pattern in nominal_patterns:
         matches = re.finditer(pattern, note_cleaned, re.IGNORECASE)
@@ -780,7 +781,32 @@ def _extract_podbors(note: str, row: dict) -> list:
             value = match.group(1).replace(',', '.')
             unit = match.group(2)
             unit_normalized = _normalize_unit(unit)
+            
+            # Базовый номинал
             found_nominal = f"{value} {unit_normalized}"
+            
+            # ВРЕМЕННО ОТКЛЮЧЕНО: Захват допуска из примечания
+            # Пытаемся захватить допуск и модель ПОСЛЕ номинала
+            # Паттерн: ± X% - M/Т/А и т.д.
+            # text_after_nominal = note_cleaned[match.end():]
+            # tolerance_pattern = r'^\s*([±]\s*\d+(?:[,.]\d+)?%?)(?:\s*[-–—]\s*([А-ЯЁA-Z]))?'
+            # tolerance_match = re.match(tolerance_pattern, text_after_nominal, re.IGNORECASE)
+            # 
+            # if tolerance_match:
+            #     # Есть допуск (и возможно модель)
+            #     tolerance_part = tolerance_match.group(1).strip()  # ± X%
+            #     model_part = tolerance_match.group(2)  # M, Т, А
+            #     
+            #     # Нормализуем знак ±
+            #     tolerance_part = tolerance_part.replace('±', '±')
+            #     
+            #     # Формируем полный номинал с допуском
+            #     found_nominal = f"{value} {unit_normalized} {tolerance_part}"
+            #     
+            #     # Добавляем модель если есть
+            #     if model_part:
+            #         found_nominal = f"{found_nominal} - {model_part}"
+            
             extracted_nominals.append((match.start(), match.end(), found_nominal))
     
     # Если нашли номиналы, обрабатываем их
@@ -978,6 +1004,9 @@ def _replace_nominal_in_description(desc: str, new_nominal: str) -> str:
         desc = "Р1-12-0,1-536 Ом ±2%-Т"
         new_nominal = "1 кОм"
         result = "Р1-12-0,1-1 кОм ±2%-Т"
+    
+    Важно: Если new_nominal содержит допуск/модель (например, "226 кОм ± 1% - M"),
+    то заменяется весь остаток строки после номинала, чтобы избежать дублирования.
     """
     # Паттерн для поиска номинала в описании
     # Ищем число + единица измерения (Ом, кОм, пФ, мкФ и т.д.)
@@ -985,7 +1014,22 @@ def _replace_nominal_in_description(desc: str, new_nominal: str) -> str:
     # Word boundary (\b) для предотвращения ложных срабатываний
     nominal_in_desc_pattern = r'\b(\d+(?:[,.]\d+)?)\s*(МОм|мом|кОм|ком|Ом|ом|мкФ|мкф|нФ|нф|пФ|пф|мГн|мгн|мкГн|мкгн|нГн|нгн|Гн|гн)\b'
     
-    # Заменяем найденный номинал на новый
-    result = re.sub(nominal_in_desc_pattern, new_nominal, desc, count=1, flags=re.IGNORECASE)
+    # Находим номинал в описании
+    match = re.search(nominal_in_desc_pattern, desc, flags=re.IGNORECASE)
+    if not match:
+        return desc
+    
+    # Берем часть до номинала
+    prefix = desc[:match.start()]
+    
+    # Проверяем, есть ли в new_nominal допуск или модель (±, %, -)
+    # Если есть, то заменяем всё до конца строки
+    if any(char in new_nominal for char in ['±', '%', '- M', '- Т', '- А']):
+        # new_nominal содержит допуск/модель - заменяем весь остаток
+        result = prefix + new_nominal
+    else:
+        # new_nominal - только номинал, сохраняем остаток оригинального описания
+        suffix = desc[match.end():]
+        result = prefix + new_nominal + suffix
     
     return result

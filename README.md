@@ -1,6 +1,6 @@
 # 📦 BOM Categorizer
 
-**Версия:** Standard 3.3.0 / Modern Edition 4.4.4 | **Дата:** 20.11.2025 | **Разработчик:** Куреин М.Н.
+**Версия:** Standard 3.3.0 / Modern Edition 4.4.5 | **Дата:** 21.11.2025 | **Разработчик:** Куреин М.Н.
 
 > **🚀 Клонировали с GitHub?** См. [SETUP.md](SETUP.md) для первоначальной настройки проекта!
 
@@ -27,7 +27,7 @@
 | Версия | GUI | Дизайн | Статус |
 |--------|-----|--------|--------|
 | **Standard v3.3.0** | Tkinter | Классический | ✅ Стабильная |
-| **Modern Edition v4.4.1** | PySide6 (Qt) | Современный | ✅ Стабильная |
+| **Modern Edition v4.4.5** | PySide6 (Qt) | Современный | ✅ Стабильная |
 
 **✅ Обе версии:**
 - Используют одинаковую бизнес-логику и базу данных
@@ -41,13 +41,14 @@
 | Версия | Файл инсталлятора | Путь установки | Имя в меню Пуск |
 |--------|-------------------|----------------|-----------------|
 | **Standard v3.3.0** | `BOMCategorizerSetup.exe` | `%APPDATA%\BOMCategorizer` | "BOM Categorizer Standard" |
-| **Modern Edition v4.4.1** | `BOMCategorizerModernSetup.exe` | `%APPDATA%\BOMCategorizerModern` | "BOM Categorizer Modern Edition" |
+| **Modern Edition v4.4.5** | `BOMCategorizerModernSetup.exe` | `%APPDATA%\BOMCategorizerModern` | "BOM Categorizer Modern Edition" |
 
 #### macOS (2 DMG образа)
 
 | Версия | Файл DMG | Имя приложения | Bundle ID |
 |--------|----------|----------------|-----------|
 | **Standard v3.3.0** | `BOMCategorizer-3.3.0-macOS-Standard.dmg` | "BOM Categorizer Standard.app" | `com.kurein.bomcategorizer` |
+| **Modern Edition v4.4.5** | `BOMCategorizer-4.4.5-macOS-Modern.dmg` | "BOM Categorizer Modern.app" | `com.kurein.bomcategorizer.modern` |
 | **Modern Edition v4.4.1** | `BOMCategorizer-4.4.1-macOS-Modern.dmg` | "BOM Categorizer Modern Edition.app" | `com.kurein.bomcategorizer.modern` |
 
 **Параллельная установка:**

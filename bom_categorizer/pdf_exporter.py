@@ -236,13 +236,16 @@ class PDFExporter:
             self.cyrillic_font = 'Helvetica'
             self.cyrillic_font_bold = 'Helvetica-Bold'
     
-    def export_excel_to_pdf(self, excel_path: str, pdf_path: Optional[str] = None) -> str:
+    def export_excel_to_pdf(self, excel_path: str, pdf_path: Optional[str] = None, 
+                           exclude_podbor: bool = False, has_imported_file: bool = False) -> str:
         """
         Экспортирует Excel файл в PDF
         
         Args:
             excel_path: Путь к Excel файлу
             pdf_path: Путь к выходному PDF (если None, создается автоматически)
+            exclude_podbor: True если был включен фильтр "Исключить подборы"
+            has_imported_file: True если был создан файл "Импортные_компоненты.txt"
         
         Returns:
             Путь к созданному PDF файлу
@@ -334,6 +337,14 @@ class PDFExporter:
         date_str = datetime.now().strftime('%d.%m.%Y %H:%M')
         story.append(Paragraph(f"<b>Дата создания:</b> {date_str}", info_style))
         story.append(Paragraph(f"<b>Категорий:</b> {len(wb.sheetnames) - 2} | <b>Всего позиций:</b> {total_items}", info_style))
+        
+        # Информация о фильтре подборов и файле импортных компонентов
+        podbor_status = "Да (подборы исключены)" if exclude_podbor else "Нет (подборы включены)"
+        story.append(Paragraph(f"<b>Исключить подборы:</b> {podbor_status}", info_style))
+        
+        imported_status = "Да" if has_imported_file else "Нет"
+        story.append(Paragraph(f"<b>Файл 'Импортные_компоненты.txt':</b> {imported_status}", info_style))
+        
         story.append(Spacer(1, 5*mm))
         
         # Сначала выводим SUMMARY и SOURCES на первом листе
@@ -855,7 +866,8 @@ class PDFExporter:
 
 
 def export_bom_to_pdf(excel_path: str, output_pdf: Optional[str] = None, 
-                     with_summary: bool = True, summary_info: Optional[dict] = None) -> str:
+                     with_summary: bool = True, summary_info: Optional[dict] = None,
+                     exclude_podbor: bool = False, has_imported_file: bool = False) -> str:
     """
     Удобная функция для экспорта BOM в PDF
     
@@ -864,6 +876,8 @@ def export_bom_to_pdf(excel_path: str, output_pdf: Optional[str] = None,
         output_pdf: Путь к выходному PDF (опционально)
         with_summary: Включить сводную информацию
         summary_info: Дополнительная информация для сводки
+        exclude_podbor: True если был включен фильтр "Исключить подборы"
+        has_imported_file: True если был создан файл "Импортные_компоненты.txt"
     
     Returns:
         Путь к созданному PDF файлу
@@ -873,5 +887,5 @@ def export_bom_to_pdf(excel_path: str, output_pdf: Optional[str] = None,
     if with_summary:
         return exporter.export_with_summary(excel_path, output_pdf, summary_info)
     else:
-        return exporter.export_excel_to_pdf(excel_path, output_pdf)
+        return exporter.export_excel_to_pdf(excel_path, output_pdf, exclude_podbor, has_imported_file)
 

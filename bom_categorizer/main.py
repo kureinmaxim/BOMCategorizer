@@ -1641,6 +1641,30 @@ def main():
                             # Нет note - просто ТУ
                             df.loc[idx, 'note'] = tu_code
     
+    # КРИТИЧНО: Исключить подборы и замены ДО агрегации!
+    # Иначе основной элемент и подборы объединятся при агрегации
+    if args.exclude_podbor:
+        print(f"\n🔧 Исключение подборов и замен из выходного файла")
+        initial_count = len(df)
+        
+        # Фильтруем строки, у которых в source_file есть теги подборов/замен
+        # Теги: (п/б ...), (зам ...)
+        if 'source_file' in df.columns:
+            podbor_mask = df['source_file'].astype(str).str.contains(
+                r'\(п/б|\(зам',
+                regex=True,
+                case=False,
+                na=False
+            )
+            df = df[~podbor_mask]
+            df = df.reset_index(drop=True)
+            final_count = len(df)
+            excluded_count = initial_count - final_count
+            if excluded_count > 0:
+                print(f"[OK] Исключено {excluded_count} позиций подборов/замен")
+        else:
+            print("[WARNING] Колонка 'source_file' не найдена, пропуск фильтрации")
+    
     # Агрегировать одинаковые элементы (объединяем дубликаты)
     # Проверяем, есть ли данные из DOC/DOCX (по наличию колонки 'zone' или большого количества reference)
     has_docx_data = 'zone' in df.columns or (
@@ -1667,29 +1691,6 @@ def main():
             print(f"Найдено {len(exclude_items)} элементов для исключения")
             df = apply_exclusions(df, exclude_items, desc_col)
             df = df.reset_index(drop=True)
-    
-    # Исключить подборы и замены (если указано)
-    if args.exclude_podbor:
-        print(f"\n🔧 Исключение подборов и замен из выходного файла")
-        initial_count = len(df)
-        
-        # Фильтруем строки, у которых в source_file есть теги подборов/замен
-        # Теги: (п/б ...), (зам ...), (подбор ...)
-        if 'source_file' in df.columns:
-            podbor_mask = df['source_file'].astype(str).str.contains(
-                r'\(п/б\s|\\(зам\s|\(подбор\s',
-                regex=True,
-                case=False,
-                na=False
-            )
-            df = df[~podbor_mask]
-            df = df.reset_index(drop=True)
-            final_count = len(df)
-            excluded_count = initial_count - final_count
-            if excluded_count > 0:
-                print(f"[OK] Исключено {excluded_count} позиций подборов/замен")
-        else:
-            print("[WARNING] Колонка 'source_file' не найдена, пропуск фильтрации")
     
     # Фильтровать строки с пустым описанием ДО классификации
     # Это предотвращает попадание пустых строк в "unclassified"
