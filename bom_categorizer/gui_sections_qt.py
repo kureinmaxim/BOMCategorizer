@@ -32,16 +32,18 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
 
     # Кнопки управления файлами
     buttons_layout = QHBoxLayout()
-    buttons_layout.setSpacing(6)
+    buttons_layout.setSpacing(8)
 
     add_btn = QPushButton("➕ Добавить файлы")
     add_btn.setToolTip("Добавить BOM файлы для обработки (F1 - справка)")
+    add_btn.setMinimumHeight(32)
     add_btn.clicked.connect(window.on_add_files)
     window.lockable_widgets.append(add_btn)
     buttons_layout.addWidget(add_btn, 1)
 
     clear_btn = QPushButton("🗑️ Очистить список")
     clear_btn.setProperty("class", "danger")
+    clear_btn.setMinimumHeight(32)
     clear_btn.clicked.connect(window.on_clear_files)
     window.lockable_widgets.append(clear_btn)
     buttons_layout.addWidget(clear_btn, 1)
@@ -61,8 +63,8 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
 
     # Grid layout для выровненных полей
     grid = QGridLayout()
-    grid.setHorizontalSpacing(8)
-    grid.setVerticalSpacing(6)
+    grid.setHorizontalSpacing(10)
+    grid.setVerticalSpacing(10)
     grid.setColumnStretch(1, 1)
     grid.setColumnMinimumWidth(0, 180)
     
@@ -83,6 +85,7 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     window.multiplier_spin.setMaximum(999)
     window.multiplier_spin.setValue(1)
     window.multiplier_spin.setMaximumWidth(80)
+    window.multiplier_spin.setToolTip("Выберите файл из списка")
     window.lockable_widgets.append(window.multiplier_spin)
     mult_layout.addWidget(window.multiplier_spin)
 
@@ -91,8 +94,20 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     apply_mult_btn.clicked.connect(window.on_multiplier_changed)
     window.lockable_widgets.append(apply_mult_btn)
     mult_layout.addWidget(apply_mult_btn)
+    
+    # Добавляем разделитель
+    separator = QLabel("|")
+    separator.setStyleSheet("color: #666; font-size: 16px;")
+    mult_layout.addWidget(separator)
+    
+    # Чекбокс "исключая подбор" в той же строке
+    window.exclude_podbor_checkbox = QCheckBox("Исключить подборы")
+    window.exclude_podbor_checkbox.setToolTip(
+        "В выходном файле не будут учитываться ИВП по замене и подбору"
+    )
+    window.lockable_widgets.append(window.exclude_podbor_checkbox)
+    mult_layout.addWidget(window.exclude_podbor_checkbox)
 
-    mult_layout.addWidget(QLabel("(выберите файл из списка)"))
     mult_layout.addStretch()
 
     grid.addWidget(mult_widget, row, 1)
@@ -146,21 +161,24 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
 
     # Кнопки запуска
     action_layout = QHBoxLayout()
-    action_layout.setSpacing(6)
+    action_layout.setSpacing(8)
 
     run_btn = QPushButton("▶️ Запустить обработку")
     run_btn.setProperty("class", "accent")
+    run_btn.setMinimumHeight(36)
     run_btn.clicked.connect(window.on_run)
     window.lockable_widgets.append(run_btn)
     action_layout.addWidget(run_btn, 1)
 
     interactive_btn = QPushButton("🔄 Интерактивная классификация")
+    interactive_btn.setMinimumHeight(36)
     interactive_btn.clicked.connect(window.on_interactive_classify)
     window.lockable_widgets.append(interactive_btn)
     action_layout.addWidget(interactive_btn, 1)
 
     export_pdf_button = QPushButton("📄 Экспорт в PDF")
     export_pdf_button.setObjectName("exportPdfButton")
+    export_pdf_button.setMinimumHeight(36)
     export_pdf_button.clicked.connect(window.export_last_result_to_pdf)
     export_pdf_button.setToolTip(
         "Конвертирует выходной Excel файл в PDF документ:\n"
@@ -174,7 +192,7 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
             color: white;
             border: none;
             border-radius: 5px;
-            padding: 5px 15px;
+            padding: 8px 15px;
             font-weight: bold;
         }
         QPushButton:hover {

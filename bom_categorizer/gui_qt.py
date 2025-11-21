@@ -129,7 +129,7 @@ def load_config() -> dict:
             pass
     
     # Fallback с актуальной версией
-    return {"app_info": {"version": "4.4.2", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+    return {"app_info": {"version": "4.4.5", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -167,11 +167,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Устанавливаем заголовок окна
         self.setWindowTitle(f"{name} v{ver}")
 
-        # Загружаем размер окна из конфигурации
-        window_cfg = self.cfg.get("window", {})
-        width = window_cfg.get("width", 720)
-        height = window_cfg.get("height", 900)
-        self.resize(width, height)
+        # Размер окна будет установлен после определения режима
 
         # Переменные состояния
         self.input_files: Dict[str, int] = {}  # {путь_к_файлу: количество}
@@ -242,6 +238,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         if self.require_pin and self.preferred_view_mode != "simple":
             self.pin_forced_simple = True
             self.current_view_mode = "simple"
+
+        # Устанавливаем размер окна в зависимости от режима
+        self._apply_window_size_for_mode(self.current_view_mode)
 
         # Дополнительные опции отображения
         self.log_with_timestamps = bool(ui_settings.get("log_timestamps", False)) if self.current_view_mode == "expert" else False
@@ -845,6 +844,10 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         # Всегда отключаем автоматический интерактивный режим в GUI
         args.append("--no-interactive")
+        
+        # Исключить подборы и замены если чекбокс активирован
+        if hasattr(self, 'exclude_podbor_checkbox') and self.exclude_podbor_checkbox.isChecked():
+            args.append("--exclude-podbor")
         
         return args
     
@@ -2257,10 +2260,70 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.save_window_size_to_config(width, height)
         self.statusBar().showMessage(f"✓ Текущий размер окна ({width}×{height}) сохранен", 3000)
     
+    def _apply_window_size_for_mode(self, mode: str):
+        """Применяет размер окна для указанного режима из конфигурации"""
+        if "window" not in self.cfg:
+            self.cfg["window"] = {}
+        
+        window_cfg = self.cfg["window"]
+        sizes_by_mode = window_cfg.get("sizes_by_mode", {})
+        
+        # Размеры по умолчанию для каждого режима
+        default_sizes = {
+            "simple": {"width": 730, "height": 560},
+            "advanced": {"width": 730, "height": 790},
+            "expert": {"width": 730, "height": 1160}
+        }
+        
+        # Если используется старый формат конфигурации (width/height на верхнем уровне)
+        if not sizes_by_mode and ("width" in window_cfg or "height" in window_cfg):
+            # Мигрируем старый формат в новый
+            old_width = window_cfg.get("width", default_sizes["simple"]["width"])
+            old_height = window_cfg.get("height", default_sizes["simple"]["height"])
+            sizes_by_mode = {
+                "simple": {"width": old_width, "height": old_height},
+                "advanced": default_sizes["advanced"],
+                "expert": default_sizes["expert"]
+            }
+            # Сохраняем мигрированную конфигурацию в self.cfg
+            window_cfg["sizes_by_mode"] = sizes_by_mode
+            try:
+                cfg_path = get_config_path()
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    json.dump(self.cfg, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+        
+        # Получаем размеры для текущего режима
+        mode_sizes = sizes_by_mode.get(mode, default_sizes.get(mode, default_sizes["simple"]))
+        width = mode_sizes.get("width", default_sizes[mode]["width"])
+        height = mode_sizes.get("height", default_sizes[mode]["height"])
+        
+        self.resize(width, height)
+    
     def save_window_size_to_config(self, width: int, height: int):
-        """Размер окна НЕ сохраняется - приложение всегда открывается с размером из config_qt.json"""
-        # Метод оставлен для совместимости, но ничего не делает
-        pass
+        """Сохраняет размер окна для текущего режима в конфигурацию"""
+        if "window" not in self.cfg:
+            self.cfg["window"] = {}
+        
+        window_cfg = self.cfg["window"]
+        if "sizes_by_mode" not in window_cfg:
+            window_cfg["sizes_by_mode"] = {}
+        
+        mode = self.current_view_mode
+        if mode not in window_cfg["sizes_by_mode"]:
+            window_cfg["sizes_by_mode"][mode] = {}
+        
+        window_cfg["sizes_by_mode"][mode]["width"] = width
+        window_cfg["sizes_by_mode"][mode]["height"] = height
+        
+        # Сохраняем конфигурацию
+        try:
+            cfg_path = get_config_path()
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(self.cfg, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"Не удалось сохранить размер окна в конфигурацию: {e}")
 
     def lock_interface(self):
         """Ограничивает доступ к расширенным режимам до ввода PIN"""
@@ -3969,7 +4032,9 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         self.update_mode_action_permissions()
         self.update_view_mode_actions()
 
+        # При смене режима обновляем размер окна
         if not initial:
+            self._apply_window_size_for_mode(self.current_view_mode)
             self.save_ui_preferences()
 
     def on_toggle_log_timestamps(self, state: int):

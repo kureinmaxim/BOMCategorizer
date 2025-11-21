@@ -1508,6 +1508,7 @@ def main():
     parser.add_argument("--no-interactive", action="store_true", help="Отключить автоматический интерактивный режим")
     parser.add_argument("--assign-json", default="rules.json", help="JSON файл с правилами")
     parser.add_argument("--exclude-items", help="Файл с элементами для исключения (формат: Название ИВП, количество)")
+    parser.add_argument("--exclude-podbor", action="store_true", help="Исключить подборы и замены из выходного файла")
     
     args = parser.parse_args()
     
@@ -1666,6 +1667,29 @@ def main():
             print(f"Найдено {len(exclude_items)} элементов для исключения")
             df = apply_exclusions(df, exclude_items, desc_col)
             df = df.reset_index(drop=True)
+    
+    # Исключить подборы и замены (если указано)
+    if args.exclude_podbor:
+        print(f"\n🔧 Исключение подборов и замен из выходного файла")
+        initial_count = len(df)
+        
+        # Фильтруем строки, у которых в source_file есть теги подборов/замен
+        # Теги: (п/б ...), (зам ...), (подбор ...)
+        if 'source_file' in df.columns:
+            podbor_mask = df['source_file'].astype(str).str.contains(
+                r'\(п/б\s|\\(зам\s|\(подбор\s',
+                regex=True,
+                case=False,
+                na=False
+            )
+            df = df[~podbor_mask]
+            df = df.reset_index(drop=True)
+            final_count = len(df)
+            excluded_count = initial_count - final_count
+            if excluded_count > 0:
+                print(f"[OK] Исключено {excluded_count} позиций подборов/замен")
+        else:
+            print("[WARNING] Колонка 'source_file' не найдена, пропуск фильтрации")
     
     # Фильтровать строки с пустым описанием ДО классификации
     # Это предотвращает попадание пустых строк в "unclassified"

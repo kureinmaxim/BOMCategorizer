@@ -19,6 +19,54 @@ from .formatters import clean_component_name, extract_nominal_value, extract_tu_
 from .utils import find_column
 
 
+def remove_duplicate_suffix(text: str) -> str:
+    """
+    Удаляет дублирование единиц измерения и допусков в конце строки.
+    
+    Например:
+        "Р1 - 12 - 0,125 - 27.4 кОм ± 1% - М кОм ± 1% - М" 
+        -> "Р1 - 12 - 0,125 - 27.4 кОм ± 1% - М"
+    
+    Args:
+        text: Исходная строка
+        
+    Returns:
+        Строка без дублирования
+    """
+    if not text or not isinstance(text, str):
+        return text
+    
+    # Паттерн для единиц измерения с возможными допусками и моделями
+    # Например: " кОм ± 1% - М" или " мкФ ± 5%" или " Ом"
+    unit_pattern = r'\s+(МОм|мом|кОм|ком|Ом|ом|мкФ|мкф|нФ|нф|пФ|пф|мГн|мгн|мкГн|мкгн|нГн|нгн|Гн|гн)(?:\s*[±]\s*\d+(?:[,.]\d+)?%?)?(?:\s*[-–—]\s*[А-ЯЁA-Z])?'
+    
+    # Находим все вхождения единиц в строке
+    matches = list(re.finditer(unit_pattern, text, re.IGNORECASE))
+    
+    if len(matches) < 2:
+        # Если единица встречается меньше 2 раз, дублирования нет
+        return text
+    
+    # Берем последние два вхождения
+    last_match = matches[-1]
+    prev_match = matches[-2]
+    
+    # Извлекаем текст двух последних вхождений с допусками
+    last_text = last_match.group(0)
+    prev_text = prev_match.group(0)
+    
+    # Проверяем похожи ли они (могут отличаться пробелами)
+    last_normalized = re.sub(r'\s+', ' ', last_text.strip().lower())
+    prev_normalized = re.sub(r'\s+', ' ', prev_text.strip().lower())
+    
+    if last_normalized == prev_normalized:
+        # Дублирование найдено - удаляем последнее вхождение
+        result = text[:last_match.start()] + text[last_match.end():]
+        return result.strip()
+    
+    return text
+
+
 def add_plus_minus_to_percentages(text: str) -> str:
     """
     Добавляет знак ± перед процентами, если его там нет
@@ -597,6 +645,13 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     # Добавить знак ± перед процентами в Наименовании ИВП
     if 'Наименование ИВП' in result_df.columns:
         result_df['Наименование ИВП'] = result_df['Наименование ИВП'].apply(add_plus_minus_to_percentages)
+    
+    # КРИТИЧНО: Удаляем дублирование единиц измерения и допусков
+    # Пример: "Р1-12-0,125-27.4 кОм ± 1% - М кОм ± 1% - М" -> "Р1-12-0,125-27.4 кОм ± 1% - М"
+    if 'Наименование ИВП' in result_df.columns:
+        result_df['Наименование ИВП'] = result_df['Наименование ИВП'].apply(
+            lambda x: remove_duplicate_suffix(str(x)) if pd.notna(x) else x
+        )
     
     return result_df
 
