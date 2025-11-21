@@ -783,25 +783,11 @@ def write_categorized_excel(
             
             sheet_name = RUS_SHEET_NAMES.get(key, key)
             
-            # НЕ ОБОГАЩАЕМ - используем оригинальные данные как в TXT
-            # Обогатить данными МР и общим количеством
-            # result_df = enrich_with_mr_and_total(part_df)
+            # Данные уже отформатированы в main.py (включая ТУ)
+            # НЕ применяем format_excel_output повторно
             result_df = part_df.copy()
             
-            # Фильтровать строки с пустым Наименованием ИВП
-            desc_check_cols = [desc_col, '_merged_description_', 'description', 'Наименование ИВП']
-            for check_col in desc_check_cols:
-                if check_col in result_df.columns:
-                    result_df = result_df[result_df[check_col].notna() & (result_df[check_col].astype(str).str.strip() != '')]
-                    break
-            
-            if result_df.empty:
-                continue
-            
-            # Форматировать для вывода
-            result_df = format_excel_output(result_df, sheet_name, desc_col)
-            
-            # Проверка что есть данные после форматирования
+            # Проверка что есть данные
             if result_df.empty or len(result_df) == 0:
                 continue
             

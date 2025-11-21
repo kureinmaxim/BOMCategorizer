@@ -18,7 +18,7 @@ import pandas as pd
 
 from .parsers import parse_txt_like, parse_docx
 from .classifiers import classify_row
-from .excel_writer import write_categorized_excel, enrich_with_mr_and_total
+from .excel_writer import write_categorized_excel, enrich_with_mr_and_total, format_excel_output, RUS_SHEET_NAMES
 from .txt_writer import write_txt_reports
 from .utils import normalize_column_names, find_column
 from .podborka_extractor import extract_podbor_elements
@@ -1754,12 +1754,37 @@ def main():
     # Print summary
     print_summary(outputs)
     
-    # Write Excel
-    write_categorized_excel(outputs, df, args.xlsx, args.combine, desc_col)
+    # КРИТИЧНО: Применить форматирование (добавить ТУ, очистить названия) 
+    # ДО записи в Excel и TXT, чтобы оба использовали одинаковые данные
+    formatted_outputs = {}
+    for key, part_df in outputs.items():
+        if len(part_df) == 0:
+            formatted_outputs[key] = part_df
+            continue
+        
+        sheet_name = RUS_SHEET_NAMES.get(key, key)
+        
+        # Фильтровать строки с пустым описанием
+        result_df = part_df.copy()
+        desc_check_cols = [desc_col, '_merged_description_', 'description', 'Наименование ИВП']
+        for check_col in desc_check_cols:
+            if check_col in result_df.columns:
+                result_df = result_df[result_df[check_col].notna() & (result_df[check_col].astype(str).str.strip() != '')]
+                break
+        
+        if not result_df.empty:
+            # Применить форматирование (добавляет колонку ТУ!)
+            result_df = format_excel_output(result_df, sheet_name, desc_col)
+            formatted_outputs[key] = result_df
+        else:
+            formatted_outputs[key] = result_df
     
-    # Write TXT reports
+    # Write Excel (теперь использует уже отформатированные данные)
+    write_categorized_excel(formatted_outputs, df, args.xlsx, args.combine, desc_col)
+    
+    # Write TXT reports (теперь с колонкой ТУ!)
     if args.txt_dir:
-        write_txt_reports(outputs, args.txt_dir, desc_col)
+        write_txt_reports(formatted_outputs, args.txt_dir, desc_col)
     
     print("Готово.")
 

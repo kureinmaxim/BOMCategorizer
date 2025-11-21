@@ -48,42 +48,8 @@ def write_txt_reports(outputs: Dict[str, pd.DataFrame], txt_dir: str, desc_col: 
             # Если нет колонки с описанием, пропускаем
             continue
         
-        # Очистить названия компонентов и извлечь ТУ
-        cleaned_names = []
-        tu_codes = []
-        
-        # Проверяем, есть ли уже колонка ТУ (из Excel writer)
-        has_existing_tu = 'ТУ' in output_df.columns
-        
-        for idx, row in output_df.iterrows():
-            text = str(row[desc_col_found]) if pd.notna(row[desc_col_found]) else ""
-            note = str(row['note']) if 'note' in output_df.columns and pd.notna(row['note']) else ""
-            
-            # Очистить название
-            cleaned_text = clean_component_name(text, note)
-            
-            # Проверяем существующее ТУ
-            existing_tu = str(row.get('ТУ', '')) if has_existing_tu and pd.notna(row.get('ТУ')) else ""
-            
-            # Если ТУ уже есть и не пустое, используем его
-            if existing_tu and existing_tu.strip() and existing_tu.strip() != '-':
-                tu_code = existing_tu
-            else:
-                # Извлечь ТУ из cleaned_text
-                cleaned_text, tu_code = extract_tu_code(cleaned_text)
-                
-                # Если ТУ не найден, пробуем извлечь из note
-                if not tu_code or tu_code == '-':
-                    if note and '|' in note:
-                        parts = note.split('|')
-                        if len(parts) >= 2 and 'ТУ' in parts[1]:
-                            tu_code = parts[1].strip()
-            
-            cleaned_names.append(cleaned_text)
-            tu_codes.append(tu_code)
-        
-        output_df[desc_col_found] = cleaned_names
-        output_df['ТУ'] = tu_codes
+        # Данные уже очищены и отформатированы в main.py через format_excel_output
+        # Колонка ТУ уже должна присутствовать, не нужно извлекать её заново
         
         # Фильтровать строки с пустым описанием
         output_df = output_df[output_df[desc_col_found].notna() & (output_df[desc_col_found].astype(str).str.strip() != '')]
@@ -194,20 +160,58 @@ def write_imported_components_report(outputs: Dict[str, pd.DataFrame], txt_dir: 
             if not name or not name.strip():
                 continue
             
+            # Паттерны российских/советских компонентов по ГОСТ
+            # Резисторы: Р1-, С2-, НР1-, МЛТ-, СП5- и т.д.
+            # Конденсаторы: К10-, К50-, К53-, КМ-, КД- и т.д.
+            # Полупроводники: 2Д, 2С, 2Т, КД, КТ и т.д.
+            # Микросхемы: 1272, 1564, 140, 249, 286, 5115, 5559 и т.д.
+            russian_component_patterns = [
+                r'^Р\d+[-\s]',  # Резисторы Р1-, Р2- и т.д.
+                r'^С\d+[-\s]',  # Резисторы С2-, С5- и т.д.
+                r'^НР\d+[-\s]', # Резисторы НР1- и т.д.
+                r'^МЛТ',        # Резисторы МЛТ
+                r'^СП\d+',      # Подстроечные СП5
+                r'^К\d+[-\s]',  # Конденсаторы К10-, К50-, К53- и т.д.
+                r'^КМ[-\s]',    # Конденсаторы КМ
+                r'^КД[-\s]',    # Конденсаторы КД
+                r'^\d[ДСТ]\d+', # Полупроводники 2Д, 2С, 2Т, КД, КТ
+                r'^КД\d+',      # Диоды КД
+                r'^КТ\d+',      # Транзисторы КТ
+                r'^\d{3,4}[А-ЯЁ]{2}\d', # Микросхемы типа 1272ПН3Т, 140УД17А
+            ]
+            
+            def is_russian_component_by_name(component_name: str) -> bool:
+                """Проверяет, является ли компонент российским/советским по названию"""
+                if not component_name:
+                    return False
+                name_upper = component_name.upper()
+                for pattern in russian_component_patterns:
+                    if re.match(pattern, name_upper, re.IGNORECASE):
+                        return True
+                return False
+            
             # Считаем импортным если:
-            # 1. ТУ отсутствует или пустое (нет ТУ = импортный)
-            # 2. ТУ есть, но НЕ соответствует российскому формату (это производитель)
+            # 1. ТУ есть и НЕ соответствует российскому формату (это производитель типа TI, Maxim)
+            # 2. ТУ отсутствует И название НЕ соответствует российским/советским стандартам
             is_imported = False
             manufacturer = ""
             
             if not tu or tu.strip() == '' or tu.strip() == '-':
-                # Нет ТУ - импортный компонент
-                is_imported = True
-                manufacturer = "-"
+                # ТУ отсутствует - проверяем название компонента
+                if is_russian_component_by_name(name):
+                    # Название похоже на российский ГОСТ - НЕ импортный
+                    is_imported = False
+                else:
+                    # Название не похоже на российский - импортный
+                    is_imported = True
+                    manufacturer = "-"
             elif not russian_tu_pattern.match(tu.strip()):
-                # ТУ не российского формата - это производитель
+                # ТУ не российского формата - это производитель (импортный)
                 is_imported = True
                 manufacturer = tu.strip()
+            else:
+                # ТУ российского формата - отечественный
+                is_imported = False
             
             if is_imported:
                 # Очищаем название от ТУ если он там есть
