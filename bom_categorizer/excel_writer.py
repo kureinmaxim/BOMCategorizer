@@ -23,9 +23,12 @@ def remove_duplicate_suffix(text: str) -> str:
     """
     Удаляет дублирование единиц измерения и допусков в конце строки.
     
-    Например:
+    Примеры:
         "Р1 - 12 - 0,125 - 27.4 кОм ± 1% - М кОм ± 1% - М" 
         -> "Р1 - 12 - 0,125 - 27.4 кОм ± 1% - М"
+        
+        "P1 - 12 - 0,125 - 1 МОм ± 1% - M кОм ± 1% - M"
+        -> "P1 - 12 - 0,125 - 1 МОм ± 1% - M"
     
     Args:
         text: Исходная строка
@@ -59,8 +62,30 @@ def remove_duplicate_suffix(text: str) -> str:
     last_normalized = re.sub(r'\s+', ' ', last_text.strip().lower())
     prev_normalized = re.sub(r'\s+', ' ', prev_text.strip().lower())
     
+    # Случай 1: Полное совпадение (одинаковые единицы)
     if last_normalized == prev_normalized:
         # Дублирование найдено - удаляем последнее вхождение
+        result = text[:last_match.start()] + text[last_match.end():]
+        return result.strip()
+    
+    # Случай 2: Разные единицы, но одинаковые допуски и модели
+    # Например: "МОм ± 1% - M" и "кОм ± 1% - M"
+    # Извлекаем допуск+модель (всё после единицы измерения)
+    def extract_tolerance_model(match_text):
+        """Извлекает допуск и модель из текста единицы"""
+        # Удаляем саму единицу измерения, оставляем допуск и модель
+        tolerance_pattern = r'(МОм|мом|кОм|ком|Ом|ом|мкФ|мкф|нФ|нф|пФ|пф|мГн|мгн|мкГн|мкгн|нГн|нгн|Гн|гн)\s*(.*)$'
+        match = re.search(tolerance_pattern, match_text.strip(), re.IGNORECASE)
+        if match:
+            return match.group(2).strip().lower()
+        return ""
+    
+    last_tolerance = extract_tolerance_model(last_text)
+    prev_tolerance = extract_tolerance_model(prev_text)
+    
+    # Если допуски и модели одинаковые и не пустые - это дублирование
+    if last_tolerance and prev_tolerance and last_tolerance == prev_tolerance:
+        # Удаляем последнее вхождение (избыточное)
         result = text[:last_match.start()] + text[last_match.end():]
         return result.strip()
     
