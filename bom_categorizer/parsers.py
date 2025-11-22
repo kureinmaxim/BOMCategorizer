@@ -608,6 +608,19 @@ def parse_docx(path: str) -> pd.DataFrame:
                     note = effective_group_tu
                 else:
                     note = ""
+            elif is_replacement_note:
+                # Если это замена, пытаемся извлечь текст ДО маркера замены
+                # (например, "ф. Rosenberger" перед "Допуск. замена")
+                replacement_pattern = r'(?i)(?:допуск[\.\s]*замена|допускается\s+замена|замена\s+на|доп[\.\s]*замена|замена)'
+                match = re.search(replacement_pattern, cell_note)
+                if match and match.start() > 3: # Если до замены есть хотя бы 3 символа
+                    pre_text = cell_note[:match.start()].strip().rstrip(';,.\r\n')
+                    if pre_text:
+                        note = pre_text
+                    else:
+                        note = ""
+                else:
+                    note = ""
             # Если cell_note не содержит подборы и нет ТУ из заголовка - оставляем note=cell_note (уже установлено)
 
             # Не добавлять строку без данных

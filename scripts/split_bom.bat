@@ -4,7 +4,7 @@ REM BOM Categorizer CLI wrapper
 REM Использование: split_bom.bat [опции]
 REM ========================================
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 if not exist ".venv\Scripts\python.exe" (
     echo [ОШИБКА] Виртуальное окружение не найдено!

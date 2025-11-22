@@ -26,7 +26,7 @@ class ProcessingWorker(QThread):
     def run(self):
         """Выполняет обработку в отдельном потоке"""
         try:
-            from .main import main as cli_main
+            from ..main import main as cli_main
             
             # Перехватываем stdout для получения прогресса
             old_stdout = sys.stdout
@@ -119,7 +119,7 @@ class ComparisonWorker(QThread):
     def run(self):
         """Выполняет сравнение в отдельном потоке"""
         try:
-            from .main import compare_processed_files
+            from ..main import compare_processed_files
             
             # Перехватываем stdout для получения прогресса с правильной кодировкой
             old_stdout = sys.stdout

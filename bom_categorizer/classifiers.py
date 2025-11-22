@@ -147,6 +147,11 @@ def classify_row(
     if desc_upper.startswith("ГВАТ") or desc_upper.startswith("ГВАТ."):
         return "our_developments"
     
+    # Проверка децимальных номеров (де4.835.001 и т.д.)
+    # Паттерн: "де" + цифра + точка (например, де4.)
+    if re.search(r"де\d+\.", text_blob_lower):
+        return "our_developments"
+    
     if has_any(text_blob, [
         "195-9530", "195-", "амфи.", "амфи ", "гват.", "гват ",
         "шск-м", "плата контроллера шск", "плата преобразователя уровней",

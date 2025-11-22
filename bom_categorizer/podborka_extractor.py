@@ -233,11 +233,18 @@ def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=Non
             # Проверяем есть ли в note номиналы (Ом, кОм, мкФ и т.д.) - признак подбора, а не производителя
             has_nominal_in_note = bool(current_note and re.search(r'\d+\s*(?:Ом|ком|кОм|мком|мкОм|мкФ|пФ|нФ|мГн|мкГн)', current_note, re.IGNORECASE))
             
+            # Проверяем наличие маркера производителя
+            has_manufacturer_marker = 'ф.' in current_note or 'p/n' in current_note.lower()
+            
             # Если в note есть список артикулов (запятые + длина > 30) или номиналы, это подборы - очищаем
-            looks_like_podbor_list = (has_commas_in_note and len(current_note) > 30) or has_nominal_in_note
+            # НО только если нет явного маркера производителя!
+            looks_like_podbor_list = ((has_commas_in_note and len(current_note) > 30) or has_nominal_in_note) and not has_manufacturer_marker
             
             if has_tu_in_note:
                 # В note есть ТУ-код - сохраняем его
+                pass
+            elif has_manufacturer_marker:
+                # В note есть производитель - сохраняем его
                 pass
             elif is_replacement and current_note and not has_nominal_in_note:
                 # Это замена и в note есть производитель (НЕ номинал!) - сохраняем

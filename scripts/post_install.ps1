@@ -196,15 +196,20 @@ if (Test-Path $OfflinePackagesDir) {
 }
 
 Write-Host "Merging component database..."
-if (Test-Path "tools/merge_component_database.py") {
-    & $VenvPython tools/merge_component_database.py
+$MergeScript = Join-Path $ProjectRoot "tools/merge_component_database.py"
+if (!(Test-Path $MergeScript)) {
+    $MergeScript = Join-Path $ProjectRoot "merge_component_database.py"
+}
+
+if (Test-Path $MergeScript) {
+    & $VenvPython $MergeScript
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Component database merged successfully."
     } else {
         Write-Host "Warning: Component database merge had issues (this is not critical)."
     }
 } else {
-    Write-Host "tools/merge_component_database.py not found, skipping database merge."
+    Write-Host "merge_component_database.py not found in tools/ or root, skipping database merge."
 }
 
 Write-Host ""
@@ -225,6 +230,9 @@ if (!(Test-Path $UserDataDir)) {
 
 # Мигрируем базу данных если она есть в старом расположении
 $OldDatabase = Join-Path $ProjectRoot "data\component_database.json"
+if (!(Test-Path $OldDatabase)) {
+    $OldDatabase = Join-Path $ProjectRoot "component_database.json"
+}
 $NewDatabase = Join-Path $UserDataDir "component_database.json"
 
 if ((Test-Path $OldDatabase) -and !(Test-Path $NewDatabase)) {

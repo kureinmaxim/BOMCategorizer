@@ -694,7 +694,8 @@ class PDFSearchDialog(QDialog):
             )
             return
         
-        dialog = PDFSearchSettingsDialog(self, self.config)
+        # Используем новое единое окно настроек напрямую
+        dialog = UnifiedSettingsDialog(self, self.config)
         if dialog.exec() == QDialog.Accepted:
             # Обновляем конфиг
             self.config = dialog.get_config()

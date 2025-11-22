@@ -3,8 +3,9 @@
 
 Write-Host "=== Пересоздание виртуального окружения ===" -ForegroundColor Cyan
 
-# Переход в каталог проекта
-Set-Location "C:\Project\ProjectSnabjenie"
+# Переход в каталог проекта (родительская папка скрипта)
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $ProjectRoot
 
 # Удаляем старое окружение, если есть
 if (Test-Path ".\.venv") {
@@ -40,6 +41,10 @@ if (Test-Path "requirements.txt") {
 
 # Запускаем сборку
 Write-Host "Запускаю build_installer.py..." -ForegroundColor Cyan
-python build_installer.py
+if (Test-Path "deployment/build_installer.py") {
+    python deployment/build_installer.py
+} else {
+    python build_installer.py
+}
 
 Write-Host "✅ Готово!" -ForegroundColor Green

@@ -7,6 +7,9 @@ echo Скачивание шрифтов DejaVu Sans
 echo ========================================
 echo.
 
+REM Переходим в корень проекта
+cd /d "%~dp0.."
+
 REM Создаем папку fonts если её нет
 if not exist "fonts" (
     mkdir fonts
@@ -25,7 +28,7 @@ if errorlevel 1 (
 REM Запускаем PowerShell скрипт
 echo Запуск скрипта загрузки...
 echo.
-powershell.exe -ExecutionPolicy Bypass -File "download_fonts.ps1"
+powershell.exe -ExecutionPolicy Bypass -File "%~dp0download_fonts.ps1"
 
 echo.
 echo ========================================

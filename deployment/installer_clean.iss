@@ -22,12 +22,12 @@ Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "temp_installer\fonts\*.ttf"; DestDir: "{app}\fonts"; Flags: ignoreversion; Check: FontsExist
 
 [Run]
-Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\post_install.ps1"""; StatusMsg: "Setting up Python environment..."; Flags: runhidden
+Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\scripts\post_install.ps1"""; StatusMsg: "Setting up Python environment..."; Flags: runhidden
 
 [Icons]
-Name: "{group}\BOM Categorizer Standard"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+Name: "{group}\BOM Categorizer Standard"; Filename: "{app}\scripts\run_app.bat"; WorkingDir: "{app}\scripts"; IconFilename: "{app}\icon.ico"
 Name: "{group}\Uninstall BOM Categorizer Standard"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\BOM Categorizer Standard"; Filename: "{app}\run_app.bat"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+Name: "{userdesktop}\BOM Categorizer Standard"; Filename: "{app}\scripts\run_app.bat"; WorkingDir: "{app}\scripts"; IconFilename: "{app}\icon.ico"
 
 [Code]
 function InitializeSetup(): Boolean;

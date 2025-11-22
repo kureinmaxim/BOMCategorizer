@@ -2,7 +2,7 @@
 chcp 65001 >nul
 REM Экспорт базы данных в Excel
 
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 REM Генерируем имя файла с текущей датой
 for /f "tokens=1-3 delims=." %%a in ('echo %date%') do (

@@ -44,7 +44,7 @@ EDITIONS = {
         "version": read_version_from_config("config.json"),
         "app_file": "app.py",
         "config": "config.json",
-        "iss_file": "installer_clean.iss",
+        "iss_file": "deployment/installer_clean.iss",
         "output": "BOMCategorizerSetup.exe",
         "description": "Tkinter GUI (стабильная версия)"
     },
@@ -53,7 +53,7 @@ EDITIONS = {
         "version": read_version_from_config("config_qt.json"),
         "app_file": "app_qt.py",
         "config": "config_qt.json",
-        "iss_file": "installer_qt.iss",
+        "iss_file": "deployment/installer_qt.iss",
         "output": "BOMCategorizerModernSetup.exe",
         "description": "PySide6 GUI (современный дизайн + экспериментальные функции)"
     }
@@ -161,6 +161,10 @@ def copy_files():
     for file in FILES_TO_COPY:
         if os.path.exists(file):
             dest = os.path.join(TEMP_DIR, file)
+            
+            # Создаем директорию назначения
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            
             shutil.copy2(file, dest)
             print(f"  [OK] {file}")
         else:

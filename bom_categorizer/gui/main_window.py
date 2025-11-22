@@ -1342,7 +1342,7 @@ class BOMCategorizerMainWindow(QMainWindow):
                 # Автоматический экспорт в PDF (если включен)
                 if self.auto_export_pdf and os.path.exists(output_file):
                     try:
-                        from .pdf_exporter import export_bom_to_pdf
+                        from ..pdf_exporter import export_bom_to_pdf
                         
                         # Создаем путь для PDF
                         pdf_path = os.path.splitext(output_file)[0] + ".pdf"
@@ -4153,7 +4153,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             return
         
         try:
-            from .pdf_exporter import export_bom_to_pdf
+            from ..pdf_exporter import export_bom_to_pdf
             
             # Показываем диалог выбора места сохранения
             from PySide6.QtWidgets import QFileDialog
