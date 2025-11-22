@@ -307,7 +307,7 @@ def get_default_pdf_directories(config: Optional[Dict] = None) -> List[str]:
     Args:
         config: Словарь конфигурации (опционально)
     """
-    from .component_database import get_database_path
+    from ..component_database import get_database_path
     import sys
     
     directories = []

@@ -48,14 +48,14 @@
    ```
    ```bash
    # macOS / Linux
-   cp config.json.template config.json
-   cp config_qt.json.template config_qt.json
+   cp config/config.json.template config.json
+   cp config/config_qt.json.template config_qt.json
    ```
 
 3. **Через Python (если PowerShell недоступен)**  
    ```bash
-   python -c "import shutil; shutil.copy('config.json.template', 'config.json')"
-   python -c "import shutil; shutil.copy('config_qt.json.template', 'config_qt.json')"
+   python -c "import shutil; shutil.copy('config/config.json.template', 'config.json')"
+   python -c "import shutil; shutil.copy('config/config_qt.json.template', 'config_qt.json')"
    ```
 
 > ⚠️ Не редактируйте шаблоны при настройке локального окружения. Все персональные параметры (размер окна, масштаб UI, PIN и т.д.) изменяйте в рабочих файлах `config.json` и `config_qt.json`, которые находятся в `.gitignore`.
@@ -69,8 +69,8 @@
 **Единственное место хранения версий:**
 
 ```
-config.json.template       → Standard Edition (Tkinter)
-config_qt.json.template    → Modern Edition (PySide6)
+config/config.json.template       → Standard Edition (Tkinter)
+config/config_qt.json.template    → Modern Edition (PySide6)
 ```
 
 Эти файлы:
@@ -93,16 +93,16 @@ config_qt.json.template    → Modern Edition (PySide6)
 
 ```bash
 # Показать текущие версии (шаблоны и локальные)
-python update_version.py status
+python tools/update_version.py status
 
 # Обновить Standard Edition
-python update_version.py set standard 3.4.0
+python tools/update_version.py set standard 3.4.0
 
 # Обновить Modern Edition
-python update_version.py set modern 4.3.0
+python tools/update_version.py set modern 4.3.0
 
 # Обновить обе версии одновременно
-python update_version.py set both 5.0.0
+python tools/update_version.py set both 5.0.0
 ```
 
 **Команда `status` показывает:**
@@ -163,9 +163,9 @@ python update_version.py sync
 
 1. **Откройте шаблон:**
    ```bash
-   nano config_qt.json.template  # для Modern Edition
+   nano config/config_qt.json.template  # для Modern Edition
    # или
-   nano config.json.template     # для Standard Edition
+   nano config/config.json.template     # для Standard Edition
    ```
 
 2. **Измените версию:**
@@ -202,10 +202,10 @@ python update_version.py sync
 
 ```bash
 # Синхронизировать все файлы (локальные config + файлы сборки)
-python update_version.py sync
+python tools/update_version.py sync
 
 # Или напрямую только файлы сборки
-python sync_installer_versions.py
+python tools/sync_installer_versions.py
 ```
 
 **Что делает `python update_version.py sync`:**
@@ -245,11 +245,11 @@ python sync_installer_versions.py
 Скрипт **автоматически читает** версии из шаблонов:
 
 ```bash
-# Читает версию из config_qt.json.template
-MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config_qt.json.template'))['app_info']['version'])")
+# Читает версию из config/config_qt.json.template
+MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config/config_qt.json.template'))['app_info']['version'])")
 
 # Использует эту версию при сборке DMG
-./build_macos.sh
+./deployment/build_macos.sh
 ```
 
 ✅ **Никакой ручной синхронизации не требуется**
@@ -271,18 +271,22 @@ MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config_qt.json.t
 ```
 BOMCategorizer/
 │
-├── 📄 config.json.template         ← ИСТОЧНИК ПРАВДЫ для Standard
-├── 📄 config_qt.json.template      ← ИСТОЧНИК ПРАВДЫ для Modern
+├── 📁 config/                      # Конфигурационные файлы
+│   ├── 📄 config.json.template     ← ИСТОЧНИК ПРАВДЫ для Standard
+│   ├── 📄 config_qt.json.template  ← ИСТОЧНИК ПРАВДЫ для Modern
+│   └── 📄 rules.json               # Правила классификации
 │
 ├── 📄 config.json                  (локальный, не в Git)
 ├── 📄 config_qt.json               (локальный, не в Git)
 │
-├── 🔧 update_version.py            ← Главная утилита управления
-├── 🔧 sync_installer_versions.py  ← Синхронизация .iss файлов
+├── 📁 tools/                       # Утилиты проекта
+│   ├── 🔧 update_version.py        ← Главная утилита управления
+│   └── 🔧 sync_installer_versions.py  ← Синхронизация .iss файлов
 │
-├── 📦 build_macos.sh               (читает из .template)
-├── 📦 installer_clean.iss          (обновляется автоматически)
-├── 📦 installer_qt.iss             (обновляется автоматически)
+├── 📁 deployment/                  # Скрипты сборки
+│   ├── 📦 build_macos.sh           (читает из config/)
+│   ├── 📦 installer_clean.iss      (обновляется автоматически)
+│   └── 📦 installer_qt.iss         (обновляется автоматически)
 │
 └── bom_categorizer/
     └── config_manager.py           (создает config из шаблонов)
@@ -310,7 +314,7 @@ config_qt.json            →  Рабочий файл (НЕ в Git, личны�
 # В config_manager.py
 def initialize_config_from_template(config_name="config.json"):
     config_path = "config.json"
-    template_path = "config.json.template"
+    template_path = "config/config.json.template"
     
     # Если config.json НЕ существует
     if not os.path.exists(config_path):
@@ -504,13 +508,13 @@ python update_version.py set modern 4.3.0
 python update_version.py status
 
 # 3. Закоммитить изменения
-git add config_qt.json.template installer_qt.iss
+git add config/config_qt.json.template deployment/installer_qt.iss
 git commit -m "Release: Modern Edition v4.3.0"
 
 # 4. Собрать проект
-./build_macos.sh              # macOS
+./deployment/build_macos.sh              # macOS
 # или
-python build_installer.py     # Windows
+python deployment/build_installer.py     # Windows
 ```
 
 ### 🎯 Сценарий 2: Работа на новой машине

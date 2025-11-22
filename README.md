@@ -8,8 +8,8 @@
 ## ⚡️ Быстрая справка (Cheatsheet)
 
 ### 🚀 Запуск (Windows)
-*   **Modern Edition (Красивый):** `run_modern_debug.bat` (или `python app_qt.py`)
-*   **Standard Edition (Классика):** `run_standard_debug.bat` (или `python app.py`)
+*   **Modern Edition (Красивый):** `scripts\run_modern_debug.bat` (или `python app_qt.py`)
+*   **Standard Edition (Классика):** `scripts\run_standard_debug.bat` (или `python app.py`)
 
 ### 🚀 Запуск (macOS / Linux)
 ```bash
@@ -69,7 +69,7 @@ pip install -r requirements-linux.txt
 
 ```bash
 # Обработать файл и создать Excel + TXT файлы по категориям
-python split_bom.py --inputs "bom.docx" --xlsx "result.xlsx" --txt-dir "result_txt" --combine
+python tools/split_bom.py --inputs "bom.docx" --xlsx "result.xlsx" --txt-dir "result_txt" --combine
 ```
 
 **Ключевые опции:**

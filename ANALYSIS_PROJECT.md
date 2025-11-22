@@ -61,15 +61,24 @@
 *   **`formatters.py` (Инструменты):**
     Набор функций для очистки "грязных" данных из BOM. Умеет вытаскивать номиналы (10k, 0.1uF), допуски (±5%) и ТУ-коды.
 
-*   **`gui_qt.py` (Лицо):**
-    Реализация современного интерфейса. Обрабатывает нажатия кнопок, перетаскивание файлов и обновляет прогресс-бары.
+*   **`bom_categorizer/gui/` (Пакет GUI):**
+    Модульная реализация современного интерфейса Modern Edition (PySide6). Разделен на отдельные компоненты для лучшей поддерживаемости:
+    - `main_window.py` — Главное окно приложения
+    - `dialogs.py` — Диалоговые окна (статистика, настройки)
+    - `sections.py` — Виджеты и секции интерфейса
+    - `menu.py` — Главное меню
+    - `scaling.py` — Масштабирование и темы
+    - `search.py` — Глобальный поиск
+    - `workers.py` — Фоновые потоки (QThread)
+    - `drag_drop.py` — Drag & Drop
+    - `ai_classifier.py` — AI классификация
 
 ---
 
 ## 📂 Структура файлов проекта
 
 ```
-ProjectSnabjenie/
+BOMCategorizer/
 ├── 📦 bom_categorizer/              # Основной пакет (бизнес-логика)
 │   ├── __init__.py
 │   ├── main.py                      # 🧠 Оркестратор пайплайна
@@ -77,41 +86,78 @@ ProjectSnabjenie/
 │   ├── parsers.py                   # 📥 Чтение файлов (.docx, .xlsx, .txt)
 │   ├── formatters.py                # 🧹 Очистка данных, извлечение ТУ/номиналов
 │   ├── component_database.py        # 💾 Управление базой знаний (JSON)
+│   ├── config_manager.py            # ⚙️ Управление конфигурацией
 │   ├── excel_writer.py              # 📊 Генерация Excel отчетов
 │   ├── txt_writer.py                # 📝 Генерация текстовых отчетов
+│   ├── pdf_exporter.py              # 📄 Экспорт в PDF
 │   ├── utils.py                     # 🛠 Вспомогательные утилиты
+│   ├── cli_interactive.py           # 💬 Интерактивная консоль
+│   ├── styles.py                    # 🎨 Стили для GUI
 │   │
-│   ├── gui_qt.py                    # ✨ Modern Edition GUI (PySide6)
-│   ├── dialogs_qt.py                # ✨ Диалоговые окна (статистика, настройки)
-│   ├── gui_sections_qt.py           # ✨ Виджеты и секции интерфейса
-│   ├── gui_menu_qt.py               # ✨ Главное меню
-│   ├── gui_scaling_qt.py            # ✨ Масштабирование и темы
-│   ├── search_qt.py                 # ✨ Глобальный поиск
-│   ├── workers_qt.py                # ✨ Фоновые потоки (QThread)
-│   ├── drag_drop_qt.py              # ✨ Drag & Drop
-│   ├── pdf_exporter.py              # ✨ Экспорт в PDF
-│   ├── ai_classifier_qt.py          # ✨ AI классификация
+│   ├── 📁 gui/                      # ✨ Modern Edition GUI (PySide6)
+│   │   ├── __init__.py
+│   │   ├── main_window.py           # Главное окно приложения
+│   │   ├── dialogs.py               # Диалоговые окна
+│   │   ├── sections.py              # Виджеты и секции
+│   │   ├── menu.py                  # Главное меню
+│   │   ├── scaling.py               # Масштабирование и темы
+│   │   ├── search.py                # Глобальный поиск
+│   │   ├── search_methods.py        # Методы поиска
+│   │   ├── workers.py               # Фоновые потоки (QThread)
+│   │   ├── drag_drop.py             # Drag & Drop
+│   │   └── ai_classifier.py         # AI классификация
+│   │
 │   └── gui.py                       # ✅ Standard Edition GUI (Tkinter)
 │
 ├── 🚀 Точки входа:
 │   ├── app_qt.py                    # ▶️ Запуск Modern Edition
-│   ├── app.py                       # ▶️ Запуск Standard Edition
+│   └── app.py                       # ▶️ Запуск Standard Edition
+│
+├── 📁 tools/                        # 🛠 Утилиты и инструменты
 │   ├── split_bom.py                 # 💻 CLI интерфейс
+│   ├── manage_database.py           # 🗄️ Утилита управления БД
+│   ├── interactive_classify.py      # 🎓 Консольное обучение
+│   ├── interactive_classify_improved.py # 🎓 Улучшенное обучение
+│   ├── update_version.py            # 🔄 Синхронизация версий
+│   ├── sync_installer_versions.py   # 🔄 Синхронизация версий инсталляторов
+│   ├── create_icons.py              # 🎨 Создание иконок
+│   ├── check_pdf_fonts.py           # 🔤 Проверка шрифтов PDF
+│   ├── init_project.py              # 🚀 Инициализация проекта
+│   └── merge_component_database.py  # 🔀 Слияние баз данных
+│
+├── 📁 deployment/                   # 📦 Скрипты сборки и развертывания
 │   ├── build_installer.py           # 🔨 Сборка инсталлятора (Windows)
 │   ├── build_macos.sh               # 🍎 Сборка приложения (macOS)
-│   ├── manage_database.py           # 🗄️ Утилита управления БД
-│   └── interactive_classify.py      # 🎓 Консольное обучение
+│   ├── setup_macos.py               # 🍎 Конфигурация сборки macOS
+│   ├── installer_clean.iss          # 📄 Конфиг Inno Setup (Standard)
+│   ├── installer_qt.iss             # 📄 Конфиг Inno Setup (Modern)
+│   ├── create_release.ps1           # � Создание релиза (Windows)
+│   ├── create_release.sh            # 📦 Создание релиза (macOS/Linux)
+│   ├── upload_to_existing_release.ps1  # ⬆️ Публикация релиза (Windows)
+│   └── upload_to_existing_release.sh   # ⬆️ Публикация релиза (macOS/Linux)
 │
-├── ⚙️ Конфигурация:
-│   ├── config_qt.json               # Настройки Modern Edition
-│   ├── config.json                  # Настройки Standard Edition
-│   ├── rules.json                   # Пользовательские правила
-│   ├── component_database.json      # Локальная БД (dev)
-│   ├── component_database_template.json # Шаблон БД (prod)
-│   └── requirements.txt             # Зависимости
+├── 📁 scripts/                      # 🖥 Скрипты запуска и обслуживания
+│   ├── run_app.bat                  # ▶️ Запуск приложения (Windows)
+│   ├── run_modern_debug.bat         # 🐞 Debug запуск Modern
+│   ├── run_standard_debug.bat       # 🐞 Debug запуск Standard
+│   ├── run_tests.bat                # 🧪 Запуск тестов
+│   ├── post_install.ps1             # 🔧 Пост-установка (Windows)
+│   ├── repair_install.ps1           # 🔧 Восстановление установки
+│   ├── database_backup.bat          # 💾 Резервное копирование БД
+│   ├── database_export.bat          # 📤 Экспорт БД
+│   ├── database_stats.bat           # 📊 Статистика БД
+│   └── manage_database.bat          # 🗄️ Управление БД
+│
+├── 📁 config/                       # ⚙️ Конфигурационные файлы
+│   ├── config.json.template         # Шаблон настроек Standard Edition
+│   ├── config_qt.json.template      # Шаблон настроек Modern Edition
+│   └── rules.json                   # Пользовательские правила классификации
+│
+├── 📁 data/                         # 💾 Данные приложения
+│   └── component_database_template.json # Шаблон базы данных компонентов
 │
 ├── 📝 Документация:
-│   ├── ANALYSIS_PROJECT.md          # 🏗 Архитектура проекта
+│   ├── ANALYSIS_PROJECT.md          # 🏗 Архитектура проекта (этот файл)
 │   ├── README.md                    # 📖 Главная страница
 │   ├── CHANGELOG.md                 # 🕒 История изменений
 │   ├── LAUNCHER_GUIDE.md            # 🚀 Инструкция по запуску
@@ -127,11 +173,11 @@ ProjectSnabjenie/
 │   ├── test_integration.py          # Интеграционные тесты
 │   └── conftest.py                  # Фикстуры pytest
 │
-└── 🛠 Скрипты (Windows):
-    ├── run_modern_debug.bat         # 🐞 Debug запуск Modern
-    ├── run_standard_debug.bat       # 🐞 Debug запуск Standard
-    ├── run_tests.bat                # 🧪 Запуск тестов
-    └── create_release.ps1           # 📦 Создание релиза
+└── � Конфигурация проекта:
+    ├── requirements.txt              # Основные зависимости
+    ├── requirements_install.txt      # Зависимости для установки
+    ├── requirements_macos.txt        # Зависимости для macOS
+    └── .gitignore                    # Исключения Git
 ```
 
 ---

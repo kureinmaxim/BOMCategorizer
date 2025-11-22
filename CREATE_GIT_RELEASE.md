@@ -16,10 +16,10 @@ git push origin v4.4.2
 ### 🪟 2. Windows (PowerShell)
 ```powershell
 # Создать новый релиз
-.\create_release.ps1 -Token "ваш_токен" -Version "4.4.2"
+.\deployment\create_release.ps1 -Token "ваш_токен" -Version "4.4.2"
 
 # Обновить существующий (загрузить файлы)
-.\upload_to_existing_release.ps1 -Token "ваш_токен"
+.\deployment\upload_to_existing_release.ps1 -Token "ваш_токен"
 ```
 
 ### 🍎 3. macOS (Terminal)
@@ -28,7 +28,7 @@ git push origin v4.4.2
 gh release create v4.4.2 --title "v4.4.2" --notes "Notes" BOMCategorizer-4.4.2-macOS-Modern.dmg
 
 # Обновить существующий (Bash скрипт)
-./upload_to_existing_release.sh -t "ваш_токен" -v "4.4.2"
+./deployment/upload_to_existing_release.sh -t "ваш_токен" -v "4.4.2"
 ```
 
 ---
@@ -52,27 +52,27 @@ gh release create v4.4.2 --title "v4.4.2" --notes "Notes" BOMCategorizer-4.4.2-m
 ## 🪟 Windows: Инструкции
 
 ### Создание нового релиза
-Используйте скрипт `create_release.ps1`.
+Используйте скрипт `deployment/create_release.ps1`.
 
 **Синтаксис:**
 ```powershell
-.\create_release.ps1 -Token "ghp_xxx" [-Version "4.4.2"] [-Repo "owner/repo"]
+.\deployment\create_release.ps1 -Token "ghp_xxx" [-Version "4.4.2"] [-Repo "owner/repo"]
 ```
 
 **Примеры:**
 ```powershell
 # Стандартный запуск
-.\create_release.ps1 -Token "ghp_mytoken123"
+.\deployment\create_release.ps1 -Token "ghp_mytoken123"
 
 # Если ExecutionPolicy блокирует запуск:
-powershell.exe -ExecutionPolicy Bypass -File .\create_release.ps1 -Token "ghp_mytoken123"
+powershell.exe -ExecutionPolicy Bypass -File .\deployment\create_release.ps1 -Token "ghp_mytoken123"
 ```
 
 ### Загрузка в существующий релиз
-Если релиз уже создан (например, через macOS или вручную), используйте `upload_to_existing_release.ps1`.
+Используйте скрипт `deployment/upload_to_existing_release.ps1`.
 
 ```powershell
-.\upload_to_existing_release.ps1 -Token "ghp_mytoken123"
+.\deployment\upload_to_existing_release.ps1 -Token "ghp_mytoken123"
 ```
 *Скрипт автоматически найдет последний релиз и обновит файл `BOMCategorizerModernSetup.exe`.*
 
@@ -97,18 +97,18 @@ gh release upload v4.4.2 BOMCategorizer-4.4.2-macOS-Modern.dmg --clobber
 ```
 
 ### Вариант 2: Bash скрипты
-Если CLI недоступен, используйте скрипты `create_release.sh` и `upload_to_existing_release.sh`.
+Если CLI недоступен, используйте скрипты из `deployment/`.
 *Рекомендуется установить `jq` (`brew install jq`) для корректной работы с JSON.*
 
 **Создание релиза:**
 ```bash
-./create_release.sh -t "ghp_xxx" -v "4.4.2"
+./deployment/create_release.sh -t "ghp_xxx" -v "4.4.2"
 ```
 
 **Обновление релиза:**
 ```bash
 # Автоматически найдет .dmg и .exe и загрузит их в существующий релиз
-./upload_to_existing_release.sh -t "ghp_xxx" -v "4.4.2"
+./deployment/upload_to_existing_release.sh -t "ghp_xxx" -v "4.4.2"
 ```
 
 ---

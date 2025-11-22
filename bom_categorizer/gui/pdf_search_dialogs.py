@@ -548,8 +548,8 @@ class PDFSearchDialog(QDialog):
         
         # Сохраняем файл - используем ту же логику, что и load_config()
         try:
-            # Используем функцию get_config_path() из gui_qt
-            from .gui_qt import get_config_path
+            # Используем функцию get_config_path() из main_window
+            from .main_window import get_config_path
             config_path = get_config_path()
             
             # Загружаем текущий конфиг из файла, чтобы сохранить все остальные настройки

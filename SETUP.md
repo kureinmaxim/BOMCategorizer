@@ -10,11 +10,12 @@
 
 ✅ **Есть в репозитории:**
 - Исходный код (Python модули)
-- Template файлы конфигурации:
-  - `config.json.template` (Standard Edition)
-  - `config_qt.json.template` (Modern Edition)
+- Template файлы конфигурации в `config/`:
+  - `config/config.json.template` (Standard Edition)
+  - `config/config_qt.json.template` (Modern Edition)
+- Шаблон базы данных: `data/component_database_template.json`
 - Документация
-- Скрипты сборки
+- Скрипты сборки в `deployment/`, утилиты в `tools/`, скрипты запуска в `scripts/`
 
 ❌ **НЕТ в репозитории** (они в `.gitignore`):
 - `config.json` - локальный config Standard Edition
@@ -38,17 +39,17 @@ cd BOMCategorizer
 
 **Windows:**
 ```powershell
-python init_project.py
+python tools/init_project.py
 ```
 
 **macOS/Linux:**
 ```bash
-python3 init_project.py
+python3 tools/init_project.py
 ```
 
 **Что делает скрипт:**
-1. ✅ Создает `config.json` из `config.json.template`
-2. ✅ Создает `config_qt.json` из `config_qt.json.template`
+1. ✅ Создает `config.json` из `config/config.json.template`
+2. ✅ Создает `config_qt.json` из `config/config_qt.json.template`
 3. ✅ Проверяет наличие виртуального окружения
 4. ✅ Показывает инструкции по дальнейшим действиям
 
@@ -93,19 +94,19 @@ python app_qt.py
 **Windows PowerShell:**
 ```powershell
 # Standard Edition
-Copy-Item config.json.template config.json
+Copy-Item config/config.json.template config.json
 
 # Modern Edition
-Copy-Item config_qt.json.template config_qt.json
+Copy-Item config/config_qt.json.template config_qt.json
 ```
 
 **macOS/Linux (bash):**
 ```bash
 # Standard Edition
-cp config.json.template config.json
+cp config/config.json.template config.json
 
 # Modern Edition
-cp config_qt.json.template config_qt.json
+cp config/config_qt.json.template config_qt.json
 ```
 
 ### 2. Создайте виртуальное окружение
@@ -129,7 +130,7 @@ pip install -r requirements.txt
 ### 4. Проверьте версии
 
 ```bash
-python update_version.py status
+python tools/update_version.py status
 ```
 
 Должно показать:
@@ -204,7 +205,7 @@ Modern Edition: v4.4.4
 После обновления проекта (git pull) синхронизируйте версии:
 
 ```bash
-python update_version.py sync
+python tools/update_version.py sync
 ```
 
 **Что делает sync:**
@@ -254,7 +255,7 @@ ls -la config.json config_qt.json
 ### 2. Проверьте версии:
 
 ```bash
-python update_version.py status
+python tools/update_version.py status
 ```
 
 ### 3. Запустите тесты (опционально):
@@ -281,7 +282,7 @@ pytest tests/
 
 ### Q: Что делать после `git pull`?
 
-**A:** Запустите `python update_version.py sync` для синхронизации версий. Скрипт обновит только секцию `app_info`, сохранив ваши персональные настройки.
+**A:** Запустите `python tools/update_version.py sync` для синхронизации версий. Скрипт обновит только секцию `app_info`, сохранив ваши персональные настройки.
 
 ### Q: Как обновить структуру config при добавлении новых полей?
 
@@ -292,8 +293,8 @@ pytest tests/
 ## 📚 Дополнительная информация
 
 - **Сборка инсталлятора:** см. `BUILD.md`
-- **Структура проекта:** см. `docs/PROJECT_STRUCTURE.md`
-- **Управление версиями:** см. `update_version.py --help`
+- **Структура проекта:** см. `ANALYSIS_PROJECT.md`
+- **Управление версиями:** см. `tools/update_version.py --help`
 - **Changelog:** см. `CHANGELOG.md`
 
 ---

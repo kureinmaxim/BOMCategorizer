@@ -19,16 +19,16 @@
 
 ```cmd
 # Все тесты
-run_tests.bat
+scripts\run_tests.bat
 
 # Только быстрые unit-тесты (2-3 секунды)
-run_tests.bat quick
+scripts\run_tests.bat quick
 
 # Только интеграционные тесты (20-30 секунд)
-run_tests.bat integration
+scripts\run_tests.bat integration
 
 # С покрытием кода
-run_tests.bat coverage
+scripts\run_tests.bat coverage
 ```
 
 ### Прямой запуск через Python
@@ -87,9 +87,9 @@ BOMCategorizer/
 │   └── test_integration.py    # Интеграционные тесты
 │
 ├── run_tests.py                # Скрипт запуска pytest тестов
-├── run_tests.bat               # BAT файл для Windows
 │
-├── test_examples.bat           # BAT файл для тестирования примеров
+├── scripts/                    # Скрипты запуска
+│   └── run_tests.bat           # BAT файл для Windows
 │
 └── test_output/                # Результаты тестирования (создается автоматически)
 ```
@@ -124,7 +124,7 @@ BOMCategorizer/
 **Команды:**
 ```cmd
 # Все unit-тесты
-run_tests.bat quick
+scripts\run_tests.bat quick
 
 # Конкретный модуль
 pytest tests/test_classifiers.py -v
@@ -181,7 +181,7 @@ pytest tests/test_classifiers.py::TestBasicClassification::test_resistor_classif
 
 **Команда:**
 ```cmd
-run_tests.bat integration
+scripts\run_tests.bat integration
 ```
 
 ### 5. Тесты на примерах (реальные файлы)
@@ -288,7 +288,7 @@ python -m pip install -r requirements.txt
 После изменения кода запустите быстрые тесты:
 
 ```cmd
-run_tests.bat quick
+scripts\run_tests.bat quick
 ```
 
 Если всё OK - продолжайте работу.
@@ -298,7 +298,7 @@ run_tests.bat quick
 Запустите полные тесты:
 
 ```cmd
-run_tests.bat
+scripts\run_tests.bat
 ```
 
 Убедитесь что все тесты проходят.
@@ -323,7 +323,7 @@ test_examples.bat your_file.doc
 Полное тестирование с покрытием:
 
 ```cmd
-run_tests.bat coverage
+scripts\run_tests.bat coverage
 ```
 
 Проверьте:
@@ -472,7 +472,7 @@ def test_with_example_files(example_dir):
 
 ```cmd
 # Быстрая проверка
-run_tests.bat quick
+scripts\run_tests.bat quick
 ```
 
 Если все прошло успешно - можно коммитить.
@@ -481,14 +481,14 @@ run_tests.bat quick
 
 ```cmd
 # Полная проверка
-run_tests.bat
+scripts\run_tests.bat
 ```
 
 ### Before release (перед релизом)
 
 ```cmd
 # Полная проверка с покрытием
-run_tests.bat coverage
+scripts\run_tests.bat coverage
 ```
 
 Проверьте что покрытие > 70%.
@@ -693,7 +693,7 @@ start htmlcov\index.html
 python -m pip install PySide6
 
 # Запустите тесты
-run_tests.bat
+scripts\run_tests.bat
 ```
 
 ### Тесты PDF экспорта

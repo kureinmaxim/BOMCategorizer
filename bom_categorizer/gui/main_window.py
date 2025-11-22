@@ -129,7 +129,7 @@ def load_config() -> dict:
             pass
     
     # Fallback с актуальной версией
-    return {"app_info": {"version": "4.4.5", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+    return {"app_info": {"version": "4.4.6", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -1833,7 +1833,7 @@ class BOMCategorizerMainWindow(QMainWindow):
             
             # Импортируем компоненты
             import pandas as pd
-            from .component_database import load_component_database, save_component_database
+            from ..component_database import load_component_database, save_component_database
             
             # Маппинг русских названий листов на ключи категорий
             SHEET_TO_CATEGORY = {
@@ -2084,7 +2084,7 @@ class BOMCategorizerMainWindow(QMainWindow):
     def update_database_tooltip(self):
         """Обновляет tooltip для информации о базе данных"""
         try:
-            from .component_database import get_database_history
+            from ..component_database import get_database_history
             
             stats = get_database_stats()
             metadata = stats.get('metadata', {})
@@ -2433,7 +2433,7 @@ class BOMCategorizerMainWindow(QMainWindow):
     def on_view_database(self):
         """Показывает содержимое базы данных с историей формирования"""
         try:
-            from .component_database import load_component_database
+            from ..component_database import load_component_database
             
             # Загружаем базу данных
             db = load_component_database()
