@@ -65,6 +65,45 @@ from . import search_methods
 
 def get_config_path() -> str:
     """Определяет путь к config_qt.json (Modern Edition)"""
+    
+    # Для .app bundle (frozen) - всегда используем Application Support
+    if getattr(sys, 'frozen', False) and platform.system() == 'Darwin':
+        app_support = os.path.expanduser('~/Library/Application Support')
+        installed_path = os.path.join(app_support, 'BOMCategorizerModern', 'config_qt.json')
+        installed_dir = os.path.dirname(installed_path)
+        
+        # Создаем папку, если её нет
+        if not os.path.exists(installed_dir):
+            os.makedirs(installed_dir, exist_ok=True)
+        
+        # Если конфига нет, копируем из bundle (шаблон)
+        if not os.path.exists(installed_path):
+            bundle_dir = os.path.dirname(os.path.dirname(sys.executable))
+            # Пробуем несколько возможных путей к шаблону
+            possible_paths = [
+                os.path.join(bundle_dir, "Resources", "config_qt.json.template"),
+                os.path.join(bundle_dir, "Resources", "config", "config_qt.json.template"),
+                os.path.join(bundle_dir, "Resources", "config_qt.json"),  # Может быть без .template
+            ]
+            
+            template_found = False
+            for template_path in possible_paths:
+                if os.path.exists(template_path):
+                    import shutil
+                    shutil.copy2(template_path, installed_path)
+                    template_found = True
+                    break
+            
+            # Если шаблон не найден, создаём минимальный конфиг
+            if not template_found:
+                # Используем fallback конфиг из load_config()
+                import json
+                fallback_config = {"app_info": {"version": "4.4.6", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+                with open(installed_path, 'w', encoding='utf-8') as f:
+                    json.dump(fallback_config, f, indent=2, ensure_ascii=False)
+        
+        return installed_path
+    
     # 1. Рядом с модулем (разработка)
     dev_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
     if os.path.exists(dev_path):
@@ -85,7 +124,7 @@ def get_config_path() -> str:
             os.makedirs(installed_dir, exist_ok=True)
             return installed_path
     
-    # 3. В папке Application Support для macOS (установленная версия)
+    # 3. В папке Application Support для macOS (установленная версия - не frozen)
     if platform.system() == 'Darwin':  # macOS
         app_support = os.path.expanduser('~/Library/Application Support')
         installed_path = os.path.join(app_support, 'BOMCategorizerModern', 'config_qt.json')
@@ -93,24 +132,12 @@ def get_config_path() -> str:
         # Если папка установки существует или файл существует
         if os.path.exists(installed_dir) or os.path.exists(installed_path):
             return installed_path
-        # Если мы в установленной версии (есть маркер .installed или frozen)
-        if getattr(sys, 'frozen', False):
-            os.makedirs(installed_dir, exist_ok=True)
-            return installed_path
         # Проверяем маркер установки
         base_dir = os.path.dirname(os.path.dirname(__file__))
         installed_marker = os.path.join(base_dir, ".installed")
         if os.path.exists(installed_marker):
             os.makedirs(installed_dir, exist_ok=True)
             return installed_path
-    
-    # 4. В случае .app bundle на macOS (Contents/Resources/) - только если frozen
-    if getattr(sys, 'frozen', False):
-        if platform.system() == 'Darwin':  # macOS
-            bundle_dir = os.path.dirname(os.path.dirname(sys.executable))
-            bundle_path = os.path.join(bundle_dir, "Resources", "config_qt.json")
-            if os.path.exists(bundle_path):
-                return bundle_path
     
     # По умолчанию - путь разработки
     return dev_path

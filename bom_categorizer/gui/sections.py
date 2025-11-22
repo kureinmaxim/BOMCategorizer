@@ -85,6 +85,27 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     window.multiplier_spin.setMaximum(999)
     window.multiplier_spin.setValue(1)
     window.multiplier_spin.setMaximumWidth(80)
+    window.multiplier_spin.setMinimumHeight(32)  # Увеличиваем высоту для больших стрелок
+    window.multiplier_spin.setAlignment(Qt.AlignCenter)  # Выравнивание по центру
+    # Дополнительные стили для лучшего отображения
+    window.multiplier_spin.setStyleSheet("""
+        QSpinBox {
+            padding: 4px 8px;
+            text-align: center;
+        }
+        QSpinBox::up-button, QSpinBox::down-button {
+            width: 20px;
+            subcontrol-origin: border;
+        }
+        QSpinBox::up-arrow {
+            width: 12px;
+            height: 12px;
+        }
+        QSpinBox::down-arrow {
+            width: 12px;
+            height: 12px;
+        }
+    """)
     window.multiplier_spin.setToolTip("Выберите файл из списка")
     window.lockable_widgets.append(window.multiplier_spin)
     mult_layout.addWidget(window.multiplier_spin)
@@ -514,18 +535,30 @@ def create_footer(window: 'BOMCategorizerMainWindow') -> QWidget:
 
     info_layout.addStretch()
 
-    # Информация о расположении (кликабельная метка)
-    # Для Modern Edition проверяем путь к config_qt.json
     from .main_window import get_config_path
+    import platform
     config_path = get_config_path()
     db_path = get_database_path()
     
     # Определяем, установленная версия или разработка
-    is_installed = "%APPDATA%" in config_path or "AppData" in config_path or "Application Support" in config_path
+    # Для установленной версии конфиг должен быть в системной папке, а не рядом с кодом
+    is_installed = False
+    if platform.system() == 'Darwin':  # macOS
+        # Установленная версия: конфиг в ~/Library/Application Support/
+        is_installed = 'Application Support' in config_path and 'BOMCategorizerModern' in config_path
+        install_label = "Установка (Application Support)"
+    elif platform.system() == 'Windows':
+        # Установленная версия: конфиг в %APPDATA%
+        is_installed = 'AppData' in config_path or '%APPDATA%' in config_path
+        install_label = "Установка (%APPDATA%)"
+    else:
+        # Linux и другие
+        is_installed = '.local' in config_path or '.config' in config_path
+        install_label = "Установка (система)"
     
     if is_installed:
         # Для установленной версии Modern Edition открываем папку установки (где config_qt.json)
-        location_label = QLabel("Установка (%APPDATA%)")
+        location_label = QLabel(install_label)
         location_label.setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; } QLabel:hover { color: #74c7ec; }")
         location_label.setToolTip("Нажмите для открытия папки установки Modern Edition\n(где находится config_qt.json)")
         location_label.mousePressEvent = lambda event: window.on_open_install_folder()

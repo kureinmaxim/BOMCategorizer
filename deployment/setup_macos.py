@@ -33,30 +33,25 @@ print("="*60)
 
 # Выбираем конфигурацию в зависимости от версии
 if edition == 'modern':
-    config_file = 'config_qt.json'
+    config_file = 'config/config_qt.json.template'
     app_file = 'app_qt.py'
-    gui_module = 'gui_qt.py'
-    dialogs_module = 'dialogs_qt.py'
     bundle_identifier = 'com.kurein.bomcategorizer.modern'
     packages = ['pandas', 'openpyxl', 'docx2txt', 'chardet', 'PySide6']
     includes = ['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets', 'cmath', 'math', 'decimal']
-    excludes_extra = ['tkinter', 'Tkinter', '_tkinter', 'bom_categorizer.gui', 'gui']
+    excludes_extra = ['tkinter', 'Tkinter', '_tkinter', 'bom_categorizer.gui_legacy', 'gui_legacy']
 else:
-    config_file = 'config.json'
+    config_file = 'config/config.json.template'
     app_file = 'app.py'
-    gui_module = 'gui.py'
-    dialogs_module = None
     bundle_identifier = 'com.kurein.bomcategorizer'
     packages = ['tkinter', 'pandas', 'openpyxl', 'docx2txt', 'chardet']
     includes = ['tkinter', 'tkinter.ttk', 'tkinter.filedialog', 'tkinter.messagebox', 'cmath', 'math', 'decimal']
-    excludes_extra = ['PySide6', 'shiboken6', 'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets', 'bom_categorizer.gui_qt', 'bom_categorizer.dialogs_qt', 'gui_qt', 'dialogs_qt']
+    excludes_extra = ['PySide6', 'shiboken6', 'PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets']
 
 # Загружаем конфигурацию
 print(f"📄 Конфиг: {config_file}")
 print(f"🚀 App файл: {app_file}")
-print(f"🎨 GUI модуль: {gui_module}")
 print(f"✅ Включаемые: {', '.join(packages[:3])}...")
-print(f"❌ Исключаемые: {', '.join(excludes_extra)}")
+print(f"❌ Исключаемые: {', '.join(excludes_extra[:3])}...")
 print("="*60)
 print()
 
@@ -69,7 +64,6 @@ APP = [app_file]
 bom_categorizer_modules = [
     'bom_categorizer/__init__.py',
     'bom_categorizer/main.py',
-    f'bom_categorizer/{gui_module}',
     'bom_categorizer/component_database.py',
     'bom_categorizer/config_manager.py',  # Для инициализации конфигов из шаблонов
     'bom_categorizer/classifiers.py',
@@ -81,28 +75,36 @@ bom_categorizer_modules = [
     'bom_categorizer/podborka_extractor.py',
 ]
 
-# Добавляем дополнительные модули для Modern Edition
-if dialogs_module:
+# Добавляем GUI модули для Modern Edition
+if edition == 'modern':
     bom_categorizer_modules.extend([
-        f'bom_categorizer/{dialogs_module}',
-        'bom_categorizer/gui_scaling_qt.py',
-        'bom_categorizer/gui_sections_qt.py',
-        'bom_categorizer/gui_menu_qt.py',
-        'bom_categorizer/styles.py',
-        'bom_categorizer/workers_qt.py',
-        'bom_categorizer/drag_drop_qt.py',
+        'bom_categorizer/gui/__init__.py',
+        'bom_categorizer/gui/main_window.py',
+        'bom_categorizer/gui/dialogs.py',
+        'bom_categorizer/gui/sections.py',
+        'bom_categorizer/gui/menu.py',
+        'bom_categorizer/gui/scaling.py',
+        'bom_categorizer/gui/search.py',
+        'bom_categorizer/gui/search_methods.py',
+        'bom_categorizer/gui/workers.py',
+        'bom_categorizer/gui/drag_drop.py',
+        'bom_categorizer/gui/ai_classifier.py',
+        'bom_categorizer/gui/pdf_search.py',
+        'bom_categorizer/gui/pdf_search_dialogs.py',
         'bom_categorizer/pdf_exporter.py',
-        'bom_categorizer/pdf_search.py',
-        'bom_categorizer/pdf_search_dialogs.py',
-        'bom_categorizer/search_qt.py',
-        'bom_categorizer/search_methods_qt.py',
-        'bom_categorizer/ai_classifier_qt.py',
+        'bom_categorizer/styles.py',
         'bom_categorizer/cli_interactive.py',
+    ])
+else:
+    bom_categorizer_modules.extend([
+        'bom_categorizer/gui.py',
     ])
 
 DATA_FILES = [
     ('', [config_file]),
-    ('', ['config.json.template', 'config_qt.json.template']),  # Шаблоны для инициализации
+    ('', ['config/config.json.template', 'config/config_qt.json.template']),  # Шаблоны
+    ('', ['config/rules.json']),  # Правила
+    ('', ['data/component_database_template.json']),  # Шаблон БД
     ('bom_categorizer', bom_categorizer_modules),
 ]
 
@@ -127,8 +129,22 @@ OPTIONS = {
 }
 
 # Добавляем иконку, если она существует
-if Path('icon.icns').exists():
-    OPTIONS['iconfile'] = 'icon.icns'
+# Проверяем в нескольких местах (скрипт может запускаться из корня или deployment/)
+icon_paths = [
+    Path('icon.icns'),  # Если запущено из корня
+    Path(__file__).parent.parent / 'icon.icns',  # Если запущено из deployment/
+]
+icon_file = None
+for icon_path in icon_paths:
+    if icon_path.exists():
+        icon_file = str(icon_path)
+        print(f"✅ Иконка найдена: {icon_file}")
+        break
+
+if icon_file:
+    OPTIONS['iconfile'] = icon_file
+else:
+    print("⚠️  Иконка не найдена, приложение будет без кастомной иконки")
 
 setup(
     name='BOMCategorizer',
