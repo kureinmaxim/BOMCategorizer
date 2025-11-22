@@ -1,12 +1,14 @@
 # Redirect all output to a log file in the script's directory
-$LogFile = Join-Path $PSScriptRoot "install_log.txt"
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$LogFile = Join-Path $ProjectRoot "install_log.txt"
 Start-Transcript -Path $LogFile -Force
 
-# CRITICAL: Change to the script's directory
-Set-Location $PSScriptRoot
+# CRITICAL: Change to the project root
+Set-Location $ProjectRoot
 Write-Host "Starting post-install script..."
 Write-Host "Log file will be created at: $LogFile"
 Write-Host "Script execution directory: $PSScriptRoot"
+Write-Host "Project root directory: $ProjectRoot"
 Write-Host "Current working directory: $(Get-Location)"
 Write-Host "System PATH: $($env:PATH)"
 
@@ -19,8 +21,8 @@ if ($null -eq $PythonExe) {
 Write-Host "Found Python executable at: $($PythonExe.Source)"
 
 Write-Host "Creating virtual environment..."
-$VenvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-$VenvPip = Join-Path $PSScriptRoot ".venv\Scripts\pip.exe"
+$VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+$VenvPip = Join-Path $ProjectRoot ".venv\Scripts\pip.exe"
 
 # Remove old/corrupted virtual environment if it exists but is incomplete
 if ((Test-Path ".venv") -and !(Test-Path $VenvPython)) {
@@ -67,7 +69,7 @@ if (!(Test-Path $VenvPip)) {
 
 # Verify pip is now available - check multiple possible names
 Write-Host "Checking for pip executable..."
-$VenvScriptsDir = Join-Path $PSScriptRoot ".venv\Scripts"
+$VenvScriptsDir = Join-Path $ProjectRoot ".venv\Scripts"
 Write-Host "Scripts directory contents:"
 if (Test-Path $VenvScriptsDir) {
     Get-ChildItem $VenvScriptsDir | ForEach-Object { Write-Host "  - $($_.Name)" }
@@ -104,8 +106,8 @@ if ($null -eq $PipExecutable) {
 # Skip pip upgrade for offline installation
 
 Write-Host "Installing application dependencies from offline packages..."
-$OfflinePackagesDir = Join-Path $PSScriptRoot "offline_packages"
-$RequirementsFile = Join-Path $PSScriptRoot "requirements.txt"
+$OfflinePackagesDir = Join-Path $ProjectRoot "offline_packages"
+$RequirementsFile = Join-Path $ProjectRoot "requirements.txt"
 
 # Verify requirements.txt exists
 if (!(Test-Path $RequirementsFile)) {
@@ -170,7 +172,7 @@ if (Test-Path $OfflinePackagesDir) {
             Write-Host "Exit code: $LASTEXITCODE"
             Write-Host ""
             Write-Host "You can try to repair the installation by running repair_install.bat"
-            Write-Host "from the installation directory: $PSScriptRoot"
+            Write-Host "from the installation directory: $ProjectRoot"
             Exit 1
         }
     }
@@ -194,21 +196,21 @@ if (Test-Path $OfflinePackagesDir) {
 }
 
 Write-Host "Merging component database..."
-if (Test-Path "merge_component_database.py") {
-    & $VenvPython merge_component_database.py
+if (Test-Path "tools/merge_component_database.py") {
+    & $VenvPython tools/merge_component_database.py
     if ($LASTEXITCODE -eq 0) {
         Write-Host "Component database merged successfully."
     } else {
         Write-Host "Warning: Component database merge had issues (this is not critical)."
     }
 } else {
-    Write-Host "merge_component_database.py not found, skipping database merge."
+    Write-Host "tools/merge_component_database.py not found, skipping database merge."
 }
 
 Write-Host ""
 Write-Host "Creating installation marker..."
 # Создаем маркерный файл для определения установленной версии
-$MarkerFile = Join-Path $PSScriptRoot ".installed"
+$MarkerFile = Join-Path $ProjectRoot ".installed"
 "This file indicates that the application is installed" | Out-File -FilePath $MarkerFile -Encoding UTF8
 Write-Host "Installation marker created: $MarkerFile"
 
@@ -222,7 +224,7 @@ if (!(Test-Path $UserDataDir)) {
 }
 
 # Мигрируем базу данных если она есть в старом расположении
-$OldDatabase = Join-Path $PSScriptRoot "component_database.json"
+$OldDatabase = Join-Path $ProjectRoot "data\component_database.json"
 $NewDatabase = Join-Path $UserDataDir "component_database.json"
 
 if ((Test-Path $OldDatabase) -and !(Test-Path $NewDatabase)) {

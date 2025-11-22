@@ -20,7 +20,8 @@ def initialize_config_from_template(config_name="config.json"):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     parent_dir = os.path.dirname(base_dir)
     config_path = os.path.join(parent_dir, config_name)
-    template_path = os.path.join(parent_dir, f"{config_name}.template")
+    # Templates are now in config/ directory
+    template_path = os.path.join(parent_dir, "config", f"{config_name}.template")
     
     # Если конфиг уже есть - ничего не делаем
     if os.path.exists(config_path):

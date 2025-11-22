@@ -1,5 +1,6 @@
 @echo off
 REM Скрипт для запуска тестов BOM Categorizer
+cd /d "%~dp0.."
 
 echo ====================================
 echo BOM Categorizer - Test Runner

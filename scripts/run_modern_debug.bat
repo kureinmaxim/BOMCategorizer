@@ -1,11 +1,11 @@
 @echo off
-cd /d "C:\Project\BOMCategorizer"
+cd /d "%~dp0.."
 echo ====================================
 echo BOM Categorizer Modern Edition
 echo Debug Mode (Console visible)
 echo ====================================
 echo.
-echo Project directory: C:\Project\BOMCategorizer
+echo Project directory: %CD%
 echo Current directory: %CD%
 echo Python executable: .\.venv\Scripts\python.exe
 echo.

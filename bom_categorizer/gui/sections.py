@@ -20,9 +20,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 
 if TYPE_CHECKING:
-    from .gui_qt import BOMCategorizerMainWindow
+    from .main_window import BOMCategorizerMainWindow
 
-from .component_database import get_database_stats, get_database_path
+from ..component_database import get_database_stats, get_database_path
 
 
 def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
@@ -516,7 +516,7 @@ def create_footer(window: 'BOMCategorizerMainWindow') -> QWidget:
 
     # Информация о расположении (кликабельная метка)
     # Для Modern Edition проверяем путь к config_qt.json
-    from .gui_qt import get_config_path
+    from .main_window import get_config_path
     config_path = get_config_path()
     db_path = get_database_path()
     

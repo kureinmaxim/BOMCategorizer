@@ -29,7 +29,7 @@ from PySide6.QtCore import Qt, Signal, QThread, QSize, QUrl
 from PySide6.QtGui import QFont, QColor, QPalette, QAction, QActionGroup, QKeySequence, QDragEnterEvent, QDropEvent, QCursor
 import subprocess
 
-from .component_database import (
+from ..component_database import (
     add_component_to_database,
     get_database_path,
     get_database_stats,
@@ -44,9 +44,9 @@ from .component_database import (
     format_history_tooltip
 )
 
-from .config_manager import initialize_all_configs
+from ..config_manager import initialize_all_configs
 
-from .dialogs_qt import (
+from .dialogs import (
     PinDialog,
     DatabaseStatsDialog,
     FirstRunImportDialog,
@@ -54,13 +54,13 @@ from .dialogs_qt import (
     DocConversionDialog
 )
 
-from .styles import DARK_THEME, LIGHT_THEME
+from ..styles import DARK_THEME, LIGHT_THEME
 
 # Импорты из новых модулей
-from .workers_qt import ProcessingWorker, ComparisonWorker
-from .search_qt import GlobalSearchDialog
-from . import gui_sections_qt
-from . import search_methods_qt
+from .workers import ProcessingWorker, ComparisonWorker
+from .search import GlobalSearchDialog
+from . import sections
+from . import search_methods
 
 
 def get_config_path() -> str:
@@ -632,21 +632,21 @@ class BOMCategorizerMainWindow(QMainWindow):
         scroll_layout = QVBoxLayout(scroll_content)
         scroll_layout.setSpacing(8)
 
-        # Добавляем секции (используем функции из gui_sections_qt)
-        self.main_section = gui_sections_qt.create_main_section(self)
+        # Добавляем секции (используем функции из sections)
+        self.main_section = sections.create_main_section(self)
         scroll_layout.addWidget(self.main_section)
 
-        self.comparison_section = gui_sections_qt.create_comparison_section(self)
+        self.comparison_section = sections.create_comparison_section(self)
         scroll_layout.addWidget(self.comparison_section)
 
-        self.expert_section = gui_sections_qt.create_expert_tools_section(self)
+        self.expert_section = sections.create_expert_tools_section(self)
         scroll_layout.addWidget(self.expert_section)
 
-        self.log_section = gui_sections_qt.create_log_section(self)
+        self.log_section = sections.create_log_section(self)
         scroll_layout.addWidget(self.log_section)
 
         scroll_layout.addStretch()
-        scroll_layout.addWidget(gui_sections_qt.create_footer(self))
+        scroll_layout.addWidget(sections.create_footer(self))
 
         scroll_area.setWidget(scroll_content)
         main_layout.addWidget(scroll_area)
@@ -1982,7 +1982,7 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            results = search_methods_qt.perform_global_search(self, query)
+            results = search_methods.perform_global_search(self, query)
         finally:
             QApplication.restoreOverrideCursor()
 
@@ -4060,7 +4060,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
     
     def on_toggle_enhanced_dragdrop(self, state: int):
         """Включение/выключение улучшенного Drag & Drop"""
-        from .drag_drop_qt import enable_drag_drop_improvements
+        from .drag_drop import enable_drag_drop_improvements
         
         enabled = bool(state)
         
@@ -4218,7 +4218,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             
             if self.ai_classifier_enabled:
                 # Проверяем наличие API ключа
-                from .ai_classifier_qt import AIClassifierSettings
+                from .ai_classifier import AIClassifierSettings
                 settings = AIClassifierSettings()
                 api_key = settings.get_api_key()
                 
@@ -4233,7 +4233,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         
         # Если пользователь пытается включить
         if checked:
-            from .ai_classifier_qt import AIClassifierSettings
+            from .ai_classifier import AIClassifierSettings
             settings = AIClassifierSettings()
             
             if not settings.is_enabled():
@@ -4289,7 +4289,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
     def open_ai_settings(self):
         """Открывает диалог настроек AI"""
         from PySide6.QtWidgets import QDialog, QVBoxLayout, QFormLayout, QComboBox, QLineEdit, QDialogButtonBox, QTextEdit, QLabel
-        from .ai_classifier_qt import AIClassifierSettings
+        from .ai_classifier import AIClassifierSettings
         
         # Создаем диалог
         dialog = QDialog(self)
@@ -4409,7 +4409,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         if not hasattr(self, 'ai_status_label'):
             return
         
-        from .ai_classifier_qt import AIClassifierSettings
+        from .ai_classifier import AIClassifierSettings
         settings = AIClassifierSettings()
         
         if not settings.is_enabled():

@@ -128,17 +128,17 @@ def main():
     
     # Standard Edition
     safe_print(f"{Emoji.INFO} Standard Edition:")
-    standard_version, standard_edition = read_version_from_template('config.json.template')
+    standard_version, standard_edition = read_version_from_template('../config/config.json.template')
     if standard_version:
-        update_iss_file('installer_clean.iss', standard_version, standard_edition)
+        update_iss_file('../deployment/installer_clean.iss', standard_version, standard_edition)
     
     safe_print("")  # пустая строка
     
     # Modern Edition
     safe_print(f"{Emoji.INFO} Modern Edition:")
-    modern_version, modern_edition = read_version_from_template('config_qt.json.template')
+    modern_version, modern_edition = read_version_from_template('../config/config_qt.json.template')
     if modern_version:
-        update_iss_file('installer_qt.iss', modern_version, modern_edition)
+        update_iss_file('../deployment/installer_qt.iss', modern_version, modern_edition)
     
     safe_print(f"\n{Emoji.CHECK} Синхронизация завершена.")
     safe_print(f"\n{Emoji.INFO} Версии в .iss файлах соответствуют шаблонам config.")

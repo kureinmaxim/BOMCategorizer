@@ -5,6 +5,9 @@ set -e  # Остановка при ошибке
 
 echo "🚀 Начинаем создание macOS инсталлятора..."
 
+# Переходим в корень проекта
+cd "$(dirname "$0")/.." || exit 1
+
 # Цвета для вывода
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -14,8 +17,8 @@ NC='\033[0m' # No Color
 
 # ========== ДИАЛОГ ВЫБОРА ВЕРСИИ ==========
 # Читаем версии из ШАБЛОНОВ config файлов (единственный источник правды)
-STANDARD_VERSION=$(python3 -c "import json; print(json.load(open('config.json.template'))['app_info']['version'])" 2>/dev/null || echo "3.3.0")
-MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config_qt.json.template'))['app_info']['version'])" 2>/dev/null || echo "4.2.3")
+STANDARD_VERSION=$(python3 -c "import json; print(json.load(open('config/config.json.template'))['app_info']['version'])" 2>/dev/null || echo "3.3.0")
+MODERN_VERSION=$(python3 -c "import json; print(json.load(open('config/config_qt.json.template'))['app_info']['version'])" 2>/dev/null || echo "4.2.3")
 
 echo ""
 echo -e "${YELLOW}============================================================${NC}"
@@ -69,16 +72,16 @@ echo ""
 echo -e "${BLUE}🔄 Синхронизация конфига из шаблона...${NC}"
 if [ ! -f "${CONFIG_FILE}" ]; then
     # Если конфига нет - создаем из шаблона
-    if [ -f "${CONFIG_FILE}.template" ]; then
-        cp "${CONFIG_FILE}.template" "${CONFIG_FILE}"
+    if [ -f "config/${CONFIG_FILE}.template" ]; then
+        cp "config/${CONFIG_FILE}.template" "${CONFIG_FILE}"
         echo -e "${GREEN}  ✓ Создан ${CONFIG_FILE} из шаблона${NC}"
     else
-        echo -e "${YELLOW}  ⚠️  Шаблон не найден: ${CONFIG_FILE}.template${NC}"
+        echo -e "${YELLOW}  ⚠️  Шаблон не найден: config/${CONFIG_FILE}.template${NC}"
     fi
 fi
 
 # Синхронизируем версию через update_version.py
-python3 update_version.py sync 2>&1 | grep -E "(config_qt.json|config.json|Синхронизация)" || true
+python3 tools/update_version.py sync 2>&1 | grep -E "(config_qt.json|config.json|Синхронизация)" || true
 echo -e "${GREEN}  ✓ Конфиг синхронизирован${NC}"
 
 # Проверка виртуального окружения
@@ -116,11 +119,11 @@ export PY2APP_CODESIGN=0
 if [ "$EDITION" = "Modern Edition" ]; then
     # Modern Edition: исключаем Tkinter, используем только Qt
     echo -e "${GREEN}==> Сборка Modern Edition (PySide6) с параметром --edition=modern${NC}"
-    python3 setup_macos.py py2app --edition=modern 2>&1 | tee build_py2app.log
+    python3 deployment/setup_macos.py py2app --edition=modern 2>&1 | tee deployment/build_py2app.log
     BUILD_EXIT_CODE=$?
 else
     echo -e "${GREEN}==> Сборка Standard Edition (Tkinter) БЕЗ параметра edition${NC}"
-    python3 setup_macos.py py2app 2>&1 | tee build_py2app.log
+    python3 deployment/setup_macos.py py2app 2>&1 | tee deployment/build_py2app.log
     BUILD_EXIT_CODE=$?
 fi
 
@@ -207,8 +210,8 @@ cp -R "dist/${APP_NAME}.app" "${DMG_TEMP}/"
 ln -s /Applications "${DMG_TEMP}/Applications"
 
 # Создаем README (читаем из шаблона)
-DEVELOPER=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}.template'))['app_info']['developer'])")
-RELEASE_DATE=$(python3 -c "import json; print(json.load(open('${CONFIG_FILE}.template'))['app_info']['release_date'])")
+DEVELOPER=$(python3 -c "import json; print(json.load(open('config/${CONFIG_FILE}.template'))['app_info']['developer'])")
+RELEASE_DATE=$(python3 -c "import json; print(json.load(open('config/${CONFIG_FILE}.template'))['app_info']['release_date'])")
 
 cat > "${DMG_TEMP}/README.txt" << EOF
 ${APP_NAME} v${VERSION}

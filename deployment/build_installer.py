@@ -63,28 +63,28 @@ EDITIONS = {
 FILES_TO_COPY = [
     "app.py",
     "app_qt.py",  # Modern Edition entry point
-    "split_bom.py",
+    "tools/split_bom.py",
     "config.json",
     "config_qt.json",  # Modern Edition config
-    "config.json.template",  # Шаблон конфигурации для Standard Edition
-    "config_qt.json.template",  # Шаблон конфигурации для Modern Edition
-    "component_database_template.json",  # Шаблон БД (пустая база для новых установок)
-    "merge_component_database.py",  # Скрипт слияния баз данных при обновлении
+    "config/config.json.template",  # Шаблон конфигурации для Standard Edition
+    "config/config_qt.json.template",  # Шаблон конфигурации для Modern Edition
+    "data/component_database_template.json",  # Шаблон БД (пустая база для новых установок)
+    "tools/merge_component_database.py",  # Скрипт слияния баз данных при обновлении
     "requirements_install.txt",  # Используем облегченную версию без тестовых зависимостей
-    "rules.json",
-    "interactive_classify.py",
-    "interactive_classify_improved.py",
-    "preview_unclassified.py",
-    "installer_clean.iss",
-    "installer_qt.iss",  # Modern Edition installer script
-    "post_install.ps1",
-    "repair_install.ps1",
-    "repair_install.bat",
-    "run_app.bat",
-    "run_app_debug.bat",  # Debug version with console output
-    "run_app_simple.bat",  # Simple version with console output (for troubleshooting)
-    "split_bom.bat",
-    "start_gui.bat",
+    "config/rules.json",
+    "tools/interactive_classify.py",
+    "tools/interactive_classify_improved.py",
+    "tools/preview_unclassified.py",
+    "deployment/installer_clean.iss",
+    "deployment/installer_qt.iss",  # Modern Edition installer script
+    "scripts/post_install.ps1",
+    "scripts/repair_install.ps1",
+    "scripts/repair_install.bat",
+    "scripts/run_app.bat",
+    "scripts/run_app_debug.bat",  # Debug version with console output
+    "scripts/run_app_simple.bat",  # Simple version with console output (for troubleshooting)
+    "scripts/split_bom.bat",
+    "scripts/start_gui.bat",
     "README.md",
     "BUILD.md"
 ]

@@ -1,6 +1,6 @@
 @echo off
 chcp 65001 >nul 2>&1
-cd /d "%~dp0"
+cd /d "%~dp0.."
 
 :: Create a log file for debugging
 echo Launching BOM Categorizer... > debug_log.txt

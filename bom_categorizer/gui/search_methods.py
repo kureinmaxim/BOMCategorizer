@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .gui_qt import BOMCategorizerMainWindow
+    from .main_window import BOMCategorizerMainWindow
 
 
 def perform_global_search(window: 'BOMCategorizerMainWindow', query: str) -> Dict[str, Any]:

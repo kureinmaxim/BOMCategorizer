@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 
 if TYPE_CHECKING:
-    from .gui_qt import BOMCategorizerMainWindow
+    from .main_window import BOMCategorizerMainWindow
 
 
 def create_menu_bar(window: 'BOMCategorizerMainWindow') -> None:

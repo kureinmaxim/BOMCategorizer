@@ -2,7 +2,8 @@
 # Run this script from the installation directory
 
 $ErrorActionPreference = "Stop"
-$LogFile = Join-Path $PSScriptRoot "repair_log.txt"
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$LogFile = Join-Path $ProjectRoot "repair_log.txt"
 Start-Transcript -Path $LogFile -Force
 
 Write-Host "==============================================="
@@ -10,13 +11,14 @@ Write-Host "BOM Categorizer Installation Repair Script"
 Write-Host "==============================================="
 Write-Host ""
 
-# Change to the script's directory
-Set-Location $PSScriptRoot
+# Change to the project root
+Set-Location $ProjectRoot
 Write-Host "Working directory: $(Get-Location)"
+Write-Host "Script directory: $PSScriptRoot"
 Write-Host ""
 
 # Check if virtual environment exists
-$VenvPython = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
+$VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
 if (!(Test-Path $VenvPython)) {
     Write-Host "ERROR: Virtual environment not found at: $VenvPython"
     Write-Host "Please run the installer again."
@@ -30,7 +32,7 @@ Write-Host "Python: $VenvPython"
 Write-Host ""
 
 # Check for offline packages
-$OfflinePackagesDir = Join-Path $PSScriptRoot "offline_packages"
+$OfflinePackagesDir = Join-Path $ProjectRoot "offline_packages"
 if (!(Test-Path $OfflinePackagesDir)) {
     Write-Host "ERROR: offline_packages directory not found!"
     Write-Host "Expected location: $OfflinePackagesDir"
@@ -47,7 +49,7 @@ Get-ChildItem $OfflinePackagesDir -Filter "*.whl" | ForEach-Object {
 Write-Host ""
 
 # Check for requirements.txt
-$RequirementsFile = Join-Path $PSScriptRoot "requirements.txt"
+$RequirementsFile = Join-Path $ProjectRoot "requirements.txt"
 if (!(Test-Path $RequirementsFile)) {
     Write-Host "ERROR: requirements.txt not found!"
     Stop-Transcript

@@ -17,9 +17,9 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont, QAction, QShortcut, QKeySequence
 
 if TYPE_CHECKING:
-    from .gui_qt import BOMCategorizerMainWindow
+    from .main_window import BOMCategorizerMainWindow
 
-from .styles import DARK_THEME, LIGHT_THEME
+from ..styles import DARK_THEME, LIGHT_THEME
 
 
 def get_system_font() -> str:
@@ -349,7 +349,7 @@ def set_view_mode(window: 'BOMCategorizerMainWindow', mode: str) -> None:
 def save_ui_preferences(window: 'BOMCategorizerMainWindow') -> None:
     """Сохраняет настройки интерфейса"""
     try:
-        from .gui_qt import get_config_path
+        from .main_window import get_config_path
         
         if "ui" not in window.cfg:
             window.cfg["ui"] = {}
