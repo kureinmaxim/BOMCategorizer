@@ -32,7 +32,7 @@ python3 app_qt.py
 
 ### Для WSL / Linux
 1.  **Python 3.10+** и **pip**.
-2.  Установленные пакеты `requirements-linux.txt`.
+2.  Установленные пакеты `requirements.txt`.
 3.  (Опционально) **Alacritty** + **Zellij** для продвинутого терминала.
 
 ---
@@ -77,7 +77,7 @@ python3 app_qt.py
 cd /mnt/c/Project/BOMCategorizer
 python3 -m venv .venv-wsl
 source .venv-wsl/bin/activate
-pip install -r requirements-linux.txt
+pip install -r requirements.txt
 python3 app_qt.py
 ```
 
@@ -85,7 +85,7 @@ python3 app_qt.py
 *Требуется папка `offline-packages-linux/` в корне проекта.*
 ```bash
 source .venv-wsl/bin/activate
-pip install --no-index --find-links=offline-packages-linux -r requirements-linux.txt
+pip install --no-index --find-links=offline-packages-linux -r requirements.txt
 python3 app_qt.py
 ```
 
@@ -141,8 +141,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # 4. Установите зависимости
-pip install -r requirements-macos.txt
-# Или используйте requirements.txt (если requirements-macos.txt отсутствует)
+pip install -r requirements.txt
 ```
 
 #### Запуск приложения
@@ -280,7 +279,7 @@ open -a Console
 | **Не запускается .bat файл** | Убедитесь, что запускаете из папки `scripts/`. Скрипт автоматически перейдёт в корень проекта. |
 | **Python executable not found** | Виртуальное окружение не создано. Запустите `scripts/run_app.bat` для первичной настройки. |
 | **did not find executable (WSL)** | Вы пытаетесь использовать `.venv` от Windows в WSL (или наоборот). Удалите папку `.venv` и создайте `.venv-wsl` для Linux. |
-| **No matching distribution pywin32** | В Linux/macOS используйте `requirements-linux.txt`, так как `pywin32` только для Windows. |
+| **No matching distribution pywin32** | В Linux/macOS используйте `requirements.txt` — `pywin32` автоматически пропускается на Linux/macOS. |
 | **Не находит config/rules файлы** | После рефакторинга конфиги в `config/`, база данных в `data/`. Приложение автоматически создаст их при первом запуске. |
 
 ## 💡 Полезные советы
