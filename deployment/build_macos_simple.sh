@@ -26,7 +26,7 @@ mkdir -p "${PORTABLE_DIR}"
 echo -e "${BLUE}📋 Копирование файлов...${NC}"
 cp app.py "${PORTABLE_DIR}/"
 cp config.json "${PORTABLE_DIR}/"
-cp requirements_macos.txt "${PORTABLE_DIR}/requirements.txt"
+cp requirements.txt "${PORTABLE_DIR}/requirements.txt"
 cp -r bom_categorizer "${PORTABLE_DIR}/"
 
 # Создаем launcher скрипт

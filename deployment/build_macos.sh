@@ -97,7 +97,7 @@ source venv/bin/activate
 # Установка зависимостей для сборки
 echo -e "${BLUE}📥 Установка зависимостей для сборки...${NC}"
 pip install --upgrade pip
-pip install -r requirements_macos.txt
+pip install -r requirements.txt
 pip install py2app
 
 # Очистка предыдущих сборок
