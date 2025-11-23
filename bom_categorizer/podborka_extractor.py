@@ -264,6 +264,22 @@ def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=Non
                 row_dict['original_note'] = ''
             if 'Примечание' in row_dict:
                 row_dict['Примечание'] = ''
+            
+            # ДОПОЛНИТЕЛЬНО: Очищаем поля ТУ и производителя, если туда попал текст замены
+            # Пример: "Rosenberger Допуск. замена: QASNL-FF," в поле ТУ
+            replacement_pattern = r'(?:замена\s+на|допуск\.\s*замена\s*:?|допускается\s+замена\s+(?:на\s+)?|замена\s+|доп\.\s*замена:).*'
+            
+            for field in ['tu', 'TU', 'ТУ', 'manufacturer', 'brand', 'Производитель', 'note']:
+                if field in row_dict and pd.notna(row_dict[field]):
+                    val = str(row_dict[field])
+                    # Если поле содержит маркер замены
+                    if re.search(replacement_pattern, val, re.IGNORECASE | re.DOTALL):
+                        # Удаляем текст замены
+                        clean_val = re.sub(replacement_pattern, '', val, flags=re.IGNORECASE | re.DOTALL).strip()
+                        # Удаляем завершающие запятые/точки
+                        clean_val = clean_val.rstrip('.,;').strip()
+                        row_dict[field] = clean_val
+
             new_rows.append(row_dict)
         else:
             # Нет подборов - добавляем как есть

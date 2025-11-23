@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 # Проверка наличия иконки
-if not Path('icon.icns').exists():
-    print("⚠️  ВНИМАНИЕ: Файл icon.icns не найден!")
+if not Path('assets/icon.icns').exists():
+    print("⚠️  ВНИМАНИЕ: Файл assets/icon.icns не найден!")
     print("   Приложение будет создано без иконки.")
     print("   Запустите: python create_icons.py для создания иконки")
     print()
@@ -131,8 +131,8 @@ OPTIONS = {
 # Добавляем иконку, если она существует
 # Проверяем в нескольких местах (скрипт может запускаться из корня или deployment/)
 icon_paths = [
-    Path('icon.icns'),  # Если запущено из корня
-    Path(__file__).parent.parent / 'icon.icns',  # Если запущено из deployment/
+    Path('assets/icon.icns'),  # Если запущено из корня
+    Path(__file__).parent.parent / 'assets/icon.icns',  # Если запущено из deployment/
 ]
 icon_file = None
 for icon_path in icon_paths:

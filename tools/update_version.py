@@ -229,6 +229,31 @@ def show_status():
     else:
         safe_print(f"  {Colors.YELLOW}Локальный: config_qt.json не найден{Colors.NC}")
     
+    # User config (установленное приложение)
+    import os
+    import sys
+    if sys.platform == 'darwin':  # macOS
+        user_config_path = os.path.expanduser('~/Library/Application Support/BOMCategorizerModern/config_qt.json')
+    elif sys.platform == 'win32':  # Windows
+        appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
+        user_config_path = os.path.join(appdata, 'BOMCategorizerModern', 'config_qt.json')
+    else:  # Linux
+        user_config_path = os.path.expanduser('~/.config/BOMCategorizerModern/config_qt.json')
+    
+    user_config = read_config_file(user_config_path)
+    if user_config:
+        user_version = user_config['app_info']['version']
+        user_date = user_config['app_info'].get('release_date', 'N/A')
+        safe_print(f"  {Colors.BOLD}User config (установленное приложение):{Colors.NC}")
+        safe_print(f"    Версия:      {Colors.GREEN}{user_version}{Colors.NC}")
+        safe_print(f"    Дата релиза: {user_date}")
+        safe_print(f"    Файл:        {user_config_path}")
+        
+        # Сравнение версий
+        if template_config and template_version != user_version:
+            versions_differ = True
+            safe_print(f"    {Colors.RED}{Emoji.WARN} ⚠️ Версии отличаются!{Colors.NC}")
+    
     # Скрипты сборки
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Файлы сборки (читают из шаблонов){Colors.NC}")
     safe_print(f"  - deployment/build_macos.sh")
@@ -448,6 +473,33 @@ def sync_all():
                 safe_print(f"  {Colors.GREEN}{Emoji.CHECK} config_qt.json уже синхронизирован (v{local_version}){Colors.NC}")
         else:
             safe_print(f"  {Colors.YELLOW}config_qt.json не найден (будет создан при первом запуске){Colors.NC}")
+        
+        # Синхронизация пользовательского config (если приложение установлено)
+        import os
+        import sys
+        if sys.platform == 'darwin':  # macOS
+            user_config_path = os.path.expanduser('~/Library/Application Support/BOMCategorizerModern/config_qt.json')
+        elif sys.platform == 'win32':  # Windows
+            appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
+            user_config_path = os.path.join(appdata, 'BOMCategorizerModern', 'config_qt.json')
+        else:  # Linux
+            user_config_path = os.path.expanduser('~/.config/BOMCategorizerModern/config_qt.json')
+        
+        if os.path.exists(user_config_path):
+            user_config = read_config_file(user_config_path)
+            if user_config:
+                user_version = user_config['app_info']['version']
+                if template_version != user_version:
+                    safe_print(f"  {Colors.YELLOW}User config (installed app): {user_version} → {template_version}{Colors.NC}")
+                    update_local_config(
+                        user_config_path,
+                        template_version,
+                        template_edition,
+                        release_date=template_release_date,
+                        last_updated=template_last_updated
+                    )
+                else:
+                    safe_print(f"  {Colors.GREEN}{Emoji.CHECK} User config (installed app) уже синхронизирован (v{user_version}){Colors.NC}")
     
     # Синхронизация захардкоженных версий в Python файлах
     sync_hardcoded_versions()

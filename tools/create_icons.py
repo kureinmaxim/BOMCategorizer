@@ -30,20 +30,20 @@ def create_icons():
     icon_source = None
     source_type = None
     
-    # Сначала проверяем icon.png
-    if Path("icon.png").exists():
-        icon_source = Path("icon.png")
+    # Сначала проверяем assets/icon.png
+    if Path("assets/icon.png").exists():
+        icon_source = Path("assets/icon.png")
         source_type = "PNG"
-        print("✅ Найден icon.png")
-    # Если нет icon.png, проверяем icon.icns
-    elif Path("icon.icns").exists():
-        icon_source = Path("icon.icns")
+        print("✅ Найден assets/icon.png")
+    # Если нет assets/icon.png, проверяем assets/icon.icns
+    elif Path("assets/icon.icns").exists():
+        icon_source = Path("assets/icon.icns")
         source_type = "ICNS"
-        print("✅ Найден icon.icns (будет использован как источник)")
+        print("✅ Найден assets/icon.icns (будет использован как источник)")
     else:
-        print("❌ Ошибка: Файл icon.png или icon.icns не найден!")
-        print("   Сохраните иконку в корень проекта с именем icon.png")
-        print("   Или используйте icon.icns (будет извлечено изображение для Windows)")
+        print("❌ Ошибка: Файл assets/icon.png или assets/icon.icns не найден!")
+        print("   Сохраните иконку в папку assets/ с именем icon.png")
+        print("   Или используйте assets/icon.icns (будет извлечено изображение для Windows)")
         return False
     
     print()
@@ -64,11 +64,11 @@ def create_icons():
         try:
             # Пробуем открыть .icns напрямую (Pillow может поддерживать)
             img = Image.open(icon_source)
-            print(f"✅ Изображение извлечено из icon.icns")
+            print(f"✅ Изображение извлечено из assets/icon.icns")
         except Exception as e:
             print(f"⚠️  Не удалось открыть icon.icns напрямую: {e}")
-            print("💡 Рекомендация: Используйте icon.png как исходный файл")
-            print("   Или конвертируйте icon.icns в PNG через онлайн конвертер")
+            print("💡 Рекомендация: Используйте assets/icon.png как исходный файл")
+            print("   Или конвертируйте assets/icon.icns в PNG через онлайн конвертер")
             return False
     else:
         img = Image.open(icon_source)
@@ -110,7 +110,7 @@ def create_icons():
         win_images.append(resized)
     
     # Сохраняем как .ico (все размеры в одном файле)
-    ico_path = Path("icon.ico")
+    ico_path = Path("assets/icon.ico")
     
     # Конвертируем все в RGBA если нужно (для поддержки прозрачности)
     win_images_rgba = []
@@ -184,13 +184,13 @@ def create_icons():
                     print(f"      ")
                     print(f"      Метод 1 - Онлайн конвертер (рекомендуется):")
                     print(f"      1. Откройте: https://convertio.co/png-ico/")
-                    print(f"      2. Загрузите icon.png")
+                    print(f"      2. Загрузите assets/icon.png")
                     print(f"      3. Выберите опцию 'Multiple sizes'")
                     print(f"      4. Выберите размеры: 16, 24, 32, 40, 48, 64, 96, 128, 256")
                     print(f"      5. Скачайте icon.ico и замените текущий файл")
                     print(f"      ")
                     print(f"      Метод 2 - ImageMagick (если установлен):")
-                    print(f"      magick icon.png -define icon:auto-resize=16,24,32,40,48,64,96,128,256 icon.ico")
+                    print(f"      magick assets/icon.png -define icon:auto-resize=16,24,32,40,48,64,96,128,256 assets/icon.ico")
                     print(f"      ")
                     print(f"      Метод 3 - IcoFX или другой редактор иконок")
         else:
@@ -235,7 +235,7 @@ def create_icons():
         print(f"✅ Создана папка: {iconset_dir}/")
         
         # Конвертируем в .icns через iconutil
-        icns_path = Path("icon.icns")
+        icns_path = Path("assets/icon.icns")
         result = os.system(f"iconutil -c icns {iconset_dir} -o {icns_path}")
         
         if result == 0:
@@ -257,8 +257,8 @@ def create_icons():
     print("✅ Готово!")
     print("="*60)
     print("\nСозданные файлы:")
-    print(f"  • icon.ico  - для Windows (installer_clean.iss, installer_qt.iss)")
-    print(f"  • icon.icns - для macOS (setup_macos.py)")
+    print(f"  • assets/icon.ico  - для Windows (installer_clean.iss, installer_qt.iss)")
+    print(f"  • assets/icon.icns - для macOS (setup_macos.py)")
     print("\nСледующие шаги:")
     print("  1. Обновите скрипты сборки (будет сделано автоматически)")
     print("  2. Пересоберите инсталляторы")

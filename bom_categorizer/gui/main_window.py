@@ -98,7 +98,7 @@ def get_config_path() -> str:
             if not template_found:
                 # Используем fallback конфиг из load_config()
                 import json
-                fallback_config = {"app_info": {"version": "4.4.6", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+                fallback_config = {"app_info": {"version": "4.4.7", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
                 with open(installed_path, 'w', encoding='utf-8') as f:
                     json.dump(fallback_config, f, indent=2, ensure_ascii=False)
         
@@ -156,7 +156,7 @@ def load_config() -> dict:
             pass
     
     # Fallback с актуальной версией
-    return {"app_info": {"version": "4.4.6", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
+    return {"app_info": {"version": "4.4.7", "edition": "Modern Edition", "description": "BOM Categorizer Modern Edition"}}
 
 
 def get_system_font() -> str:
@@ -691,7 +691,14 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         if files:
             for file_path in files:
-                if file_path not in self.input_files:
+                # Проверяем наличие файла (без учета регистра)
+                exists = False
+                for existing_path in self.input_files:
+                    if existing_path.lower() == file_path.lower():
+                        exists = True
+                        break
+                
+                if not exists:
                     self.input_files[file_path] = 1
                     self.last_input_file = file_path  # Сохраняем последний добавленный файл
 
@@ -732,8 +739,31 @@ class BOMCategorizerMainWindow(QMainWindow):
         file_path = text.split(" (x")[0]
 
         if file_path in self.input_files:
-            self.input_files[file_path] = self.multiplier_spin.value()
-            self.update_listbox()
+            new_val = self.multiplier_spin.value()
+            
+            if new_val == 0:
+                # Удаляем файл если количество 0
+                del self.input_files[file_path]
+                self.update_listbox()
+                
+                # Если список пуст - сбрасываем выходной файл
+                if not self.input_files:
+                    self.output_xlsx = "categorized.xlsx"
+                    self.output_entry.setText(self.output_xlsx)
+                else:
+                    # Обновляем имя выходного файла (если удалили первый)
+                    self.update_output_filename()
+            else:
+                # Обновляем количество
+                self.input_files[file_path] = new_val
+                self.update_listbox()
+                
+                # Восстанавливаем выделение
+                for i in range(self.files_list.count()):
+                    list_item = self.files_list.item(i)
+                    if list_item.text().startswith(f"{file_path} (x"):
+                        self.files_list.setCurrentItem(list_item)
+                        break
 
     def update_listbox(self):
         """Обновление списка файлов"""
@@ -1249,14 +1279,69 @@ class BOMCategorizerMainWindow(QMainWindow):
             status_label.setText("✅ Конвертация завершена успешно!")
             log_text.append("\n✅ Все файлы сконвертированы")
             log_text.append("⏭️  Можно продолжить обработку")
+            
+            # Таймер автозакрытия (как в Windows версии)
+            countdown_value = [3]
+            
+            # Создаем диалог обработки заранее
+            processing_dialog = QProgressDialog(
+                "Подготовка к обработке файлов...",
+                None,
+                0, 0,
+                self
+            )
+            processing_dialog.setWindowTitle("Обработка BOM файлов")
+            processing_dialog.setWindowModality(Qt.WindowModal)
+            processing_dialog.setMinimumDuration(0)
+            processing_dialog.setCancelButton(None)
+            processing_dialog.setAutoClose(False)
+            processing_dialog.setAutoReset(False)
+            
+            # Сохраняем ссылку
+            self.processing_dialog_ref = processing_dialog
+            
+            def update_countdown():
+                if countdown_value[0] > 1:
+                    close_btn.setText(f"Закрыть (автозакрытие через {countdown_value[0]} сек)")
+                    status_label.setText(f"Готово! Автопереход к обработке через {countdown_value[0]} сек...")
+                    countdown_value[0] -= 1
+                elif countdown_value[0] == 1:
+                    close_btn.setText(f"Закрыть (автозакрытие через {countdown_value[0]} сек)")
+                    status_label.setText("Подготовка к обработке...")
+                    log_text.append("\n⏭️  Запуск обработки файлов...")
+                    QApplication.processEvents()
+                    
+                    processing_dialog.show()
+                    processing_dialog.setLabelText("Анализ файлов...")
+                    QApplication.processEvents()
+                    
+                    countdown_value[0] -= 1
+                else:
+                    auto_close_timer.stop()
+                    progress_dialog.accept()
+            
+            from PySide6.QtCore import QTimer
+            auto_close_timer = QTimer()
+            auto_close_timer.timeout.connect(update_countdown)
+            
+            close_btn.setText(f"Закрыть (автозакрытие через {countdown_value[0]} сек)")
+            status_label.setText(f"Готово! Автопереход к обработке через {countdown_value[0]} сек...")
+            auto_close_timer.start(1000)
+            
+            close_btn.setEnabled(True)
+            progress_dialog.exec()
+            
+            if auto_close_timer.isActive():
+                auto_close_timer.stop()
+                
+            return True
+            
         else:
             status_label.setText("⚠️ Конвертация завершена с ошибками")
             log_text.append("\n⚠️ Некоторые файлы не удалось сконвертировать")
-        
-        close_btn.setEnabled(True)
-        progress_dialog.exec()
-        
-        return success
+            close_btn.setEnabled(True)
+            progress_dialog.exec()
+            return False
 
     def on_run(self):
         """Запуск обработки"""
@@ -3737,7 +3822,14 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
                 if file_path and os.path.isfile(file_path):
                     ext = os.path.splitext(file_path)[1].lower()
                     if ext in supported_extensions:
-                        if file_path not in self.input_files:
+                        # Проверяем наличие файла (без учета регистра)
+                        exists = False
+                        for existing_path in self.input_files:
+                            if existing_path.lower() == file_path.lower():
+                                exists = True
+                                break
+                        
+                        if not exists:
                             self.input_files[file_path] = 1
                             self.last_input_file = file_path  # Сохраняем последний добавленный файл
                             files_added += 1
@@ -4136,20 +4228,31 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         # Проверяем, есть ли выходной файл
         output_file = self.output_entry.text().strip() if hasattr(self, 'output_entry') else ""
         
-        if not output_file:
-            QMessageBox.warning(
+        if not output_file or not os.path.exists(output_file):
+            # Если выходного файла нет, предлагаем экспортировать входные файлы напрямую в PDF
+            if not self.input_files:
+                QMessageBox.warning(
+                    self,
+                    "Экспорт в PDF",
+                    "Нет входных файлов для экспорта.\nДобавьте файлы и повторите попытку."
+                )
+                return
+            
+            # Спрашиваем пользователя, хочет ли он экспортировать входные файлы
+            reply = QMessageBox.question(
                 self,
-                "Экспорт в PDF",
-                "Не указан выходной файл.\nСначала выполните обработку файлов."
+                "Экспорт входных файлов в PDF",
+                f"Выходной файл еще не создан.\n\n"
+                f"Хотите экспортировать {len(self.input_files)} входных файлов напрямую в PDF?\n"
+                f"Каждый файл будет сохранен с расширением .pdf",
+                QMessageBox.Yes | QMessageBox.No
             )
-            return
-        
-        if not os.path.exists(output_file):
-            QMessageBox.warning(
-                self,
-                "Экспорт в PDF",
-                f"Файл не найден:\n{output_file}\n\nСначала выполните обработку файлов."
-            )
+            
+            if reply != QMessageBox.Yes:
+                return
+            
+            # Экспортируем входные файлы
+            self._export_input_files_to_pdf()
             return
         
         try:
@@ -4168,11 +4271,14 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
                 return  # Пользователь отменил
             
             # Собираем сводную информацию
+            # Собираем сводную информацию
             summary_info = {
                 "Исходных файлов": len(self.input_files),
                 "Выходной файл": os.path.basename(output_file),
                 "Версия БД": self.db.get_version() if hasattr(self, 'db') else "N/A",
-                "Программа": f"BOM Categorizer {self.cfg.get('app_info', {}).get('version', 'dev')}"
+                "Программа": f"BOM Categorizer {self.cfg.get('app_info', {}).get('version', 'dev')}",
+                "Учитывать подбор": "Нет" if (hasattr(self, 'exclude_podbor_checkbox') and self.exclude_podbor_checkbox.isChecked()) else "Да",
+                "Создавать TXT файлы": "Да" if (hasattr(self, 'txt_entry') and self.txt_entry.text().strip()) else "Нет"
             }
             
             QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -4222,6 +4328,206 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
                 "Ошибка экспорта",
                 f"Не удалось создать PDF:\n{e}"
             )
+    
+    def _export_input_files_to_pdf(self):
+        """Экспортирует входные файлы напрямую в PDF"""
+        from ..pdf_exporter import export_bom_to_pdf
+        from PySide6.QtWidgets import QFileDialog
+        import subprocess
+        
+        # Спрашиваем куда сохранять файлы
+        output_dir = QFileDialog.getExistingDirectory(
+            self,
+            "Выберите папку для сохранения PDF файлов",
+            os.path.dirname(list(self.input_files.keys())[0]) if self.input_files else os.path.expanduser("~")
+        )
+        
+        if not output_dir:
+            return  # Пользователь отменил
+        
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        exported_count = 0
+        failed_count = 0
+        
+        for input_file in self.input_files.keys():
+            try:
+                base_name = os.path.splitext(os.path.basename(input_file))[0]
+                pdf_path = os.path.join(output_dir, base_name + ".pdf")
+                ext = os.path.splitext(input_file)[1].lower()
+                
+                if self.log_text:
+                    self.log_text.append(f"📄 Экспорт: {os.path.basename(input_file)} → {os.path.basename(pdf_path)}")
+                
+                if ext in [".xlsx", ".xls"]:
+                    # Экспорт Excel файлов через pdf_exporter
+                    export_bom_to_pdf(input_file, pdf_path, with_summary=False)
+                    exported_count += 1
+                    
+                elif ext in [".docx", ".doc"]:
+                    # Экспорт DOCX/DOC - пробуем Word, потом LibreOffice
+                    exported_this = False
+                    
+                    # Пробуем Microsoft Word (Windows)
+                    if sys.platform == 'win32':
+                        try:
+                            import win32com.client
+                            word = win32com.client.Dispatch("Word.Application")
+                            word.Visible = False
+                            
+                            doc = word.Documents.Open(os.path.abspath(input_file))
+                            # 17 = wdFormatPDF
+                            doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)
+                            doc.Close()
+                            word.Quit()
+                            
+                            if os.path.exists(pdf_path):
+                                exported_count += 1
+                                exported_this = True
+                                if self.log_text:
+                                    self.log_text.append(f"  ✓ Экспортировано через MS Word")
+                        except Exception as word_error:
+                            if self.log_text:
+                                self.log_text.append(f"  ⚠️  MS Word недоступен, пробуем LibreOffice...")
+                    
+                    # Если Word не сработал, пробуем LibreOffice
+                    if not exported_this:
+                        libreoffice_paths = [
+                            '/Applications/LibreOffice.app/Contents/MacOS/soffice',  # macOS
+                            '/usr/bin/libreoffice',  # Linux
+                            '/usr/bin/soffice',      # Linux альтернатива
+                            'C:\\Program Files\\LibreOffice\\program\\soffice.exe',  # Windows
+                        ]
+                        
+                        soffice_path = None
+                        for path in libreoffice_paths:
+                            if os.path.exists(path):
+                                soffice_path = path
+                                break
+                        
+                        if soffice_path:
+                            # Конвертируем через LibreOffice
+                            cmd = [
+                                soffice_path,
+                                '--headless',
+                                '--convert-to', 'pdf',
+                                '--outdir', output_dir,
+                                input_file
+                            ]
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+                            if result.returncode == 0 and os.path.exists(pdf_path):
+                                exported_count += 1
+                                exported_this = True
+                                if self.log_text:
+                                    self.log_text.append(f"  ✓ Экспортировано через LibreOffice")
+                            else:
+                                failed_count += 1
+                                if self.log_text:
+                                    self.log_text.append(f"  ❌ Ошибка конвертации: {os.path.basename(input_file)}")
+                        else:
+                            # Ни Word, ни LibreOffice не найдены
+                            if self.log_text:
+                                self.log_text.append(f"  ⚠️  MS Word и LibreOffice не найдены, пропуск: {os.path.basename(input_file)}")
+                            failed_count += 1
+                
+                elif ext in [".txt"]:
+                    # Экспорт TXT файлов через reportlab
+                    try:
+                        from reportlab.lib.pagesizes import A4
+                        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+                        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+                        from reportlab.lib.units import mm
+                        from reportlab.pdfbase import pdfmetrics
+                        from reportlab.pdfbase.ttfonts import TTFont
+                        
+                        # Читаем текстовый файл
+                        with open(input_file, 'r', encoding='utf-8') as f:
+                            text_content = f.read()
+                        
+                        # Создаем PDF
+                        doc = SimpleDocTemplate(pdf_path, pagesize=A4)
+                        story = []
+                        
+                        # Регистрируем шрифт с поддержкой кириллицы
+                        font_name = None
+                        font_paths_to_try = [
+                            ('/System/Library/Fonts/Supplemental/Arial Unicode.ttf', 'ArialUnicode'),  # macOS - BEST!
+                            ('/System/Library/Fonts/Supplemental/Arial.ttf', 'Arial'),  # macOS
+                            ('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', 'DejaVuSans'),  # Linux
+                            ('C:\\Windows\\Fonts\\arial.ttf', 'Arial'),  # Windows
+                        ]
+                        
+                        for font_path, font_reg_name in font_paths_to_try:
+                            if os.path.exists(font_path):
+                                try:
+                                    pdfmetrics.registerFont(TTFont(font_reg_name, font_path))
+                                    font_name = font_reg_name
+                                    if self.log_text:
+                                        self.log_text.append(f"  ✓ Используется шрифт: {font_reg_name}")
+                                    break
+                                except Exception as e:
+                                    if self.log_text:
+                                        self.log_text.append(f"  ⚠️ Ошибка загрузки {font_reg_name}: {e}")
+                        
+                        if not font_name:
+                            # Последняя попытка - стандартный Helvetica (но без кириллицы)
+                            font_name = 'Helvetica'
+                            if self.log_text:
+                                self.log_text.append(f"  ⚠️ Системный шрифт не найден, используется Helvetica (кириллица может не работать)")
+                        
+                        # Стили
+                        styles = getSampleStyleSheet()
+                        style = ParagraphStyle(
+                            'CustomStyle',
+                            parent=styles['Normal'],
+                            fontName=font_name,
+                            fontSize=10,
+                            leading=12
+                        )
+                        
+                        # Разбиваем текст на абзацы и добавляем в PDF
+                        for line in text_content.split('\n'):
+                            if line.strip():
+                                # Экранируем специальные символы для reportlab
+                                line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                                story.append(Paragraph(line, style))
+                            else:
+                                story.append(Spacer(1, 3*mm))
+                        
+                        doc.build(story)
+                        exported_count += 1
+                        
+                    except ImportError:
+                        if self.log_text:
+                            self.log_text.append(f"  ⚠️  reportlab не установлен, пропуск: {os.path.basename(input_file)}")
+                        failed_count += 1
+                    except Exception as txt_error:
+                        if self.log_text:
+                            self.log_text.append(f"  ❌ Ошибка конвертации TXT: {txt_error}")
+                        failed_count += 1
+                
+                else:
+                    # Неподдерживаемый формат
+                    if self.log_text:
+                        self.log_text.append(f"  ⚠️  Неподдерживаемый формат: {os.path.basename(input_file)}")
+                    failed_count += 1
+                    
+            except Exception as e:
+                failed_count += 1
+                if self.log_text:
+                    self.log_text.append(f"  ❌ Ошибка: {os.path.basename(input_file)} - {e}")
+        
+        QApplication.restoreOverrideCursor()
+        
+        # Показываем результат
+        msg = f"Экспорт завершен:\\n\\n"
+        msg += f"✅ Успешно: {exported_count} файлов\\n"
+        if failed_count > 0:
+            msg += f"❌ Ошибок: {failed_count} файлов"
+        
+        QMessageBox.information(self, "Экспорт в PDF", msg)
+        
+        if self.log_text:
+            self.log_text.append(f"✅ Экспорт входных файлов завершен: {exported_count}/{len(self.input_files)}")
     
     def on_toggle_auto_pdf_export(self, state: int):
         """Включение/выключение автоматического экспорта в PDF"""

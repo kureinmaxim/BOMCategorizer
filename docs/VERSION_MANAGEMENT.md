@@ -145,7 +145,7 @@ python tools/update_version.py set both 5.0.0
 **⚠️ Если версии отличаются:**
 Если после `python update_version.py status` вы видите предупреждение о расхождении версий, выполните:
 ```bash
-python update_version.py sync
+python tools/update_version.py sync
 ```
 Это синхронизирует локальные config файлы с шаблонами (обновит только секцию `app_info`, сохранив ваши личные настройки).
 

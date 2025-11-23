@@ -81,7 +81,7 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     mult_layout.setSpacing(6)
 
     window.multiplier_spin = QSpinBox()
-    window.multiplier_spin.setMinimum(1)
+    window.multiplier_spin.setMinimum(0)
     window.multiplier_spin.setMaximum(999)
     window.multiplier_spin.setValue(1)
     window.multiplier_spin.setMaximumWidth(80)
@@ -106,7 +106,7 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
             height: 12px;
         }
     """)
-    window.multiplier_spin.setToolTip("Выберите файл из списка")
+    window.multiplier_spin.setToolTip("Количество экземпляров (0 для удаления)")
     window.lockable_widgets.append(window.multiplier_spin)
     mult_layout.addWidget(window.multiplier_spin)
 

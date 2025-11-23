@@ -428,11 +428,30 @@ def parse_docx(path: str) -> pd.DataFrame:
                                     last_item['note'] = manufacturer
                         else:
                             # Это продолжение description - объединяем
+                            # Проверяем, есть ли производитель в продолжении описания (например, "K00S3, ф. Rosenberger")
+                            mfr_in_continuation = ""
+                            name_to_append = name.strip()
+                            
+                            mfr_match_cont = re.search(r'(?:,\s*|\s+)ф\.\s*(.+)', name_to_append)
+                            if mfr_match_cont:
+                                mfr_in_continuation = mfr_match_cont.group(1).strip()
+                                # Удаляем производителя из добавляемой части
+                                name_to_append = re.sub(r'(?:,\s*|\s+)ф\.\s*.+', '', name_to_append).strip()
+                            
+                            # Добавляем часть описания
                             current_desc = last_item.get('description', '').strip()
-                            if current_desc and name.strip():
-                                last_item['description'] = current_desc + ' ' + name.strip()
-                            elif name.strip():
-                                last_item['description'] = name.strip()
+                            if current_desc and name_to_append:
+                                last_item['description'] = current_desc + ' ' + name_to_append
+                            elif name_to_append:
+                                last_item['description'] = name_to_append
+                                
+                            # Если нашли производителя - добавляем в note
+                            if mfr_in_continuation:
+                                existing_note = last_item.get('note', '').strip()
+                                if existing_note:
+                                    last_item['note'] = existing_note + ' | ' + mfr_in_continuation
+                                else:
+                                    last_item['note'] = mfr_in_continuation
                     
                     # КРИТИЧНО: Обрабатываем note (cell_note) - это может быть подборы/примечание
                     if cell_note.strip():
