@@ -816,7 +816,10 @@ def write_categorized_excel(
                     if prev == clean_source:
                         break
                 clean_source = clean_source.strip().rstrip(',').strip()
-                unique_sources.add((clean_source, source_sheet))
+                
+                # Извлекаем базовое имя файла без расширения
+                base_name = os.path.splitext(os.path.basename(clean_source))[0]
+                unique_sources.add((base_name, source_sheet))
             else:
                 unique_sources.add((source_file, source_sheet))
         
