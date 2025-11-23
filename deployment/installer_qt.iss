@@ -13,21 +13,20 @@ ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=lowest
 CloseApplications=yes
 RestartIfNeededByRun=yes
-SetupIconFile=icon.ico
-UninstallDisplayIcon={app}\icon.ico
+SetupIconFile=assets\icon.ico
+UninstallDisplayIcon={app}\assets\icon.ico
 
 [Files]
 Source: "temp_installer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pyc,__pycache__"
-Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
 Source: "temp_installer\fonts\*.ttf"; DestDir: "{app}\fonts"; Flags: ignoreversion; Check: FontsExist
 
 [Run]
 Filename: "{sysnative}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-ExecutionPolicy Bypass -File ""{app}\scripts\post_install.ps1"""; StatusMsg: "Setting up Python environment..."; Flags: runhidden
 
 [Icons]
-Name: "{group}\BOM Categorizer Modern"; Filename: "{app}\scripts\run_app.bat"; WorkingDir: "{app}\scripts"; IconFilename: "{app}\icon.ico"
+Name: "{group}\BOM Categorizer Modern"; Filename: "{app}\scripts\run_app.bat"; WorkingDir: "{app}\scripts"; IconFilename: "{app}\assets\icon.ico"
 Name: "{group}\Uninstall BOM Categorizer Modern"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\BOM Categorizer Modern"; Filename: "{app}\scripts\run_app.bat"; WorkingDir: "{app}\scripts"; IconFilename: "{app}\icon.ico"
+Name: "{userdesktop}\BOM Categorizer Modern"; Filename: "{app}\scripts\run_app.bat"; WorkingDir: "{app}\scripts"; IconFilename: "{app}\assets\icon.ico"
 
 [Code]
 function InitializeSetup(): Boolean;
