@@ -677,6 +677,25 @@ def parse_docx(path: str) -> pd.DataFrame:
             
             # Убираем запятую в конце названия (если есть)
             name = name.rstrip(',').strip()
+            
+            # КРИТИЧНО: Убираем "с подбором ..." из наименования
+            # Это нужно делать на этапе парсинга, чтобы очищенное имя попало в базу
+            # Паттерны:
+            # - "50HFFA - 005 - 2/6SMA с подбором 50HFFA - 001 - 2/6SMA" -> "50HFFA - 005 - 2/6SMA"
+            # - "с подбором 50HFFA - 001 - 2/6SMA" -> "50HFFA - 001 - 2/6SMA"
+            # - "50HFFA-003-2/6SMA,\nс подбором\n50HFFA-001-2/6SMA" -> "50HFFA-003-2/6SMA,"
+            # ВАЖНО: Используем re.DOTALL чтобы . совпадал с \n
+            name = re.sub(r'[,\s]*с\s+подбором.*$', '', name, flags=re.IGNORECASE | re.DOTALL).strip()
+            name = re.sub(r'^с\s+подбором\s+', '', name, flags=re.IGNORECASE).strip()
+            
+            # КРИТИЧНО: Также очищаем примечания от "с подбором"
+            # Примечания могут содержать многострочный текст с переносами
+            cell_note = re.sub(r'[,\s]*с\s+подбором.*$', '', cell_note, flags=re.IGNORECASE | re.DOTALL).strip()
+            cell_note = re.sub(r'^с\s+подбором\s+', '', cell_note, flags=re.IGNORECASE).strip()
+            original_note = re.sub(r'[,\s]*с\s+подбором.*$', '', original_note, flags=re.IGNORECASE | re.DOTALL).strip()
+            original_note = re.sub(r'^с\s+подбором\s+', '', original_note, flags=re.IGNORECASE).strip()
+            note = re.sub(r'[,\s]*с\s+подбором.*$', '', note, flags=re.IGNORECASE | re.DOTALL).strip()
+            note = re.sub(r'^с\s+подбором\s+', '', note, flags=re.IGNORECASE).strip()
 
             # Если количество не указано явно, пытаемся посчитать из reference (например, FU1-FU6 = 6)
             if qty is None or qty == 0:

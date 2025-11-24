@@ -195,7 +195,7 @@ class PDFSearchDialog(QDialog):
         provider_label.setFixedWidth(100)
         
         self.ai_provider_combo = QComboBox()
-        self.ai_provider_combo.addItems(["Anthropic Claude", "OpenAI GPT-4o"])
+        self.ai_provider_combo.addItems(["Anthropic Claude", "OpenAI GPT-4o", "Telegram Bot"])
         self.ai_provider_combo.setFixedWidth(200)
         
         provider_layout.addWidget(provider_label)
@@ -309,10 +309,15 @@ class PDFSearchDialog(QDialog):
         api_keys = self.config.get("api_keys", {})
         provider = self.ai_provider_combo.currentText()
         api_key = None
+        api_url = None
         
         if "Anthropic" in provider:
             api_key = api_keys.get("anthropic")
             provider_name = "anthropic"
+        elif "Telegram" in provider:
+            api_key = api_keys.get("telegram_key")
+            api_url = api_keys.get("telegram_url")
+            provider_name = "telegram_bot"
         else:
             api_key = api_keys.get("openai")
             provider_name = "openai"
@@ -330,7 +335,10 @@ class PDFSearchDialog(QDialog):
         self.ai_results_browser.setHtml("<h3>⏳ Поиск...</h3><p>Запрашиваем информацию у AI...</p>")
         
         # Запускаем поиск в отдельном потоке
-        self.ai_worker = AISearchWorker(provider_name, api_key, query)
+        # Запускаем поиск в отдельном потоке
+        self.ai_worker = AISearchWorker(provider_name, api_key, query, api_url)
+        self.ai_worker.finished.connect(self.display_ai_results)
+        self.ai_worker.start()
         self.ai_worker.finished.connect(self.display_ai_results)
         self.ai_worker.start()
     
@@ -905,6 +913,35 @@ class UnifiedSettingsDialog(QDialog):
 
         ollama_group.setLayout(ollama_layout)
         layout.addWidget(ollama_group)
+
+        # Telegram Bot
+        telegram_group = QGroupBox("Настройки Telegram Bot API")
+        telegram_layout = QGridLayout()
+
+        telegram_url_label = QLabel("Bot API URL:")
+        self.telegram_url_input = QLineEdit()
+        self.telegram_url_input.setPlaceholderText("http://localhost:8000/ai_query")
+        
+        telegram_key_label = QLabel("Bot API Key:")
+        self.telegram_key_input = QLineEdit()
+        self.telegram_key_input.setEchoMode(QLineEdit.Password)
+        self.telegram_key_input.setPlaceholderText("secret_key")
+        
+        show_telegram_btn = QCheckBox("Показать")
+        show_telegram_btn.stateChanged.connect(
+            lambda state: self.telegram_key_input.setEchoMode(
+                QLineEdit.Normal if state else QLineEdit.Password
+            )
+        )
+
+        telegram_layout.addWidget(telegram_url_label, 0, 0)
+        telegram_layout.addWidget(self.telegram_url_input, 0, 1)
+        telegram_layout.addWidget(telegram_key_label, 1, 0)
+        telegram_layout.addWidget(self.telegram_key_input, 1, 1)
+        telegram_layout.addWidget(show_telegram_btn, 1, 2)
+
+        telegram_group.setLayout(telegram_layout)
+        layout.addWidget(telegram_group)
         
         # Помощь
         help_label = QLabel(
@@ -1005,6 +1042,13 @@ class UnifiedSettingsDialog(QDialog):
                      "http://localhost:11434"
         self.ollama_url_input.setText(ollama_url)
         
+        # Telegram Bot
+        telegram_url = api_keys.get("telegram_url") or "http://localhost:8000/ai_query"
+        self.telegram_url_input.setText(telegram_url)
+        
+        telegram_key = api_keys.get("telegram_key") or ""
+        self.telegram_key_input.setText(telegram_key)
+        
         # --- 2. Загрузка настроек AI Классификатора ---
         settings = ai_classifier_conf # Используем уже загруженный конфиг
         
@@ -1033,7 +1077,9 @@ class UnifiedSettingsDialog(QDialog):
         self.config["api_keys"] = {
             "anthropic": self.anthropic_key_input.text().strip(),
             "openai": self.openai_key_input.text().strip(),
-            "ollama_url": self.ollama_url_input.text().strip()
+            "ollama_url": self.ollama_url_input.text().strip(),
+            "telegram_url": self.telegram_url_input.text().strip(),
+            "telegram_key": self.telegram_key_input.text().strip()
         }
 
         # --- 2. Сохраняем настройки AI классификатора ---
@@ -1101,17 +1147,18 @@ class AISearchWorker(QThread):
     """Worker для AI поиска в отдельном потоке"""
     finished = Signal(dict)
     
-    def __init__(self, provider: str, api_key: str, query: str):
+    def __init__(self, provider: str, api_key: str, query: str, api_url: str = None):
         super().__init__()
         self.provider = provider
         self.api_key = api_key
         self.query = query
+        self.api_url = api_url
     
     def run(self):
         """Выполняет AI поиск"""
         from .pdf_search import AIPDFSearcher
         
-        searcher = AIPDFSearcher(self.provider, self.api_key)
+        searcher = AIPDFSearcher(self.provider, self.api_key, self.api_url)
         results = searcher.search(self.query)
         self.finished.emit(results)
 

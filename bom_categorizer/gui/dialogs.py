@@ -267,21 +267,28 @@ class ClassificationDialog(QDialog):
     """Диалог интерактивной классификации компонентов"""
 
     # Категории компонентов
-    CATEGORIES = [
-        ("0", "Кабель/Провод", ""),
-        ("1", "Прокладки/Шайбы", ""),
-        ("2", "Метизы/Крепеж", ""),
-        ("3", "Клеммы/Зажимы", ""),
-        ("4", "Электроника", ""),
-        ("5", "Корпуса/Панели", ""),
-        ("6", "Инструмент", ""),
-        ("7", "Расходники", ""),
-        ("8", "Маркировка", ""),
-        ("9", "Изоляция", ""),
-        ("a", "Комплектующие", ""),
-        ("b", "Запчасти", ""),
-        ("s", "Пропустить", ""),
+    # Импортируем категории из базы данных
+    from ..component_database import CATEGORY_NAMES
+
+    # Формируем список категорий для диалога с горячими клавишами
+    # (key, name, emoji)
+    CATEGORIES = []
+    
+    # Маппинг категорий на горячие клавиши
+    _HOTKEYS = "1234567890abcd"
+    _ORDERED_KEYS = [
+        "resistors", "capacitors", "inductors", "ics", "semiconductors",
+        "connectors", "cables", "dev_boards", "optics", "rf_modules",
+        "power_modules", "our_developments", "others", "non_bom"
     ]
+    
+    for i, cat_key in enumerate(_ORDERED_KEYS):
+        if cat_key in CATEGORY_NAMES and i < len(_HOTKEYS):
+            hotkey = _HOTKEYS[i]
+            name = CATEGORY_NAMES[cat_key]
+            CATEGORIES.append((hotkey, name, cat_key))
+            
+    CATEGORIES.append(("s", "Пропустить", ""))
 
     classification_complete = Signal(dict)  # {component: category}
 
@@ -341,11 +348,11 @@ class ClassificationDialog(QDialog):
 
         self.category_buttons = {}
 
-        for i, (key, name, emoji) in enumerate(self.CATEGORIES):
+        for i, (key, name, cat_key) in enumerate(self.CATEGORIES):
             row = i // 2
             col = i % 2
 
-            btn = QPushButton(f"{emoji} {name} ({key})")
+            btn = QPushButton(f"{name} ({key})")
             btn.setMinimumHeight(40)
             btn.clicked.connect(lambda checked, k=key: self.classify_current(k))
 
@@ -376,16 +383,26 @@ class ClassificationDialog(QDialog):
         self.name_label.setText(f"Наименование: {name}")
         self.params_label.setText(f"Параметры: {params}")
 
-    def classify_current(self, category: str):
+    def classify_current(self, hotkey: str):
         """Классифицирует текущий компонент"""
         if self.current_index >= len(self.components):
             return
 
         component = self.components[self.current_index]
 
-        if category != 's':  # Не пропускать
-            # Сохраняем классификацию
-            self.classifications[component[0]] = category
+        if hotkey == 's':  # Пропустить
+            pass
+        else:
+            # Находим реальный ключ категории по горячей клавише
+            real_category = None
+            for k, _, cat in self.CATEGORIES:
+                if k == hotkey:
+                    real_category = cat
+                    break
+            
+            if real_category:
+                # Сохраняем классификацию
+                self.classifications[component[0]] = real_category
 
         # Переходим к следующему компоненту
         self.current_index += 1

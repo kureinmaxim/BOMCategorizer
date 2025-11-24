@@ -133,16 +133,18 @@ class LocalPDFSearcher:
 class AIPDFSearcher:
     """Класс для AI-поиска информации о компонентах"""
     
-    def __init__(self, api_provider: str = "anthropic", api_key: Optional[str] = None):
+    def __init__(self, api_provider: str = "anthropic", api_key: Optional[str] = None, api_url: Optional[str] = None):
         """
         Инициализация AI поисковика
         
         Args:
-            api_provider: Провайдер API ("anthropic" или "openai")
+            api_provider: Провайдер API ("anthropic", "openai" или "telegram_bot")
             api_key: API ключ
+            api_url: URL API (для Telegram Bot)
         """
         self.api_provider = api_provider.lower()
         self.api_key = api_key
+        self.api_url = api_url
         
     def search(self, component_name: str) -> Optional[Dict[str, any]]:
         """
@@ -164,6 +166,8 @@ class AIPDFSearcher:
             return self._search_anthropic(component_name)
         elif self.api_provider == "openai":
             return self._search_openai(component_name)
+        elif self.api_provider == "telegram_bot":
+            return self._search_telegram_bot(component_name)
         else:
             return {
                 'error': f'Неизвестный провайдер: {self.api_provider}',
@@ -290,6 +294,84 @@ class AIPDFSearcher:
             return {
                 'component': component_name,
                 'provider': 'OpenAI GPT',
+                'error': str(e)
+            }
+
+    def _search_telegram_bot(self, component_name: str) -> Dict[str, any]:
+        """Поиск через Telegram Bot API"""
+        try:
+            import requests
+            
+            url = self.api_url or "http://localhost:8000/ai_query"
+            
+            prompt = f"""Найди информацию об электронном компоненте: {component_name}
+
+Пожалуйста, предоставь следующую информацию в структурированном виде:
+
+1. Полное название и производитель
+2. Тип компонента (микросхема, резистор, конденсатор и т.д.)
+3. Основные характеристики (напряжение, ток, частота, корпус и т.д.)
+4. Краткое описание назначения
+5. Типичные примеры использования (2-3 примера)
+6. Прямая ссылка на PDF документацию (желательно с официального сайта производителя)
+
+Если компонент не найден или информация недоступна, укажи это явно.
+
+Формат ответа: JSON
+{{
+    "found": true/false,
+    "full_name": "полное название",
+    "manufacturer": "производитель",
+    "type": "тип компонента",
+    "description": "описание",
+    "specifications": {{
+        "key": "value"
+    }},
+    "examples": ["пример 1", "пример 2"],
+    "datasheet_url": "https://..."
+}}"""
+
+            headers = {}
+            if self.api_key:
+                headers["X-API-KEY"] = self.api_key
+            
+            payload = {
+                "prompt": prompt,
+                "provider": "anthropic", # Используем Anthropic через бота по умолчанию
+                "max_tokens": 2048
+            }
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=60)
+            
+            if response.status_code != 200:
+                return {
+                    'component': component_name,
+                    'provider': 'Telegram Bot',
+                    'error': f"Ошибка сервера: {response.status_code} - {response.text}"
+                }
+            
+            data = response.json()
+            response_text = data.get("response", "")
+            
+            # Пытаемся извлечь JSON из ответа
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                result = json.loads(json_match.group(0))
+                result['component'] = component_name
+                result['provider'] = 'Telegram Bot (Anthropic)'
+                return result
+            else:
+                return {
+                    'component': component_name,
+                    'provider': 'Telegram Bot',
+                    'error': 'Не удалось распарсить ответ',
+                    'raw_response': response_text
+                }
+                
+        except Exception as e:
+            return {
+                'component': component_name,
+                'provider': 'Telegram Bot',
                 'error': str(e)
             }
 

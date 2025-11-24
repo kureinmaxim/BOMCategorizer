@@ -265,11 +265,11 @@ def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=Non
             if 'Примечание' in row_dict:
                 row_dict['Примечание'] = ''
             
-            # ДОПОЛНИТЕЛЬНО: Очищаем поля ТУ и производителя, если туда попал текст замены
+            # Очищаем поля ТУ и производителя, если туда попал текст замены
             # Пример: "Rosenberger Допуск. замена: QASNL-FF," в поле ТУ
             replacement_pattern = r'(?:замена\s+на|допуск\.\s*замена\s*:?|допускается\s+замена\s+(?:на\s+)?|замена\s+|доп\.\s*замена:).*'
             
-            for field in ['tu', 'TU', 'ТУ', 'manufacturer', 'brand', 'Производитель', 'note']:
+            for field in ['tu', 'TU', 'ТУ', 'manufacturer', 'brand', 'Производитель', 'note', 'description']:
                 if field in row_dict and pd.notna(row_dict[field]):
                     val = str(row_dict[field])
                     # Если поле содержит маркер замены
@@ -279,11 +279,27 @@ def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=Non
                         # Удаляем завершающие запятые/точки
                         clean_val = clean_val.rstrip('.,;').strip()
                         row_dict[field] = clean_val
+                    
+                    # КРИТИЧНО: Убираем "с подбором ..." из всех текстовых полей
+                    if field == 'description':
+                        val = str(row_dict[field])
+                        # Убираем паттерны типа "50HFFA - 005 - 2/6SMA с подбором 50HFFA - 001 - 2/6SMA"
+                        # Оставляем только первую часть до "с подбором"
+                        clean_val = re.sub(r'\s+с\s+подбором\s+.*$', '', val, flags=re.IGNORECASE).strip()
+                        row_dict[field] = clean_val
 
             new_rows.append(row_dict)
         else:
-            # Нет подборов - добавляем как есть
-            new_rows.append(row.to_dict())
+            # Нет подборов - добавляем как есть, НО очищаем "с подбором" из description
+            row_dict = row.to_dict()
+            if 'description' in row_dict and pd.notna(row_dict['description']):
+                desc_val = str(row_dict['description'])
+                # Убираем паттерны типа "50HFFA - 005 - 2/6SMA с подбором 50HFFA - 001 - 2/6SMA"
+                # Также убираем просто "с подбором ..." в начале строки
+                desc_val = re.sub(r'\s+с\s+подбором\s+.*$', '', desc_val, flags=re.IGNORECASE).strip()
+                desc_val = re.sub(r'^с\s+подбором\s+', '', desc_val, flags=re.IGNORECASE).strip()
+                row_dict['description'] = desc_val
+            new_rows.append(row_dict)
         
         # Только для строк с позиционным обозначением ищем подборы/замены
         if not ref or not note:
@@ -400,6 +416,8 @@ def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=Non
                     # Если item_desc выглядит как полное описание (содержит пробелы, префикс компонента),
                     # используем его как есть (это случай для резисторов/конденсаторов/аттенюаторов с номиналами)
                     if ' ' in item_desc_clean and any(prefix in item_desc_clean.lower() for prefix in ['резистор', 'конденсатор', 'дроссель', 'аттенюатор', 'адаптер', 'коммутатор']):
+                        # ВАЖНО: Убираем "с подбором ..." из описания
+                        item_desc_clean = re.sub(r'\s+с\s+подбором\s+[^\s]+.*$', '', item_desc_clean, flags=re.IGNORECASE).strip()
                         new_row['description'] = item_desc_clean
                     else:
                         # Иначе это просто артикул (например, "2100-L-3-2-1-1-1-2")

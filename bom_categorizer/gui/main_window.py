@@ -41,7 +41,8 @@ from ..component_database import (
     set_database_version,
     is_first_run,
     initialize_database_from_template,
-    format_history_tooltip
+    format_history_tooltip,
+    CATEGORY_NAMES
 )
 
 from ..config_manager import initialize_all_configs
@@ -1692,33 +1693,130 @@ class BOMCategorizerMainWindow(QMainWindow):
                 )
                 return
             
+            # Подготавливаем данные для диалога
+            components = []
+            designation_to_name = {}
+            for _, row in df_un_valid.iterrows():
+                # Получаем данные, обрабатывая возможные NaN
+                designation = str(row.get('Обозначение', ''))
+                if designation.lower() == 'nan': designation = ""
+                
+                name = str(row.get('Наименование ИВП', ''))
+                if not name or name.lower() == 'nan':
+                    name = str(row.get('Наименование', ''))
+                if name.lower() == 'nan': name = ""
+                
+                params = str(row.get('Корпус', ''))
+                if params.lower() == 'nan': params = ""
+                nominal = str(row.get('Номинал', ''))
+                if nominal.lower() != 'nan' and nominal:
+                    params += f" {nominal}"
+                
+                components.append((designation, name, params.strip()))
+                # Сохраняем маппинг обозначения на имя для сохранения в БД
+                # В случае дубликатов обозначений будет сохранено последнее имя,
+                # что является известным ограничением текущей реализации диалога
+                designation_to_name[designation] = name
+
             # Показываем диалог классификации
-            dialog = ClassificationDialog(df_un_valid, output_file, self)
+            dialog = ClassificationDialog(components, self)
             dialog.exec()
             
-            # После завершения диалога обновляем лог
-            if hasattr(dialog, 'classified_count') and dialog.classified_count > 0:
-                self.log_text.append(f"\n✅ Классифицировано элементов: {dialog.classified_count}\n")
-                self.log_text.append(f"   Файл обновлен: {output_file}\n")
+            # После завершения диалога сохраняем результаты и обновляем лог
+            if hasattr(dialog, 'classifications') and dialog.classifications:
+                count = len(dialog.classifications)
+                saved_count = 0
+                moved_count = 0
                 
-                # Предлагаем открыть файл
-                reply = QMessageBox.question(
-                    self,
-                    "Открыть файл?",
-                    f"Классификация завершена!\n\n"
-                    f"Классифицировано: {dialog.classified_count} элементов\n\n"
-                    f"Открыть файл?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes
-                )
+                # Загружаем все листы Excel для модификации
+                try:
+                    # Используем openpyxl для сохранения форматирования (насколько возможно)
+                    # Но pandas проще для манипуляций с данными. 
+                    # Перезапись файла через pandas может сбросить форматирование.
+                    # Поэтому используем append mode или просто перезаписываем данные.
+                    # Для простоты и надежности перезапишем файл с помощью pandas, 
+                    # так как структура простая.
+                    
+                    all_sheets = pd.read_excel(output_file, sheet_name=None, engine='openpyxl')
+                    
+                    if 'Не распределено' in all_sheets:
+                        df_un = all_sheets['Не распределено']
+                        
+                        # Создаем список индексов для удаления из "Не распределено"
+                        indices_to_drop = []
+                        
+                        for des, category in dialog.classifications.items():
+                            # Получаем имя компонента по обозначению
+                            comp_name = designation_to_name.get(des)
+                            
+                            if comp_name and category and category != 's':  # 's' - пропустить
+                                # 1. Сохраняем в базу данных
+                                add_component_to_database(comp_name, category)
+                                saved_count += 1
+                                
+                                # 2. Перемещаем в соответствующий лист
+                                # Находим строки с этим обозначением (и именем) в df_un
+                                # Используем маску для поиска
+                                mask = (df_un['Обозначение'].astype(str) == des)
+                                if des == "": # Если обозначение пустое, ищем по имени
+                                     mask = (df_un['Наименование ИВП'] == comp_name) | (df_un['Наименование'] == comp_name)
+                                
+                                rows_to_move = df_un[mask]
+                                
+                                if not rows_to_move.empty:
+                                    target_sheet_name = CATEGORY_NAMES.get(category, "Другие компоненты")
+                                    
+                                    # Если листа нет, создаем пустой
+                                    if target_sheet_name not in all_sheets:
+                                        all_sheets[target_sheet_name] = pd.DataFrame(columns=df_un.columns)
+                                    
+                                    # Добавляем строки в целевой лист
+                                    all_sheets[target_sheet_name] = pd.concat([all_sheets[target_sheet_name], rows_to_move], ignore_index=True)
+                                    
+                                    # Добавляем индексы для удаления
+                                    indices_to_drop.extend(rows_to_move.index.tolist())
+                                    moved_count += len(rows_to_move)
+                        
+                        # Удаляем перемещенные строки из "Не распределено"
+                        if indices_to_drop:
+                            df_un_cleaned = df_un.drop(index=list(set(indices_to_drop)))
+                            all_sheets['Не распределено'] = df_un_cleaned
+                            
+                            # Сохраняем обновленный файл
+                            with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
+                                for sheet_name, df in all_sheets.items():
+                                    df.to_excel(writer, sheet_name=sheet_name, index=False)
+                            
+                            self.log_text.append(f"✅ Перемещено в категории: {moved_count} строк\n")
+                            self.log_text.append(f"💾 Файл обновлен: {output_file}\n")
+                            
+                            # Предлагаем открыть обновленный файл
+                            reply = QMessageBox.question(
+                                self,
+                                "Готово",
+                                f"Классификация завершена.\nСохранено в базу: {saved_count}\nПеремещено в файле: {moved_count}\n\nОткрыть обновленный файл?",
+                                QMessageBox.Yes | QMessageBox.No,
+                                QMessageBox.Yes
+                            )
+                            
+                            if reply == QMessageBox.Yes:
+                                try:
+                                    if platform.system() == 'Windows':
+                                        os.startfile(output_file)
+                                    elif platform.system() == 'Darwin':
+                                        subprocess.Popen(['open', output_file])
+                                    else:
+                                        subprocess.Popen(['xdg-open', output_file])
+                                except Exception as e:
+                                    QMessageBox.warning(self, "Ошибка", f"Не удалось открыть файл: {e}")
+
+                except Exception as e:
+                    self.log_text.append(f"❌ Ошибка при обновлении файла: {e}\n")
+                    import traceback
+                    print(traceback.format_exc())
                 
-                if reply == QMessageBox.Yes and os.path.exists(output_file):
-                    if platform.system() == 'Windows':
-                        os.startfile(output_file)
-                    elif platform.system() == 'Darwin':
-                        subprocess.Popen(['open', output_file])
-                    else:
-                        subprocess.Popen(['xdg-open', output_file])
+                self.log_text.append(f"\n✅ Классифицировано элементов: {count}\n")
+                self.log_text.append(f"💾 Сохранено в базу знаний: {saved_count}\n")
             
         except Exception as e:
             import traceback

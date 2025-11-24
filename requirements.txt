@@ -4,5 +4,6 @@ python-docx
 pytest
 pytest-html
 pytest-cov
-PySide6
+PySide6>=6.6.0
+requests>=2.31.0
 reportlab

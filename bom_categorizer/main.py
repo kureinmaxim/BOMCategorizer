@@ -438,6 +438,14 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
         if pd.isna(desc):
             return desc
         desc_str = str(desc)
+        
+        # КРИТИЧНО: Убираем "с подбором" из описания (может быть с переносами строк)
+        # Паттерны:
+        # - "50HFFA - 005 - 2/6SMA с подбором 50HFFA - 001 - 2/6SMA" -> "50HFFA - 005 - 2/6SMA"
+        # - "50HFFA-003-2/6SMA,\nс подбором\n50HFFA-001-2/6SMA" -> "50HFFA-003-2/6SMA,"
+        desc_str = re.sub(r'[,\s]*с\s+подбором.*$', '', desc_str, flags=re.IGNORECASE | re.DOTALL).strip()
+        desc_str = re.sub(r'^с\s+подбором\s+', '', desc_str, flags=re.IGNORECASE).strip()
+        
         # Убираем символ ± (может быть в разных вариантах, или вообще отсутствовать)
         desc_str = desc_str.replace('±', '')
         # Нормализуем пробел между единицами измерения и процентами (всегда добавляем пробел)

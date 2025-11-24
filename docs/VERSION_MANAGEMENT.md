@@ -99,7 +99,7 @@ python tools/update_version.py status
 python tools/update_version.py set standard 3.4.0
 
 # Обновить Modern Edition
-python tools/update_version.py set modern 4.3.0
+python tools/update_version.py set modern 4.4.7
 
 # Обновить обе версии одновременно
 python tools/update_version.py set both 5.0.0
