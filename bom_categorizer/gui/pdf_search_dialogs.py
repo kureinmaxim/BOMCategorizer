@@ -203,6 +203,54 @@ class PDFSearchDialog(QDialog):
         provider_layout.addStretch()
         layout.addLayout(provider_layout)
         
+        # === ВЫБОР ТИПА ПРОМПТА ===
+        prompt_group = QGroupBox("📝 Тип запроса")
+        prompt_layout = QVBoxLayout()
+        
+        # Выпадающий список готовых промптов
+        prompt_select_layout = QHBoxLayout()
+        prompt_select_label = QLabel("Готовый промпт:")
+        prompt_select_label.setFixedWidth(120)
+        
+        self.prompt_combo = QComboBox()
+        self.prompt_combo.addItems([
+            "🔧 Стандартный (информация о компоненте)",
+            "📋 Краткое описание ИВП (характеристики + невозможность замены)",
+            "📖 Развёрнутое описание ИВП (200-400 слов, обзор даташита)",
+            "🔄 Поиск аналогов (с ссылками на альтернативы)",
+            "📊 Сравнительный анализ (с конкурентами)",
+            "✍️ Свой промпт (ввести вручную)"
+        ])
+        self.prompt_combo.currentIndexChanged.connect(self._on_prompt_type_changed)
+        
+        prompt_select_layout.addWidget(prompt_select_label)
+        prompt_select_layout.addWidget(self.prompt_combo, 1)
+        prompt_layout.addLayout(prompt_select_layout)
+        
+        # Поле для своего промпта
+        self.custom_prompt_label = QLabel("Свой промпт:")
+        self.custom_prompt_label.setVisible(False)
+        prompt_layout.addWidget(self.custom_prompt_label)
+        
+        self.custom_prompt_edit = QTextEdit()
+        self.custom_prompt_edit.setPlaceholderText(
+            "Введите свой промпт. Используйте {component} для подстановки названия компонента.\n"
+            "Например: Опиши компонент {component} и найди его аналоги..."
+        )
+        self.custom_prompt_edit.setMaximumHeight(100)
+        self.custom_prompt_edit.setVisible(False)
+        prompt_layout.addWidget(self.custom_prompt_edit)
+        
+        # Подсказка о текущем промпте
+        self.prompt_preview_label = QLabel()
+        self.prompt_preview_label.setWordWrap(True)
+        self.prompt_preview_label.setStyleSheet("color: #6c7086; font-style: italic; padding: 5px;")
+        self._update_prompt_preview()
+        prompt_layout.addWidget(self.prompt_preview_label)
+        
+        prompt_group.setLayout(prompt_layout)
+        layout.addWidget(prompt_group)
+        
         # Результаты AI поиска
         results_label = QLabel("Результаты поиска:")
         results_label.setProperty("class", "bold")
@@ -221,6 +269,178 @@ class PDFSearchDialog(QDialog):
         layout.addLayout(save_layout)
         
         return widget
+    
+    def _on_prompt_type_changed(self, index: int):
+        """Обработчик смены типа промпта"""
+        is_custom = index == 5  # "Свой промпт"
+        self.custom_prompt_label.setVisible(is_custom)
+        self.custom_prompt_edit.setVisible(is_custom)
+        self._update_prompt_preview()
+    
+    def _update_prompt_preview(self):
+        """Обновляет превью промпта"""
+        index = self.prompt_combo.currentIndex()
+        previews = [
+            "Стандартный запрос: полное название, характеристики, описание, примеры использования, ссылка на PDF",
+            "Краткое описание: техническая справка с характеристиками и обоснованием невозможности замены на отечественные аналоги",
+            "Развёрнутый обзор: подробный анализ даташита на 200-400 слов с ключевыми параметрами",
+            "Поиск аналогов: список совместимых замен с ссылками на производителей",
+            "Сравнительный анализ: таблица сравнения с конкурирующими решениями",
+            "Введите свой текст запроса выше. Используйте {component} для названия компонента"
+        ]
+        self.prompt_preview_label.setText(f"ℹ️ {previews[index]}")
+    
+    def _get_prompt_template(self, component_name: str) -> str:
+        """Возвращает промпт на основе выбранного типа"""
+        index = self.prompt_combo.currentIndex()
+        
+        prompts = {
+            0: f"""Найди информацию об электронном компоненте: {component_name}
+
+Пожалуйста, предоставь следующую информацию в структурированном виде:
+
+1. Полное название и производитель
+2. Тип компонента (микросхема, резистор, конденсатор и т.д.)
+3. Основные характеристики (напряжение, ток, частота, корпус и т.д.)
+4. Краткое описание назначения
+5. Типичные примеры использования (2-3 примера)
+6. Прямая ссылка на PDF документацию (желательно с официального сайта производителя)
+
+Формат ответа: JSON
+{{
+    "found": true/false,
+    "full_name": "полное название",
+    "manufacturer": "производитель",
+    "type": "тип компонента",
+    "description": "описание",
+    "specifications": {{"key": "value"}},
+    "examples": ["пример 1", "пример 2"],
+    "datasheet_url": "https://..."
+}}""",
+
+            1: f"""Составь краткое техническое описание источника вторичного питания (ИВП) или DC-DC преобразователя: {component_name}
+
+Требуется:
+1. Полное название компонента и производитель
+2. Тип (понижающий/повышающий/инвертирующий DC-DC, LDO, POL и т.д.)
+3. Основные технические характеристики:
+   - Входное напряжение (Vin)
+   - Выходное напряжение (Vout)
+   - Максимальный выходной ток
+   - КПД (эффективность)
+   - Частота преобразования
+   - Тип корпуса
+4. Ключевые преимущества данного компонента
+5. ВАЖНО: Обоснование невозможности или нецелесообразности замены на отечественные аналоги:
+   - Отсутствие российских аналогов с такими же параметрами
+   - Технологические ограничения отечественных производителей
+   - Сертификация и надёжность оригинального компонента
+
+Формат: структурированный текст на русском языке (150-200 слов)""",
+
+            2: f"""Подготовь развёрнутое описание источника вторичного питания (ИВП) или DC-DC преобразователя: {component_name}
+
+Сделай обзор на основе официального даташита производителя. Описание должно включать:
+
+1. ОБЩАЯ ИНФОРМАЦИЯ
+   - Полное название и серия
+   - Производитель и страна происхождения
+   - Целевое применение
+
+2. ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ
+   - Диапазон входных напряжений
+   - Выходные параметры (напряжение, ток, мощность)
+   - КПД в различных режимах работы
+   - Частота преобразования
+   - Защитные функции (OVP, OCP, OTP, UVLO)
+   - Температурный диапазон работы
+
+3. КОНСТРУКТИВНЫЕ ОСОБЕННОСТИ
+   - Тип и размеры корпуса
+   - Требования к внешним компонентам
+   - Тепловые характеристики
+
+4. ПРЕИМУЩЕСТВА И ОСОБЕННОСТИ
+   - Уникальные технологические решения
+   - Сравнение с предыдущими поколениями
+
+5. РЕКОМЕНДАЦИИ ПО ПРИМЕНЕНИЮ
+   - Типовые схемы включения
+   - Области применения
+
+Объём: 200-400 слов. Язык: русский.""",
+
+            3: f"""Найди все существующие аналоги для компонента: {component_name}
+
+Требуется предоставить:
+
+1. ПРЯМЫЕ АНАЛОГИ (pin-to-pin совместимые)
+   - Название компонента
+   - Производитель
+   - Ссылка на страницу продукта или даташит
+   - Степень совместимости (полная/частичная)
+
+2. ФУНКЦИОНАЛЬНЫЕ АНАЛОГИ (похожие характеристики)
+   - Название компонента
+   - Производитель
+   - Основные отличия от оригинала
+   - Ссылка на документацию
+
+3. БЮДЖЕТНЫЕ АЛЬТЕРНАТИВЫ
+   - Более дешёвые варианты
+   - Компромиссы по характеристикам
+
+4. ПРЕМИУМ АЛЬТЕРНАТИВЫ
+   - Улучшенные версии
+   - Дополнительные функции
+
+Для каждого аналога укажи:
+- Прямую ссылку на сайт производителя
+- Ссылку на PDF даташит (если доступна)
+- Ориентировочную доступность на рынке
+
+Формат: структурированный список с активными ссылками""",
+
+            4: f"""Проведи сравнительный анализ компонента {component_name} с конкурирующими решениями.
+
+Требуется:
+
+1. ИДЕНТИФИКАЦИЯ КОМПОНЕНТА
+   - Полное название и производитель
+   - Категория/класс устройства
+   - Целевой сегмент рынка
+
+2. ОСНОВНЫЕ КОНКУРЕНТЫ
+   Выбери 3-5 ближайших конкурентов от разных производителей
+
+3. СРАВНИТЕЛЬНАЯ ТАБЛИЦА
+   | Параметр | {component_name} | Конкурент 1 | Конкурент 2 | Конкурент 3 |
+   |----------|------------------|-------------|-------------|-------------|
+   | Производитель | | | | |
+   | Входное напряжение | | | | |
+   | Выходное напряжение | | | | |
+   | Выходной ток | | | | |
+   | КПД | | | | |
+   | Частота | | | | |
+   | Корпус | | | | |
+   | Цена (ориентир.) | | | | |
+
+4. ВЫВОДЫ
+   - Преимущества анализируемого компонента
+   - Недостатки по сравнению с конкурентами
+   - Рекомендации по выбору
+
+Язык: русский"""
+        }
+        
+        if index == 5:  # Свой промпт
+            custom = self.custom_prompt_edit.toPlainText().strip()
+            if custom:
+                return custom.replace("{component}", component_name)
+            else:
+                return prompts[0]  # Fallback на стандартный
+        
+        return prompts.get(index, prompts[0])
     
     def on_search(self):
         """Запускает поиск"""
@@ -331,14 +551,20 @@ class PDFSearchDialog(QDialog):
             )
             return
         
-        # Показываем индикатор загрузки
-        self.ai_results_browser.setHtml("<h3>⏳ Поиск...</h3><p>Запрашиваем информацию у AI...</p>")
+        # Получаем промпт на основе выбранного типа
+        custom_prompt = self._get_prompt_template(query)
+        prompt_type = self.prompt_combo.currentText()
         
-        # Запускаем поиск в отдельном потоке
-        # Запускаем поиск в отдельном потоке
-        self.ai_worker = AISearchWorker(provider_name, api_key, query, api_url)
-        self.ai_worker.finished.connect(self.display_ai_results)
-        self.ai_worker.start()
+        # Показываем индикатор загрузки с информацией о типе запроса
+        self.ai_results_browser.setHtml(
+            f"<h3>⏳ Поиск...</h3>"
+            f"<p>Запрашиваем информацию у AI...</p>"
+            f"<p style='color: #6c7086;'>Тип запроса: {prompt_type}</p>"
+            f"<p style='color: #6c7086;'>Компонент: {query}</p>"
+        )
+        
+        # Запускаем поиск в отдельном потоке с кастомным промптом
+        self.ai_worker = AISearchWorker(provider_name, api_key, query, api_url, custom_prompt)
         self.ai_worker.finished.connect(self.display_ai_results)
         self.ai_worker.start()
     
@@ -366,16 +592,17 @@ class PDFSearchDialog(QDialog):
             <p>Информация о данном компоненте не найдена.</p>
             """
         
-        html = f"""
+        # Базовые стили
+        html = """
         <style>
-            body {{ font-family: 'Segoe UI', Arial, sans-serif; }}
-            h2 {{ color: #89b4fa; border-bottom: 2px solid #89b4fa; padding-bottom: 5px; }}
-            h3 {{ color: #a6e3a1; margin-top: 20px; }}
-            .spec-table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
-            .spec-table td {{ padding: 8px; border: 1px solid #45475a; }}
-            .spec-table td:first-child {{ font-weight: bold; background-color: #313244; width: 30%; }}
-            .example {{ background-color: #1e1e2e; padding: 10px; margin: 5px 0; border-left: 3px solid #a6e3a1; }}
-            .datasheet-link {{ 
+            body { font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; }
+            h2 { color: #89b4fa; border-bottom: 2px solid #89b4fa; padding-bottom: 5px; }
+            h3 { color: #a6e3a1; margin-top: 20px; }
+            .spec-table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+            .spec-table td { padding: 8px; border: 1px solid #45475a; }
+            .spec-table td:first-child { font-weight: bold; background-color: #313244; width: 30%; }
+            .example { background-color: #1e1e2e; padding: 10px; margin: 5px 0; border-left: 3px solid #a6e3a1; }
+            .datasheet-link { 
                 display: inline-block;
                 background-color: #89b4fa;
                 color: #1e1e2e;
@@ -384,57 +611,131 @@ class PDFSearchDialog(QDialog):
                 border-radius: 5px;
                 font-weight: bold;
                 margin-top: 10px;
-            }}
-            .datasheet-link:hover {{ background-color: #74c7ec; }}
+            }
+            .datasheet-link:hover { background-color: #74c7ec; }
+            .text-response { 
+                background-color: #1e1e2e; 
+                padding: 15px; 
+                border-radius: 8px; 
+                border-left: 4px solid #89b4fa;
+                white-space: pre-wrap;
+                font-size: 14px;
+            }
+            .text-response p { margin: 10px 0; }
+            .text-response ul, .text-response ol { margin: 10px 0; padding-left: 20px; }
+            .text-response li { margin: 5px 0; }
+            a { color: #89b4fa; }
         </style>
-        
-        <h2>📋 {results.get('full_name', results.get('component', 'Компонент'))}</h2>
-        
-        <table class="spec-table">
-            <tr>
-                <td>🏭 Производитель</td>
-                <td>{results.get('manufacturer', 'N/A')}</td>
-            </tr>
-            <tr>
-                <td>🔧 Тип</td>
-                <td>{results.get('type', 'N/A')}</td>
-            </tr>
-        </table>
-        
-        <h3>📝 Описание</h3>
-        <p>{results.get('description', 'Описание отсутствует')}</p>
         """
         
-        # Характеристики
-        specs = results.get('specifications', {})
-        if specs:
-            html += "<h3>⚙️ Основные характеристики</h3><table class='spec-table'>"
-            for key, value in specs.items():
-                html += f"<tr><td>{key}</td><td>{value}</td></tr>"
-            html += "</table>"
+        # Проверяем, есть ли структурированные данные или только текст
+        has_structured_data = any(key in results for key in ['full_name', 'manufacturer', 'type', 'specifications'])
+        raw_response = results.get('raw_response', '')
+        description = results.get('description', '')
         
-        # Примеры использования
-        examples = results.get('examples', [])
-        if examples:
-            html += "<h3>💡 Примеры использования</h3>"
-            for i, example in enumerate(examples, 1):
-                html += f"<div class='example'>{i}. {example}</div>"
-        
-        # Ссылка на datasheet
-        datasheet_url = results.get('datasheet_url', '')
-        if datasheet_url and datasheet_url.startswith('http'):
+        # Если есть только текстовый ответ (raw_response или description), показываем его красиво
+        if not has_structured_data and (raw_response or description):
+            text_content = raw_response or description
+            
+            # Преобразуем markdown-подобное форматирование в HTML
+            formatted_text = self._format_markdown_to_html(text_content)
+            
             html += f"""
-            <h3>📄 Документация</h3>
-            <a href="{datasheet_url}" class="datasheet-link" target="_blank">
-                📥 Скачать Datasheet (PDF)
-            </a>
+            <h2>📋 {results.get('component', 'Компонент')}</h2>
+            <div class="text-response">{formatted_text}</div>
             """
+        else:
+            # Стандартное структурированное отображение
+            html += f"""
+            <h2>📋 {results.get('full_name', results.get('component', 'Компонент'))}</h2>
+            
+            <table class="spec-table">
+                <tr>
+                    <td>🏭 Производитель</td>
+                    <td>{results.get('manufacturer', 'N/A')}</td>
+                </tr>
+                <tr>
+                    <td>🔧 Тип</td>
+                    <td>{results.get('type', 'N/A')}</td>
+                </tr>
+            </table>
+            
+            <h3>📝 Описание</h3>
+            <p>{description or 'Описание отсутствует'}</p>
+            """
+            
+            # Характеристики
+            specs = results.get('specifications', {})
+            if specs:
+                html += "<h3>⚙️ Основные характеристики</h3><table class='spec-table'>"
+                for key, value in specs.items():
+                    html += f"<tr><td>{key}</td><td>{value}</td></tr>"
+                html += "</table>"
+            
+            # Примеры использования
+            examples = results.get('examples', [])
+            if examples:
+                html += "<h3>💡 Примеры использования</h3>"
+                for i, example in enumerate(examples, 1):
+                    html += f"<div class='example'>{i}. {example}</div>"
+            
+            # Ссылка на datasheet
+            datasheet_url = results.get('datasheet_url', '')
+            if datasheet_url and datasheet_url.startswith('http'):
+                html += f"""
+                <h3>📄 Документация</h3>
+                <a href="{datasheet_url}" class="datasheet-link" target="_blank">
+                    📥 Скачать Datasheet (PDF)
+                </a>
+                """
         
         # Провайдер
         provider = results.get('provider', 'AI')
         html += f"<p style='margin-top: 30px; color: #6c7086; font-size: 0.9em;'>Информация предоставлена: {provider}</p>"
         
         return html
+    
+    def _format_markdown_to_html(self, text: str) -> str:
+        """Преобразует markdown-подобный текст в HTML"""
+        import re
+        
+        # Экранируем HTML
+        text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        
+        # Заголовки
+        text = re.sub(r'^### (.+)$', r'<h4 style="color: #cba6f7;">\1</h4>', text, flags=re.MULTILINE)
+        text = re.sub(r'^## (.+)$', r'<h3>\1</h3>', text, flags=re.MULTILINE)
+        text = re.sub(r'^# (.+)$', r'<h2>\1</h2>', text, flags=re.MULTILINE)
+        
+        # Жирный и курсив
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'\*(.+?)\*', r'<em>\1</em>', text)
+        
+        # Ссылки
+        text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2" target="_blank">\1</a>', text)
+        
+        # URL без разметки
+        text = re.sub(
+            r'(https?://[^\s<>\"\)]+)',
+            r'<a href="\1" target="_blank">\1</a>',
+            text
+        )
+        
+        # Списки с тире
+        text = re.sub(r'^- (.+)$', r'<li>\1</li>', text, flags=re.MULTILINE)
+        text = re.sub(r'(<li>.+</li>\n?)+', r'<ul>\g<0></ul>', text)
+        
+        # Нумерованные списки
+        text = re.sub(r'^(\d+)\. (.+)$', r'<li>\2</li>', text, flags=re.MULTILINE)
+        
+        # Параграфы (двойные переносы)
+        text = re.sub(r'\n\n+', '</p><p>', text)
+        text = f'<p>{text}</p>'
+        
+        # Одиночные переносы строк
+        text = text.replace('\n', '<br>')
+        
+        return text
     
     def _load_default_search_dirs(self):
         """Загружает папки для поиска по умолчанию"""
@@ -1147,18 +1448,25 @@ class AISearchWorker(QThread):
     """Worker для AI поиска в отдельном потоке"""
     finished = Signal(dict)
     
-    def __init__(self, provider: str, api_key: str, query: str, api_url: str = None):
+    def __init__(self, provider: str, api_key: str, query: str, api_url: str = None, custom_prompt: str = None):
         super().__init__()
         self.provider = provider
         self.api_key = api_key
         self.query = query
         self.api_url = api_url
+        self.custom_prompt = custom_prompt
     
     def run(self):
         """Выполняет AI поиск"""
         from .pdf_search import AIPDFSearcher
         
         searcher = AIPDFSearcher(self.provider, self.api_key, self.api_url)
-        results = searcher.search(self.query)
+        
+        # Используем кастомный промпт если передан
+        if self.custom_prompt:
+            results = searcher.search_with_prompt(self.query, self.custom_prompt)
+        else:
+            results = searcher.search(self.query)
+        
         self.finished.emit(results)
 

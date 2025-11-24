@@ -5,13 +5,66 @@
 Поддерживает:
 - Локальный поиск в папках с PDF файлами
 - AI-поиск через Anthropic Claude или OpenAI GPT
+- Безопасное взаимодействие с TelegramHelper API
 """
 
 import os
 import re
+import hmac
+import hashlib
+import time
+import uuid
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import json
+
+
+def create_signed_headers(
+    payload: dict,
+    api_key: str,
+    hmac_secret: Optional[str] = None,
+    app_id: str = "bomcategorizer-v4"
+) -> dict:
+    """
+    Создание заголовков с HMAC подписью для безопасного запроса к TelegramHelper API
+    
+    Args:
+        payload: Тело запроса (будет подписано)
+        api_key: API ключ для аутентификации
+        hmac_secret: Секрет для HMAC подписи (если не указан, используется api_key)
+        app_id: Идентификатор приложения
+        
+    Returns:
+        Словарь заголовков для HTTP запроса
+    """
+    # Используем api_key как hmac_secret если секрет не указан
+    secret = hmac_secret or api_key
+    
+    # Генерируем timestamp (Unix time)
+    timestamp = str(int(time.time()))
+    
+    # Генерируем уникальный nonce
+    nonce = str(uuid.uuid4())
+    
+    # Формируем строку для подписи (timestamp:nonce:json_payload)
+    payload_json = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+    sign_string = f"{timestamp}:{nonce}:{payload_json}"
+    
+    # Вычисляем HMAC-SHA256 подпись
+    signature = hmac.new(
+        secret.encode('utf-8'),
+        sign_string.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    return {
+        "X-API-KEY": api_key,
+        "X-APP-ID": app_id,
+        "X-Timestamp": timestamp,
+        "X-Nonce": nonce,
+        "X-Signature": signature,
+        "Content-Type": "application/json"
+    }
 
 
 class LocalPDFSearcher:
@@ -174,6 +227,190 @@ class AIPDFSearcher:
                 'component': component_name
             }
     
+    def search_with_prompt(self, component_name: str, custom_prompt: str) -> Optional[Dict[str, any]]:
+        """
+        Поиск информации о компоненте через AI с кастомным промптом
+        
+        Args:
+            component_name: Название компонента
+            custom_prompt: Пользовательский промпт
+            
+        Returns:
+            Словарь с информацией о компоненте или None при ошибке
+        """
+        if not self.api_key:
+            return {
+                'error': 'API ключ не установлен',
+                'component': component_name
+            }
+        
+        if self.api_provider == "anthropic":
+            return self._search_with_custom_prompt_anthropic(component_name, custom_prompt)
+        elif self.api_provider == "openai":
+            return self._search_with_custom_prompt_openai(component_name, custom_prompt)
+        elif self.api_provider == "telegram_bot":
+            return self._search_with_custom_prompt_telegram(component_name, custom_prompt)
+        else:
+            return {
+                'error': f'Неизвестный провайдер: {self.api_provider}',
+                'component': component_name
+            }
+    
+    def _search_with_custom_prompt_anthropic(self, component_name: str, custom_prompt: str) -> Dict[str, any]:
+        """Поиск через Anthropic Claude API с кастомным промптом"""
+        try:
+            import anthropic
+            
+            client = anthropic.Anthropic(api_key=self.api_key)
+
+            message = client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=4096,
+                messages=[
+                    {"role": "user", "content": custom_prompt}
+                ]
+            )
+            
+            response_text = message.content[0].text
+            
+            # Пытаемся извлечь JSON из ответа (если есть)
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                try:
+                    result = json.loads(json_match.group(0))
+                    result['component'] = component_name
+                    result['provider'] = 'Anthropic Claude'
+                    result['raw_response'] = response_text
+                    return result
+                except json.JSONDecodeError:
+                    pass
+            
+            # Если JSON не найден, возвращаем текстовый ответ
+            return {
+                'found': True,
+                'component': component_name,
+                'provider': 'Anthropic Claude',
+                'description': response_text,
+                'raw_response': response_text
+            }
+                
+        except Exception as e:
+            return {
+                'component': component_name,
+                'provider': 'Anthropic Claude',
+                'error': str(e)
+            }
+    
+    def _search_with_custom_prompt_openai(self, component_name: str, custom_prompt: str) -> Dict[str, any]:
+        """Поиск через OpenAI GPT API с кастомным промптом"""
+        try:
+            import openai
+            
+            client = openai.OpenAI(api_key=self.api_key)
+
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "Ты эксперт по электронным компонентам и источникам питания."},
+                    {"role": "user", "content": custom_prompt}
+                ],
+                max_tokens=4096
+            )
+            
+            response_text = response.choices[0].message.content
+            
+            # Пытаемся извлечь JSON из ответа (если есть)
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                try:
+                    result = json.loads(json_match.group(0))
+                    result['component'] = component_name
+                    result['provider'] = 'OpenAI GPT-4o'
+                    result['raw_response'] = response_text
+                    return result
+                except json.JSONDecodeError:
+                    pass
+            
+            # Если JSON не найден, возвращаем текстовый ответ
+            return {
+                'found': True,
+                'component': component_name,
+                'provider': 'OpenAI GPT-4o',
+                'description': response_text,
+                'raw_response': response_text
+            }
+            
+        except Exception as e:
+            return {
+                'component': component_name,
+                'provider': 'OpenAI GPT',
+                'error': str(e)
+            }
+    
+    def _search_with_custom_prompt_telegram(self, component_name: str, custom_prompt: str) -> Dict[str, any]:
+        """Поиск через Telegram Bot API с кастомным промптом и подписью"""
+        try:
+            import requests
+            
+            url = self.api_url or "http://localhost:8000/ai_query"
+            
+            payload = {
+                "prompt": custom_prompt,
+                "provider": "anthropic",
+                "max_tokens": 4096
+            }
+            
+            # Создаём подписанные заголовки для безопасной передачи
+            if self.api_key:
+                headers = create_signed_headers(
+                    payload=payload,
+                    api_key=self.api_key,
+                    hmac_secret=self.api_key,  # Используем api_key как hmac_secret
+                    app_id="bomcategorizer-v4"
+                )
+            else:
+                headers = {"Content-Type": "application/json"}
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=120)
+            
+            if response.status_code != 200:
+                return {
+                    'component': component_name,
+                    'provider': 'Telegram Bot',
+                    'error': f"Ошибка сервера: {response.status_code} - {response.text}"
+                }
+            
+            data = response.json()
+            response_text = data.get("response", "")
+            
+            # Пытаемся извлечь JSON из ответа
+            json_match = re.search(r'\{[\s\S]*\}', response_text)
+            if json_match:
+                try:
+                    result = json.loads(json_match.group(0))
+                    result['component'] = component_name
+                    result['provider'] = 'Telegram Bot (Anthropic)'
+                    result['raw_response'] = response_text
+                    return result
+                except json.JSONDecodeError:
+                    pass
+            
+            # Если JSON не найден, возвращаем текстовый ответ
+            return {
+                'found': True,
+                'component': component_name,
+                'provider': 'Telegram Bot (Anthropic)',
+                'description': response_text,
+                'raw_response': response_text
+            }
+                
+        except Exception as e:
+            return {
+                'component': component_name,
+                'provider': 'Telegram Bot',
+                'error': str(e)
+            }
+    
     def _search_anthropic(self, component_name: str) -> Dict[str, any]:
         """Поиск через Anthropic Claude API"""
         try:
@@ -298,7 +535,7 @@ class AIPDFSearcher:
             }
 
     def _search_telegram_bot(self, component_name: str) -> Dict[str, any]:
-        """Поиск через Telegram Bot API"""
+        """Поиск через Telegram Bot API с подписью запроса"""
         try:
             import requests
             
@@ -331,15 +568,22 @@ class AIPDFSearcher:
     "datasheet_url": "https://..."
 }}"""
 
-            headers = {}
-            if self.api_key:
-                headers["X-API-KEY"] = self.api_key
-            
             payload = {
                 "prompt": prompt,
-                "provider": "anthropic", # Используем Anthropic через бота по умолчанию
+                "provider": "anthropic",
                 "max_tokens": 2048
             }
+            
+            # Создаём подписанные заголовки для безопасной передачи
+            if self.api_key:
+                headers = create_signed_headers(
+                    payload=payload,
+                    api_key=self.api_key,
+                    hmac_secret=self.api_key,
+                    app_id="bomcategorizer-v4"
+                )
+            else:
+                headers = {"Content-Type": "application/json"}
             
             response = requests.post(url, json=payload, headers=headers, timeout=60)
             
