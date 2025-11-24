@@ -26,7 +26,7 @@ def get_system_font() -> str:
     """Возвращает подходящий системный шрифт для текущей ОС"""
     system = platform.system()
     if system == 'Darwin':  # macOS
-        return 'SF Pro Text'
+        return '.AppleSystemUIFont'
     elif system == 'Windows':
         return 'Segoe UI'
     else:  # Linux и другие

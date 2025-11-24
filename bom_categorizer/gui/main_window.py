@@ -170,7 +170,7 @@ def get_system_font() -> str:
     system = platform.system()
 
     if system == 'Darwin':  # macOS
-        return 'SF Pro Text'
+        return '.AppleSystemUIFont'
     elif system == 'Windows':
         return 'Segoe UI'
     else:  # Linux и другие
