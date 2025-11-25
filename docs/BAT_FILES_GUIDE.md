@@ -27,7 +27,7 @@ BOMCategorizer/
 ├── 📋 rules.json                 # Правила классификации
 ├── 📋 requirements.txt           # Python зависимости
 │
-├── 🔨 BAT файлы (Windows):
+├── 📁 scripts/                    # 🔨 Windows скрипты запуска и обслуживания
 │   ├── 🚀 run_app.bat                   # ⭐ Универсальный запуск (автовыбор версии)
 │   ├── 🐛 run_standard_debug.bat        # Запуск Standard Edition (отладка)
 │   ├── 🐛 run_modern_debug.bat          # Запуск Modern Edition (отладка)
@@ -38,24 +38,52 @@ BOMCategorizer/
 │   ├── 📊 database_stats.bat            # Статистика БД
 │   ├── ⚙️ split_bom.bat                 # CLI обработка файлов (без GUI)
 │   ├── 🧪 run_tests.bat                 # Запуск автоматических тестов (pytest)
-│   ├── 📝 test_examples.bat             # Тестирование на реальных примерах
+│   ├── 🧪 test_examples.bat             # Тестирование на реальных примерах
 │   ├── ✅ check_pdf_fonts.bat           # Проверка наличия шрифтов для PDF
-│   └── 📥 download_fonts.bat            # Загрузка шрифтов DejaVu Sans
+│   ├── 📥 download_fonts.bat            # Загрузка шрифтов DejaVu Sans
+│   ├── 📥 download_fonts.ps1            # PowerShell: загрузка шрифтов
+│   ├── 🔧 post_install.ps1              # PowerShell: установка зависимостей
+│   ├── 🔧 repair_install.ps1            # PowerShell: восстановление установки
+│   └── 🔄 rebuild_venv.ps1              # PowerShell: пересоздание venv
 │
-├── 🔨 Shell скрипты (macOS/Linux):
-│   └── build_macos.sh            # Сборка .app bundle для macOS
-│
-├── 🐍 Python скрипты управления:
-│   ├── update_version.py         # Управление версиями
-│   ├── manage_database.py        # Управление БД (CLI)
+├── 📁 deployment/                  # 🔨 Скрипты сборки и развертывания
+│   ├── build_macos.sh            # Сборка .app bundle для macOS
 │   ├── build_installer.py        # Сборка Windows инсталлятора
-│   └── sync_installer_versions.py # Синхронизация версий в .iss файлах
-│
-├── 📦 Файлы сборки:
+│   ├── setup_macos.py            # py2app конфигурация для macOS
 │   ├── installer_clean.iss       # Inno Setup: Standard Edition
 │   ├── installer_qt.iss          # Inno Setup: Modern Edition
-│   ├── setup_macos.py            # py2app конфигурация для macOS
-│   └── post_install.ps1          # PowerShell: установка зависимостей
+│   ├── create_release.ps1        # PowerShell: создание релиза
+│   ├── create_release.sh         # Bash: создание релиза
+│   ├── upload_to_existing_release.ps1  # PowerShell: загрузка в релиз
+│   └── upload_to_existing_release.sh   # Bash: загрузка в релиз
+│
+├── 📁 tools/                       # 🐍 Python утилиты управления проектом
+│   ├── update_version.py         # Управление версиями
+│   ├── sync_installer_versions.py # Синхронизация версий в .iss файлах
+│   ├── sync_telegram_api.py      # 🆕 Синхронизация API ключа Telegram
+│   ├── ai_search.py              # 🆕 AI поиск через CLI
+│   ├── manage_database.py        # Управление БД (CLI)
+│   ├── split_bom.py              # CLI обработка файлов
+│   ├── preview_unclassified.py   # 🆕 Предпросмотр нераспознанных
+│   ├── init_project.py           # Инициализация проекта
+│   ├── create_icons.py           # Создание иконок
+│   ├── check_pdf_fonts.py        # Проверка PDF шрифтов
+│   ├── interactive_classify.py   # Интерактивная классификация
+│   ├── interactive_classify_improved.py  # Улучшенная классификация
+│   └── merge_component_database.py  # Слияние баз данных
+│
+├── 📁 assets/                      # 🖼️ Ресурсы приложения
+│   ├── icon.icns                 # Иконка для macOS
+│   ├── icon.ico                  # Иконка для Windows
+│   └── icon.png                  # Иконка PNG
+│
+├── 📁 config/                      # 📋 Конфигурационные файлы
+│   ├── config.json.template       # Шаблон конфигурации Standard
+│   ├── config_qt.json.template    # Шаблон конфигурации Modern
+│   └── rules.json                 # Правила классификации
+│
+├── 📁 data/                        # 💾 Данные проекта
+│   └── component_database_template.json  # Шаблон БД компонентов
 │
 └── 📄 Документация:
     ├── README.md                 # Основная документация
@@ -63,11 +91,19 @@ BOMCategorizer/
     └── CHANGELOG.md              # История изменений
 ```
 
-**Итого: 13 BAT файлов**
+**Итого скриптов:**
 - 🚀 **Запуск (3):** `run_app.bat`, `run_standard_debug.bat`, `run_modern_debug.bat`
 - 🗄️ **База данных (4):** `manage_database.bat`, `database_backup.bat`, `database_export.bat`, `database_stats.bat`
-- ⚙️ **Утилиты (4):** `split_bom.bat`, `repair_install.bat`, `check_pdf_fonts.bat`, `download_fonts.bat`
+- ⚙️ **Утилиты (3):** `check_pdf_fonts.bat`, `download_fonts.bat`, `split_bom.bat`
 - 🧪 **Тестирование (2):** `run_tests.bat`, `test_examples.bat`
+- 🔧 **Установка (4):** `post_install.ps1`, `repair_install.ps1`, `repair_install.bat`, `rebuild_venv.ps1`
+
+**Итого Python утилит (tools/):**
+- 📦 **Версии (2):** `update_version.py`, `sync_installer_versions.py`
+- 🤖 **AI/API (2):** `ai_search.py`, `sync_telegram_api.py`
+- 🗄️ **БД (2):** `manage_database.py`, `merge_component_database.py`
+- ⚙️ **Обработка (4):** `split_bom.py`, `interactive_classify.py`, `interactive_classify_improved.py`, `preview_unclassified.py`
+- 🔧 **Настройка (3):** `init_project.py`, `create_icons.py`, `check_pdf_fonts.py`
 
 ### После установки (Windows)
 
@@ -246,34 +282,34 @@ cp component_database.json ~/Desktop/database_backup_$(date +%Y%m%d_%H%M%S).json
 
 ---
 
-### `run_standard_debug.bat`
+### `scripts/run_standard_debug.bat`
 **Отладочный запуск Standard Edition.**
 
 - **Назначение:** Запускает Standard Edition (Tkinter) с отображением отладочной информации.
 - **Где доступен:** Только в проекте (разработка)
 - **Логика работы:**
-    1. Переходит в фиксированную директорию: `C:\Project\BOMCategorizer`
+    1. Переходит в корневую директорию проекта (родительская от scripts/)
     2. Выводит диагностическую информацию (пути, версии)
     3. Запускает `app.py` через `.venv\Scripts\python.exe`
 - **Особенности:**
-    - Жестко прописан путь к проекту
+    - Автоматически определяет путь к проекту
     - Показывает подробную информацию о запуске
     - Используется только для разработки и отладки
     - Не включается в инсталлятор
 
 ---
 
-### `run_modern_debug.bat`
+### `scripts/run_modern_debug.bat`
 **Отладочный запуск Modern Edition.**
 
 - **Назначение:** Запускает Modern Edition (PySide6) с отображением отладочной информации.
 - **Где доступен:** Только в проекте (разработка)
 - **Логика работы:**
-    1. Переходит в фиксированную директорию: `C:\Project\BOMCategorizer`
+    1. Переходит в корневую директорию проекта (родительская от scripts/)
     2. Выводит диагностическую информацию (пути, версии)
     3. Запускает `app_qt.py` через `.venv\Scripts\python.exe`
 - **Особенности:**
-    - Жестко прописан путь к проекту
+    - Автоматически определяет путь к проекту
     - Показывает подробную информацию о запуске
     - Используется только для разработки и отладки
     - Не включается в инсталлятор
@@ -518,6 +554,72 @@ cp component_database.json ~/Desktop/database_backup_$(date +%Y%m%d_%H%M%S).json
 
 ---
 
+## 🤖 Python утилиты (tools/)
+
+### `ai_search.py`
+**AI поиск информации о компонентах через командную строку.**
+
+- **Назначение:** Выполняет AI запросы для получения информации о радиоэлектронных компонентах.
+- **Использование:**
+    ```bash
+    python tools/ai_search.py "TPS54302" --type standard
+    python tools/ai_search.py "HMC473" --type ivp_short --output result.txt
+    ```
+- **Параметры:**
+    - `component` - название компонента (обязательный)
+    - `--type` - тип запроса: standard, ivp_short, ivp_detailed, analogs, comparison
+    - `--provider` - провайдер AI: anthropic, openai, telegram
+    - `--output` - файл для сохранения результата
+    - `--format` - формат вывода: text, json
+- **Требуется:** Настроенные API ключи в `config_qt.json`
+
+---
+
+### `sync_telegram_api.py`
+**Синхронизация API ключа с Telegram сервера.**
+
+- **Назначение:** Получает и обновляет API ключ для интеграции с TelegramHelper.
+- **Использование:**
+    ```bash
+    python tools/sync_telegram_api.py --fetch    # Получить ключ с сервера
+    python tools/sync_telegram_api.py --show     # Показать текущие настройки
+    python tools/sync_telegram_api.py --test     # Проверить подключение
+    ```
+- **Параметры:**
+    - `--fetch` - получить ключ с удаленного сервера
+    - `--show` - показать текущие API настройки
+    - `--key KEY` - установить конкретный ключ
+    - `--test` - проверить подключение к API
+- **Обновляет:** `config_qt.json` в проекте и в установленном приложении
+
+---
+
+### `update_version.py`
+**Управление версиями проекта.**
+
+- **Назначение:** Централизованное управление версиями Standard и Modern Edition.
+- **Использование:**
+    ```bash
+    python tools/update_version.py status           # Показать текущие версии
+    python tools/update_version.py sync             # Синхронизировать версии
+    python tools/update_version.py set modern 4.5.2 # Установить версию Modern
+    ```
+- **Обновляет:** `config.json`, `config_qt.json`, `pyproject.toml`, `.iss` файлы
+
+---
+
+### `preview_unclassified.py`
+**Предпросмотр нераспознанных компонентов.**
+
+- **Назначение:** Анализирует BOM файл и показывает компоненты, которые не будут классифицированы.
+- **Использование:**
+    ```bash
+    python tools/preview_unclassified.py input.xlsx
+    ```
+- **Полезно для:** Подготовки к интерактивной классификации
+
+---
+
 ## 📊 Сводная таблица BAT файлов
 
 | Файл | Разработка | Standard | Modern | Основное назначение |
@@ -535,6 +637,23 @@ cp component_database.json ~/Desktop/database_backup_$(date +%Y%m%d_%H%M%S).json
 | `test_examples.bat` | ✅ | ❌ | ❌ | Тесты на примерах |
 | `check_pdf_fonts.bat` | ✅ | ✅ | ✅ | Проверка шрифтов |
 | `download_fonts.bat` | ✅ | ✅ | ✅ | Загрузка шрифтов |
+
+### Python утилиты (tools/)
+
+| Файл | Описание | Категория |
+|------|----------|-----------|
+| `ai_search.py` | AI поиск информации о компонентах | 🤖 AI |
+| `sync_telegram_api.py` | Синхронизация API ключа Telegram | 🔗 API |
+| `update_version.py` | Управление версиями проекта | 📦 Версии |
+| `sync_installer_versions.py` | Синхронизация версий в .iss | 📦 Версии |
+| `manage_database.py` | Управление базой данных | 🗄️ БД |
+| `merge_component_database.py` | Слияние баз данных | 🗄️ БД |
+| `split_bom.py` | CLI обработка BOM файлов | ⚙️ Обработка |
+| `interactive_classify.py` | Интерактивная классификация | ⚙️ Обработка |
+| `preview_unclassified.py` | Предпросмотр нераспознанных | ⚙️ Обработка |
+| `check_pdf_fonts.py` | Проверка PDF шрифтов | 🔧 Утилиты |
+| `create_icons.py` | Создание иконок | 🔧 Утилиты |
+| `init_project.py` | Инициализация проекта | 🔧 Утилиты |
 
 **Легенда:**
 - ✅ Доступен
@@ -597,16 +716,54 @@ pause
 
 ---
 
+## 💻 Интерактивный CLI в приложении
+
+В Modern Edition (PySide6) доступен встроенный интерактивный CLI режим:
+
+### Доступ
+- Кнопка **"CLI"** в главном окне (синяя кнопка рядом с "Очистить")
+- Или через горячую клавишу (если настроена)
+
+### Команды интерактивного CLI
+
+| Команда | Алиасы | Описание |
+|---------|--------|----------|
+| `help` | `?`, `h` | Справка по командам |
+| `clear` | `cls` | Очистить консоль |
+| `exit` | `quit`, `q` | Закрыть CLI |
+| `list` | `ls` | Список загруженных файлов |
+| `add` | - | Добавить файл |
+| `process` | `run` | Запустить обработку |
+| `dbstats` | `stats` | Статистика БД |
+| `dbsearch` | `find` | Поиск в БД |
+| `version` | `ver` | Показать версии |
+| `vsync` | - | Синхронизировать версии |
+| `api` | - | Показать API настройки |
+| `apisync` | - | Синхронизировать API ключ |
+| `apitest` | - | Проверить подключение к API |
+
+### Автодополнение
+- **Tab** или **→** — принять подсказку
+- **↑** **↓** — навигация по истории/подсказкам
+- **Escape** — закрыть popup подсказок
+
+> **Примечание:** Команды `apisync`, `vsync` работают только при запуске из исходного кода проекта, не из установленного .app
+
+---
+
 ## 📚 Связанные документы
 
 - [BUILD.md](../BUILD.md) - Инструкции по сборке инсталляторов
 - [VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md) - Управление версиями проекта
 - [PLATFORM_COMPARISON.md](PLATFORM_COMPARISON.md) - Сравнение версий и платформ
+- [CLI_USAGE.md](CLI_USAGE.md) - Подробная документация по CLI
+- [AI_INTEGRATION_GUIDE.md](AI_INTEGRATION_GUIDE.md) - Интеграция с AI/Telegram
+- [API_MANAGEMENT.md](API_MANAGEMENT.md) - Управление API ключами
 
 ---
 
 **Дата создания:** 15.11.2025  
-**Последнее обновление:** 15.11.2025  
+**Последнее обновление:** 25.11.2025  
 **Автор:** Куреин М.Н. / Kurein M.N.  
-**Версия документа:** 2.1  
+**Версия документа:** 2.2  
 **Охват:** Windows (BAT файлы) + macOS (структура .app bundle)

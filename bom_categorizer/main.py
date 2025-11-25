@@ -438,6 +438,14 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
         if pd.isna(desc):
             return desc
         desc_str = str(desc)
+        
+        # КРИТИЧНО: Убираем "с подбором" из описания (может быть с переносами строк)
+        # Паттерны:
+        # - "50HFFA - 005 - 2/6SMA с подбором 50HFFA - 001 - 2/6SMA" -> "50HFFA - 005 - 2/6SMA"
+        # - "50HFFA-003-2/6SMA,\nс подбором\n50HFFA-001-2/6SMA" -> "50HFFA-003-2/6SMA,"
+        desc_str = re.sub(r'[,\s]*с\s+подбором.*$', '', desc_str, flags=re.IGNORECASE | re.DOTALL).strip()
+        desc_str = re.sub(r'^с\s+подбором\s+', '', desc_str, flags=re.IGNORECASE).strip()
+        
         # Убираем символ ± (может быть в разных вариантах, или вообще отсутствовать)
         desc_str = desc_str.replace('±', '')
         # Нормализуем пробел между единицами измерения и процентами (всегда добавляем пробел)
@@ -1591,55 +1599,62 @@ def main():
                     if pd.notna(val):
                         df.loc[idx, tu_col_name] = normalize_dashes(str(val))
         
-        # КРИТИЧЕСКИ ВАЖНО: Извлечь ТУ-коды из DOCX файлов ДО агрегации
-        # Это приводит DOCX к тому же формату что и XLSX (с отдельной колонкой ТУ)
-        # Проверяем, есть ли DOCX данные (по наличию колонки 'note')
-        if 'note' in df.columns:
-            print("[ИЗВЛЕЧЕНИЕ ТУ] Извлечение ТУ-кодов из наименований (для унификации с XLSX)...")
+        # КРИТИЧЕСКИ ВАЖНО: Извлечь ТУ-коды из всех файлов ДО агрегации
+        # Это приводит данные к единому формату (с отдельной колонкой ТУ)
+        # Ранее это делалось только если была колонка 'note' (для DOCX), но XLSX тоже могут содержать ТУ в названии
+        print("[ИЗВЛЕЧЕНИЕ ТУ] Извлечение ТУ-кодов из наименований...")
+        
+        # Если колонки ТУ еще нет - создаем временную
+        if 'ТУ' not in df.columns and 'ту' not in df.columns:
+            df['_extracted_tu_'] = ''
             
-            # Если колонки ТУ еще нет - создаем
-            if 'ТУ' not in df.columns and 'ту' not in df.columns:
-                df['_extracted_tu_'] = ''
+        # Если колонки note нет - создаем, так как туда будем записывать ТУ
+        if 'note' not in df.columns:
+            df['note'] = ''
+        
+        for idx in df.index:
+            # Извлекаем ТУ только если:
+            # 1. У строки нет категории (DOCX или новый XLSX) ИЛИ
+            # 2. У строки есть note но нет ТУ (DOCX с производителем)
+            has_cat = 'category' in df.columns and pd.notna(df.loc[idx, 'category']) and str(df.loc[idx, 'category']).strip()
+            has_tu = ('ТУ' in df.columns and pd.notna(df.loc[idx, 'ТУ']) and str(df.loc[idx, 'ТУ']).strip()) or \
+                     ('ту' in df.columns and pd.notna(df.loc[idx, 'ту']) and str(df.loc[idx, 'ту']).strip())
             
-            for idx in df.index:
-                # Извлекаем ТУ только если:
-                # 1. У строки нет категории (DOCX) ИЛИ
-                # 2. У строки есть note но нет ТУ (DOCX с производителем)
-                has_cat = 'category' in df.columns and pd.notna(df.loc[idx, 'category']) and str(df.loc[idx, 'category']).strip()
-                has_tu = ('ТУ' in df.columns and pd.notna(df.loc[idx, 'ТУ']) and str(df.loc[idx, 'ТУ']).strip()) or \
-                         ('ту' in df.columns and pd.notna(df.loc[idx, 'ту']) and str(df.loc[idx, 'ту']).strip())
+            # Если это XLSX с категорией и ТУ - пропускаем (уже обработан)
+            if has_cat and has_tu:
+                continue
+            
+            # Извлекаем ТУ из описания
+            desc_val = df.loc[idx, desc_col]
+            if pd.notna(desc_val):
+                cleaned_desc, tu_code = extract_tu_code(str(desc_val))
                 
-                # Если это XLSX с категорией и ТУ - пропускаем
-                if has_cat and has_tu:
-                    continue
-                
-                # Извлекаем ТУ из описания
-                desc_val = df.loc[idx, desc_col]
-                if pd.notna(desc_val):
-                    cleaned_desc, tu_code = extract_tu_code(str(desc_val))
-                    
+                # Если ТУ найдено или описание изменилось
+                if tu_code or cleaned_desc != str(desc_val):
                     # Обновляем описание (без ТУ)
                     df.loc[idx, desc_col] = cleaned_desc
+                
+                # Сохраняем ТУ
+                if tu_code:
+                    if '_extracted_tu_' in df.columns:
+                        df.loc[idx, '_extracted_tu_'] = tu_code
                     
-                    # Сохраняем ТУ
-                    if tu_code:
-                        if '_extracted_tu_' in df.columns:
-                            df.loc[idx, '_extracted_tu_'] = tu_code
-                        
-                        # Если есть note с производителем, объединяем: "ТУ | производитель"
-                        note_val = df.loc[idx, 'note'] if 'note' in df.columns else ''
-                        if note_val and pd.notna(note_val) and str(note_val).strip():
-                            # Проверяем, не является ли note ТУ-кодом (чтобы не дублировать)
-                            note_str = str(note_val).strip()
-                            if 'ТУ' not in note_str.upper():
-                                # note это производитель, объединяем
-                                df.loc[idx, 'note'] = tu_code + ' | ' + note_str
-                            else:
-                                # note уже содержит ТУ
-                                df.loc[idx, 'note'] = note_str
+                    # Если есть note с производителем, объединяем: "ТУ | производитель"
+                    note_val = df.loc[idx, 'note']
+                    if pd.notna(note_val) and str(note_val).strip():
+                        # Проверяем, не является ли note ТУ-кодом (чтобы не дублировать)
+                        note_str = str(note_val).strip()
+                        if 'ТУ' not in note_str.upper():
+                            # note это производитель, объединяем
+                            df.loc[idx, 'note'] = tu_code + ' | ' + note_str
                         else:
-                            # Нет note - просто ТУ
-                            df.loc[idx, 'note'] = tu_code
+                            # note уже содержит ТУ - оставляем как есть или дополняем?
+                            # Лучше не трогать, если там уже есть ТУ
+                            if tu_code not in note_str:
+                                df.loc[idx, 'note'] = tu_code + '; ' + note_str
+                    else:
+                        # Нет note - просто ТУ
+                        df.loc[idx, 'note'] = tu_code
     
     # КРИТИЧНО: Исключить подборы и замены ДО агрегации!
     # Иначе основной элемент и подборы объединятся при агрегации

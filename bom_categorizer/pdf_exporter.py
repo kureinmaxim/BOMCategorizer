@@ -306,7 +306,20 @@ class PDFExporter:
         
         # Формируем заголовок с источниками
         if sources_list:
-            sources_text = ", ".join(sources_list)
+            # Deduplicate sources (base names only)
+            unique_sources = []
+            seen_normalized = set()
+            for s in sources_list:
+                s_clean = str(s).strip()
+                # Remove extension
+                base_name = os.path.splitext(s_clean)[0]
+                s_norm = base_name.lower()
+                
+                if base_name and s_norm not in seen_normalized:
+                    unique_sources.append(base_name)
+                    seen_normalized.add(s_norm)
+            
+            sources_text = ", ".join(unique_sources)
             title = Paragraph(f"<b>Отчет по обработке BOM ({sources_text})</b>", title_style)
         else:
             title = Paragraph(f"<b>Отчет по обработке BOM</b>", title_style)
@@ -739,7 +752,20 @@ class PDFExporter:
         
         # Формируем заголовок с источниками
         if sources_list:
-            sources_text = ", ".join(sources_list)
+            # Deduplicate sources (base names only)
+            unique_sources = []
+            seen_normalized = set()
+            for s in sources_list:
+                s_clean = str(s).strip()
+                # Remove extension
+                base_name = os.path.splitext(s_clean)[0]
+                s_norm = base_name.lower()
+                
+                if base_name and s_norm not in seen_normalized:
+                    unique_sources.append(base_name)
+                    seen_normalized.add(s_norm)
+            
+            sources_text = ", ".join(unique_sources)
             title = Paragraph(f"<b>Отчет по обработке BOM ({sources_text})</b>", title_style)
         else:
             title = Paragraph(f"<b>Отчет по обработке BOM</b>", title_style)

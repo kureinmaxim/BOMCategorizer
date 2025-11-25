@@ -3,9 +3,9 @@
 Этот документ описывает полный цикл подготовки релиза: от обновления версии до создания инсталляторов.
 
 > **Быстрый старт:**
-> *   **Windows:** `python build_installer.py`
-> *   **macOS:** `./build_macos.sh`
-> *   **Версии:** `python update_version.py status`
+> *   **Windows:** `python deployment/build_installer.py`
+> *   **macOS:** `./deployment/build_macos.sh`
+> *   **Версии:** `python tools/update_version.py status`
 
 ---
 
@@ -15,10 +15,10 @@
 Единственный источник правды — это **шаблоны конфигурации**.
 
 ### 📂 Где хранятся версии?
-*   **Standard Edition:** `config.json.template`
-*   **Modern Edition:** `config_qt.json.template`
+*   **Standard Edition:** `config/config.json.template`
+*   **Modern Edition:** `config/config_qt.json.template`
 
-> ⚠️ **Важно:** Никогда не меняйте версию вручную в локальных файлах `config.json` или `.iss`. Используйте утилиту `update_version.py`.
+> ⚠️ **Важно:** Никогда не меняйте версию вручную в локальных файлах `config.json` или `.iss`. Используйте утилиту `tools/update_version.py`.
 
 ### 🛠 Пошаговый процесс обновления
 
@@ -26,7 +26,7 @@
 Перед началом работы проверьте, синхронизированы ли версии.
 
 ```bash
-python update_version.py status
+python tools/update_version.py status
 ```
 *Если есть расхождения, скрипт предложит выполнить синхронизацию.*
 
@@ -35,24 +35,24 @@ python update_version.py status
 
 ```bash
 # Обновить только Modern Edition
-python update_version.py set modern 4.5.0
+python tools/update_version.py set modern 4.5.0
 
 # Обновить только Standard Edition
-python update_version.py set standard 3.5.0
+python tools/update_version.py set standard 3.5.0
 
 # Обновить обе версии сразу (рекомендуется для мажорных релизов)
-python update_version.py set both 5.0.0
+python tools/update_version.py set both 5.0.0
 ```
 
 #### Шаг 3: Синхронизация (если нужно)
 Команда `set` делает это автоматически, но если вы скачали обновления из Git, выполните:
 
 ```bash
-python update_version.py sync
+python tools/update_version.py sync
 ```
 **Что делает sync:**
 1.  Обновляет локальные `config.json` / `config_qt.json` (не трогая ваши настройки).
-2.  Обновляет файлы инсталлятора `installer_clean.iss` и `installer_qt.iss`.
+2.  Обновляет файлы инсталлятора `deployment/installer_clean.iss` и `deployment/installer_qt.iss`.
 3.  Обновляет захардкоженные версии в Python коде.
 
 ---
@@ -63,11 +63,11 @@ python update_version.py sync
 
 ### 🪟 Windows
 
-Для сборки используется скрипт `build_installer.py`, который автоматически управляет компилятором Inno Setup.
+Для сборки используется скрипт `deployment/build_installer.py`, который автоматически управляет компилятором Inno Setup.
 
 **Запуск:**
 ```powershell
-python build_installer.py
+python deployment/build_installer.py
 ```
 
 **Процесс:**
@@ -81,11 +81,11 @@ python build_installer.py
 
 ### 🍎 macOS
 
-Для сборки используется скрипт `build_macos.sh`, который создает `.dmg` образ.
+Для сборки используется скрипт `deployment/build_macos.sh`, который создает `.dmg` образ.
 
 **Запуск:**
 ```bash
-./build_macos.sh
+./deployment/build_macos.sh
 ```
 
 **Процесс:**
@@ -103,24 +103,24 @@ python build_installer.py
 
 1.  **Подготовка:**
     ```bash
-    python update_version.py status  # Проверяем, что все чисто
+    python tools/update_version.py status  # Проверяем, что все чисто
     ```
 
 2.  **Обновление:**
     ```bash
-    python update_version.py set modern 4.5.0
+    python tools/update_version.py set modern 4.5.0
     ```
 
 3.  **Сборка:**
     ```bash
-    python build_installer.py  # Собираем Windows
-    ./build_macos.sh           # Собираем macOS (если есть Mac)
+    python deployment/build_installer.py  # Собираем Windows
+    ./deployment/build_macos.sh           # Собираем macOS (если есть Mac)
     ```
 
 4.  **Git Commit:**
     ```bash
-    git add config_qt.json.template config.json.template
-    git add installer_qt.iss installer_clean.iss
+    git add config/config_qt.json.template config/config.json.template
+    git add deployment/installer_qt.iss deployment/installer_clean.iss
     git commit -m "Release: v4.5.0"
     git tag v4.5.0
     git push origin main --tags
@@ -135,7 +135,7 @@ python build_installer.py
 
 ### ❌ Ошибка "Inno Setup не найден"
 Скрипт ищет компилятор в `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`.
-Если у вас другой путь, отредактируйте `build_installer.py`:
+Если у вас другой путь, отредактируйте `deployment/build_installer.py`:
 ```python
 INNO_SETUP_PATH = r"D:\Apps\Inno Setup 6\ISCC.exe"
 ```
@@ -151,5 +151,5 @@ INNO_SETUP_PATH = r"D:\Apps\Inno Setup 6\ISCC.exe"
 
 ### ❌ Версии рассинхронизировались
 Если `status` показывает красные предупреждения:
-1.  Запустите `python update_version.py sync`.
+1.  Запустите `python tools/update_version.py sync`.
 2.  Это принудительно приведет все файлы к состоянию шаблонов.

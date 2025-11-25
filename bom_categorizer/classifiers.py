@@ -147,15 +147,23 @@ def classify_row(
     if desc_upper.startswith("ГВАТ") or desc_upper.startswith("ГВАТ."):
         return "our_developments"
     
+    # Проверка децимальных номеров (де4.835.001 и т.д.)
+    # Паттерн: "де" + цифра + точка (например, де4.)
+    if re.search(r"де\d+\.", text_blob_lower):
+        return "our_developments"
+    
+    # Проверка на "ОСТ" как отдельное слово (чтобы не ловить "мощности", "пост" и т.д.)
+    is_ost = bool(re.search(r"(^|\s)ост($|\s|\d|\.)", text_blob_lower))
+
     if has_any(text_blob, [
         "195-9530", "195-", "амфи.", "амфи ", "гват.", "гват ",
         "шск-м", "плата контроллера шск", "плата преобразователя уровней",
         "бз шск-м", "бф шск-м", "наша разработ", "собственной разработ"
-    ]):
-        # Исключаем ТОЛЬКО стандартные ЭРИ (резисторы, конденсаторы с кодом АМФИ - это покупные)
-        # ВСЕ остальное с АМФИ, 195- → наши разработки (включая вентили СВЧ!)
-        # ГВАТ уже обработан выше - всегда идёт в наши разработки
-        standard_components = ["резистор", "конденсатор", "дроссель", "индуктивност", "микродроссель"]
+    ]) or is_ost:
+        # Исключаем ТОЛЬКО стандартные ЭРИ и КРЕПЕЖ
+        # (резисторы, конденсаторы с кодом АМФИ - это покупные, Шайба ОСТ - это крепеж)
+        standard_components = ["резистор", "конденсатор", "дроссель", "индуктивност", "микродроссель",
+                               "винт", "гайка", "шайба", "болт", "заклёпка", "заклепка"]
         is_standard_component = any(comp in text_blob_lower for comp in standard_components)
         
         if not is_standard_component:
@@ -263,7 +271,8 @@ def classify_row(
         desc_lower = desc.lower()
         
         component_keywords = ['резистор', 'конденсатор', 'микросхема', 'разъем', 'диод', 'индуктор', 'дроссель',
-                             'транзистор', 'стабилитрон', 'генератор', 'вилка', 'розетка', 'кабель']
+                             'транзистор', 'стабилитрон', 'генератор', 'вилка', 'розетка', 'кабель',
+                             'делитель', 'аттенюатор', 'вентиль', 'усилитель', 'смеситель', 'фильтр']
         is_component = any(kw in desc_lower for kw in component_keywords)
         
         if not is_component and file_base in desc_lower.replace('.xlsx', '').replace('.xls', ''):
@@ -303,13 +312,20 @@ def classify_row(
         return "rf_modules"
     
     # Вентили СВЧ/ВЧ в "СВЧ модули" (circulator, isolator)
-    if has_any(text_blob, ["вентиль свч", "вентиль вч", "circulator", "isolator", "прибор фвк", "прибор фквн", "фвк3-", "фквн3-"]):
+    # Также добавляем ВЧ-переключатели и MTS-18 сюда
+    if has_any(text_blob, ["вентиль свч", "вентиль вч", "circulator", "isolator", "прибор фвк", "прибор фквн", "фвк3-", "фквн3-",
+                           "вч-переключатель", "rf switch", "switch rf", "zaswa", "msp2ta",
+                           "mts-18", "mts 18", "mts18", "mts - 18"]):
         return "rf_modules"
     
     # Вентили с кодами ГВАТ (наши разработки СВЧ) в "СВЧ модули"
     if has_any(text_blob, ["вентиль"]) and has_any(text_blob, ["гват"]):
         return "rf_modules"
     
+    # MTS-18XL-B (Mechanical Transfer Switch) -> Moved to RF Modules above
+    # if has_any(text_blob, ["mts-18xl", "mts-18", "mts 18", "mts18"]):
+    #     return "others"
+
     # Dev boards / evaluation boards / коммутаторы / модули связи
     if has_any(text_blob, ["плата инструментальная", "evaluation board", "dev board", "отладочная плата", "плата 117212",
                            "коммутатор", "nt1", "модуль связи"]):
@@ -422,9 +438,9 @@ def classify_row(
                 "кабель соединительный оптический", "патч-корд оптич"
             ]):
                 return "optics"
-            # 2. Наши разработки (платы с нашими номерами или АМФИ/ГВАТ)
+            # 2. Наши разработки (платы с нашими номерами или АМФИ/ГВАТ/ОСТ)
             if has_any(text_blob, [
-                "195-9530", "195-", "гват", "амфи", 
+                "195-9530", "195-", "гват", "амфи", "ост",
                 "плата контроллера", "плата шск", "шск-м",
                 "наша разработка", "собственной разработ"
             ]):
@@ -534,7 +550,7 @@ def classify_row(
         return "optics"
 
     if has_any(text_blob, [
-        "свч", "вч ", "rf ", "microwave", "mini-circuits", "planar monolithics", "pmi", "ghz", "lna", "rf amp",
+        "свч", "вч ", "вч-", "rf ", "microwave", "mini-circuits", "planar monolithics", "pmi", "ghz", "lna", "rf amp",
         "линия задержек", "delay line", "делитель мощности", "сумматор", "splitter", "combiner", "усилител",
         "polaris", "gigabaudics", "etl systems", "vat-", "zx60", "pne-l", "ответвитель", "coupler", "фазовращатель",
         "phase shifter", "детектор", "detector", "ограничитель", "limiter", "корректор ачх", "equalizer", "qpd", "power divider"
