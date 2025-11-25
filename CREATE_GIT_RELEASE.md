@@ -1,134 +1,140 @@
-# 🚀 Создание GitHub релиза
+# 🚀 Создание GitHub Релиза: Полное Руководство
 
-Это руководство поможет вам создать релиз на GitHub и загрузить установочные файлы для Windows и macOS.
+Это пошаговое руководство по созданию релизов BOM Categorizer.
 
 ---
 
-## ⚡️ Быстрая справка (Cheatsheet)
+## 📋 Общий процесс (Workflow)
 
-### 🏷 1. Создание тега (Обязательно)
-Перед созданием релиза всегда создавайте тег:
+1.  **Сборка:** Собрать `.exe` или `.dmg` файл.
+2.  **Git Tag:** Создать и отправить тег версии.
+3.  **Релиз:** Запустить скрипт создания релиза и загрузки файлов.
+
+---
+
+## 🏷️ ШАГ 1: Создание Git Тега (ОБЯЗАТЕЛЬНО)
+
+GitHub создает релизы **только** на основе тегов. Без тега скрипты работать не будут или создадут "черновик" без привязки к версии.
+
+### 1. Проверка текущих тегов
 ```bash
-git tag -a v4.4.2 -m "Release 4.4.2"
-git push origin v4.4.2
+git tag
+# Вывод: v4.4.0, v4.4.1...
 ```
 
-### 🪟 2. Windows (PowerShell)
-```powershell
-# Создать новый релиз
-.\create_release.ps1 -Token "ваш_токен" -Version "4.4.2"
+### 2. Создание нового тега
+Используйте семантическое версионирование (например, `v4.5.0`).
 
-# Обновить существующий (загрузить файлы)
-.\upload_to_existing_release.ps1 -Token "ваш_токен"
-```
-
-### 🍎 3. macOS (Terminal)
 ```bash
-# Создать релиз (GitHub CLI)
-gh release create v4.4.2 --title "v4.4.2" --notes "Notes" BOMCategorizer-4.4.2-macOS-Modern.dmg
+# Создать локальный тег с описанием
+git tag -a v4.5.0 -m "Release 4.5.0: Fix parser bugs and update UI"
 
-# Обновить существующий (Bash скрипт)
-./upload_to_existing_release.sh -t "ваш_токен" -v "4.4.2"
+# ОТПРАВИТЬ тег на сервер (Критически важно!)
+git push origin v4.5.0
 ```
+
+> **Примечание:** Если вы ошиблись, удалите тег:
+> `git tag -d v4.5.0` и `git push --delete origin v4.5.0`
 
 ---
 
-## 📋 Предварительные требования
+## 📦 ШАГ 2: Сборка Инсталлятора
 
-1.  **GitHub Personal Access Token (PAT)**
-    *   Где взять: [GitHub Settings -> Tokens (Classic)](https://github.com/settings/tokens)
-    *   Права: **`repo`** (Full control of private repositories)
-    *   **Важно:** Скопируйте токен сразу после создания!
+Перед загрузкой убедитесь, что у вас есть свежий файл инсталлятора.
 
-2.  **Файлы установщика** (должны лежать в корне проекта)
-    *   Windows: `BOMCategorizerModernSetup.exe`
-    *   macOS: `BOMCategorizer-{version}-macOS-Modern.dmg`
-
-3.  **Git тег**
-    *   Версия должна быть затегана и отправлена на сервер (см. "Быстрая справка").
+**Windows:**
+```bash
+python deployment/build_installer.py
+```
+*Ожидаемый файл:* `BOMCategorizerModernSetup.exe` (в корне проекта).
 
 ---
 
-## 🪟 Windows: Инструкции
+## 🚀 ШАГ 3: Создание Релиза и Загрузка Файлов
 
-### Создание нового релиза
-Используйте скрипт `create_release.ps1`.
+### 🪟 Для Windows (PowerShell)
 
-**Синтаксис:**
-```powershell
-.\create_release.ps1 -Token "ghp_xxx" [-Version "4.4.2"] [-Repo "owner/repo"]
-```
+У нас есть два скрипта:
+1.  `create_release.ps1` — создает новый релиз и загружает файл.
+2.  `upload_to_existing_release.ps1` — только загружает файл в уже созданный релиз.
 
-**Примеры:**
-```powershell
-# Стандартный запуск
-.\create_release.ps1 -Token "ghp_mytoken123"
-
-# Если ExecutionPolicy блокирует запуск:
-powershell.exe -ExecutionPolicy Bypass -File .\create_release.ps1 -Token "ghp_mytoken123"
-```
-
-### Загрузка в существующий релиз
-Если релиз уже создан (например, через macOS или вручную), используйте `upload_to_existing_release.ps1`.
+#### Вариант А: Создать новый релиз (Полный цикл)
 
 ```powershell
-.\upload_to_existing_release.ps1 -Token "ghp_mytoken123"
-```
-*Скрипт автоматически найдет последний релиз и обновит файл `BOMCategorizerModernSetup.exe`.*
+# 1. Задайте токен (чтобы не вводить каждый раз)
+$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
 
----
-
-## 🍎 macOS: Инструкции
-
-### Вариант 1: GitHub CLI (Рекомендуется)
-Требуется установленный `gh` (`brew install gh`).
-
-**Создание релиза:**
-```bash
-gh release create v4.4.2 \
-  --title "BOM Categorizer Modern Edition 4.4.2" \
-  --notes "Описание изменений" \
-  BOMCategorizer-4.4.2-macOS-Modern.dmg
+# 2. Запустите скрипт
+# Укажите версию БЕЗ 'v', если скрипт добавляет её сам, или как в теге.
+# Скрипт ожидает, что тег v4.5.0 уже существует на GitHub.
+.\deployment\create_release.ps1 -Token $Token -Version "4.5.0"
 ```
 
-**Обновление файла в релизе:**
-```bash
-gh release upload v4.4.2 BOMCategorizer-4.4.2-macOS-Modern.dmg --clobber
+#### Вариант Б: Обновить существующий релиз (Если релиз уже создан)
+
+Если вы исправили баг и пересобрали `.exe`, но версия осталась той же:
+
+```powershell
+$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
+
+# Скрипт сам найдет последний релиз и загрузит в него BOMCategorizerModernSetup.exe
+.\deployment\upload_to_existing_release.ps1 -Token $Token
 ```
 
-### Вариант 2: Bash скрипты
-Если CLI недоступен, используйте скрипты `create_release.sh` и `upload_to_existing_release.sh`.
-*Рекомендуется установить `jq` (`brew install jq`) для корректной работы с JSON.*
+#### Если есть ошибка "Execution of scripts is disabled on this system"
 
-**Создание релиза:**
-```bash
-./create_release.sh -t "ghp_xxx" -v "4.4.2"
-```
+Запускайте с флагом обхода политики:
 
-**Обновление релиза:**
-```bash
-# Автоматически найдет .dmg и .exe и загрузит их в существующий релиз
-./upload_to_existing_release.sh -t "ghp_xxx" -v "4.4.2"
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deployment\create_release.ps1 -Token "ghp_..." -Version "4.5.0"
 ```
 
 ---
 
-## 🛠 Устранение проблем
+### 🍎 Для macOS (Terminal)
 
-| Проблема | Возможная причина и решение |
-|----------|-----------------------------|
-| **File not found** | Проверьте, что файлы `.exe` или `.dmg` находятся в корне проекта и их имена совпадают с ожидаемыми. |
-| **Unauthorized** | Неверный токен или отсутствуют права `repo`. Токен мог истечь. |
-| **Release already exists** | Релиз с таким тегом уже существует. Используйте скрипты `upload_to_existing...` или удалите релиз вручную. |
-| **Tag not found** | Тег не найден на GitHub. Выполните `git push origin vX.X.X`. |
-| **Problems parsing JSON** | (macOS) Установите `jq`: `brew install jq`. |
+#### Вариант А: Использование GitHub CLI (Рекомендуется)
+Это самый надежный способ. Требует `brew install gh`.
 
-## 🔐 Безопасность
-*   ⚠️ **Никогда не коммитьте токены в репозиторий!**
-*   Используйте переменные окружения для безопасности:
-    *   PowerShell: `$env:GITHUB_TOKEN = "..."`
-    *   Bash: `export GITHUB_TOKEN="..."`
+```bash
+# 1. Авторизация (один раз)
+gh auth login
 
-## 🌐 Полезные ссылки
-*   [GitHub Releases (Web UI)](https://github.com/kureinmaxim/BOMCategorizer/releases)
-*   [GitHub CLI Manual](https://cli.github.com/manual/gh_release)
+# 2. Создание релиза и загрузка файла
+gh release create v4.5.0 \
+    BOMCategorizer-4.5.0-macOS-Modern.dmg \
+    --title "v4.5.0" \
+    --notes "Список изменений..."
+```
+
+#### Вариант Б: Bash скрипты
+Если `gh` не установлен.
+
+```bash
+# Создание
+./deployment/create_release.sh -t "ghp_TOKEN" -v "4.5.0"
+
+# Обновление (только загрузка файла)
+./deployment/upload_to_existing_release.sh -t "ghp_TOKEN"
+```
+
+---
+
+## 🛠 Где взять токен (PAT)?
+
+1.  Зайдите на GitHub: [Settings -> Developer settings -> Personal access tokens -> Tokens (classic)](https://github.com/settings/tokens).
+2.  Нажмите **Generate new token (classic)**.
+3.  Выберите scopes (права):
+    *   ✅ **repo** (Full control of private repositories) — этого достаточно.
+4.  Скопируйте токен (он начинается на `ghp_`).
+
+---
+
+## ❓ Частые ошибки
+
+| Ошибка | Решение |
+|--------|---------|
+| `Tag not found` | Вы забыли сделать `git push origin v4.5.0`. Скрипт не может создать релиз для несуществующего тега. |
+| `Release already exists` | Релиз для этого тега уже создан. Используйте скрипт `upload_to_existing...` или удалите релиз вручную на сайте. |
+| `Asset already exists` | Файл с таким именем уже есть в релизе. Скрипты обычно пытаются его заменить, но иногда нужно удалить старый файл вручную через браузер. |
+| `File not found` | Скрипт не видит `.exe` файл. Убедитесь, что вы запустили `build_installer.py` и файл лежит в корне проекта. |

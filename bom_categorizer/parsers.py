@@ -428,11 +428,30 @@ def parse_docx(path: str) -> pd.DataFrame:
                                     last_item['note'] = manufacturer
                         else:
                             # Это продолжение description - объединяем
+                            # Проверяем, есть ли производитель в продолжении описания (например, "K00S3, ф. Rosenberger")
+                            mfr_in_continuation = ""
+                            name_to_append = name.strip()
+                            
+                            mfr_match_cont = re.search(r'(?:,\s*|\s+)ф\.\s*(.+)', name_to_append)
+                            if mfr_match_cont:
+                                mfr_in_continuation = mfr_match_cont.group(1).strip()
+                                # Удаляем производителя из добавляемой части
+                                name_to_append = re.sub(r'(?:,\s*|\s+)ф\.\s*.+', '', name_to_append).strip()
+                            
+                            # Добавляем часть описания
                             current_desc = last_item.get('description', '').strip()
-                            if current_desc and name.strip():
-                                last_item['description'] = current_desc + ' ' + name.strip()
-                            elif name.strip():
-                                last_item['description'] = name.strip()
+                            if current_desc and name_to_append:
+                                last_item['description'] = current_desc + ' ' + name_to_append
+                            elif name_to_append:
+                                last_item['description'] = name_to_append
+                                
+                            # Если нашли производителя - добавляем в note
+                            if mfr_in_continuation:
+                                existing_note = last_item.get('note', '').strip()
+                                if existing_note:
+                                    last_item['note'] = existing_note + ' | ' + mfr_in_continuation
+                                else:
+                                    last_item['note'] = mfr_in_continuation
                     
                     # КРИТИЧНО: Обрабатываем note (cell_note) - это может быть подборы/примечание
                     if cell_note.strip():
@@ -608,6 +627,19 @@ def parse_docx(path: str) -> pd.DataFrame:
                     note = effective_group_tu
                 else:
                     note = ""
+            elif is_replacement_note:
+                # Если это замена, пытаемся извлечь текст ДО маркера замены
+                # (например, "ф. Rosenberger" перед "Допуск. замена")
+                replacement_pattern = r'(?i)(?:допуск[\.\s]*замена|допускается\s+замена|замена\s+на|доп[\.\s]*замена|замена)'
+                match = re.search(replacement_pattern, cell_note)
+                if match and match.start() > 3: # Если до замены есть хотя бы 3 символа
+                    pre_text = cell_note[:match.start()].strip().rstrip(';,.\r\n')
+                    if pre_text:
+                        note = pre_text
+                    else:
+                        note = ""
+                else:
+                    note = ""
             # Если cell_note не содержит подборы и нет ТУ из заголовка - оставляем note=cell_note (уже установлено)
 
             # Не добавлять строку без данных
@@ -645,6 +677,25 @@ def parse_docx(path: str) -> pd.DataFrame:
             
             # Убираем запятую в конце названия (если есть)
             name = name.rstrip(',').strip()
+            
+            # КРИТИЧНО: Убираем "с подбором ..." из наименования
+            # Это нужно делать на этапе парсинга, чтобы очищенное имя попало в базу
+            # Паттерны:
+            # - "50HFFA - 005 - 2/6SMA с подбором 50HFFA - 001 - 2/6SMA" -> "50HFFA - 005 - 2/6SMA"
+            # - "с подбором 50HFFA - 001 - 2/6SMA" -> "50HFFA - 001 - 2/6SMA"
+            # - "50HFFA-003-2/6SMA,\nс подбором\n50HFFA-001-2/6SMA" -> "50HFFA-003-2/6SMA,"
+            # ВАЖНО: Используем re.DOTALL чтобы . совпадал с \n
+            name = re.sub(r'[,\s]*с\s+подбором.*$', '', name, flags=re.IGNORECASE | re.DOTALL).strip()
+            name = re.sub(r'^с\s+подбором\s+', '', name, flags=re.IGNORECASE).strip()
+            
+            # КРИТИЧНО: Также очищаем примечания от "с подбором"
+            # Примечания могут содержать многострочный текст с переносами
+            cell_note = re.sub(r'[,\s]*с\s+подбором.*$', '', cell_note, flags=re.IGNORECASE | re.DOTALL).strip()
+            cell_note = re.sub(r'^с\s+подбором\s+', '', cell_note, flags=re.IGNORECASE).strip()
+            original_note = re.sub(r'[,\s]*с\s+подбором.*$', '', original_note, flags=re.IGNORECASE | re.DOTALL).strip()
+            original_note = re.sub(r'^с\s+подбором\s+', '', original_note, flags=re.IGNORECASE).strip()
+            note = re.sub(r'[,\s]*с\s+подбором.*$', '', note, flags=re.IGNORECASE | re.DOTALL).strip()
+            note = re.sub(r'^с\s+подбором\s+', '', note, flags=re.IGNORECASE).strip()
 
             # Если количество не указано явно, пытаемся посчитать из reference (например, FU1-FU6 = 6)
             if qty is None or qty == 0:

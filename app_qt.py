@@ -16,6 +16,6 @@ if __name__ == "__main__":
         except Exception:
             pass
     
-    from bom_categorizer.gui_qt import main
+    from bom_categorizer.gui.main_window import main
     main()
 

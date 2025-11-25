@@ -103,8 +103,8 @@ def get_database_path() -> str:
         
         return os.path.join(data_dir, "component_database.json")
     else:
-        # Режим разработки - сохраняем в текущей директории (как было)
-        return os.path.join(parent_dir, "component_database.json")
+        # Режим разработки - сохраняем в папке data/
+        return os.path.join(parent_dir, "data", "component_database.json")
 
 
 # Названия категорий

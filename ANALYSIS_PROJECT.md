@@ -1,33 +1,62 @@
 # 🏗 Архитектура проекта BOM Categorizer
 
-**BOM Categorizer** — это десктопное приложение для автоматической классификации электронных компонентов из спецификаций (BOM).
+**BOM Categorizer** — десктопное приложение для автоматической классификации электронных компонентов из спецификаций (BOM).
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v4.4.5 (PySide6)  
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v4.5.0 (PySide6)  
 > **Язык:** Python 3.13+  
-> **Архитектура:** Модульный пайплайн (Pipeline)
+> **Архитектура:** Модульный пайплайн + AI интеграция
+
+---
+
+## 📋 Содержание
+
+1. [Основные идеи и принципы](#-основные-идеи-и-принципы)
+2. [Технологический стек](#-технологический-стек)
+3. [Ключевые модули системы](#-ключевые-модули-системы)
+4. [AI интеграция](#-ai-интеграция)
+5. [Структура файлов проекта](#-структура-файлов-проекта)
 
 ---
 
 ## 💡 Основные идеи и принципы
 
-Проект построен на нескольких ключевых архитектурных принципах:
+### 1. Модульный пайплайн (Pipeline Processing)
 
-1.  **Модульный пайплайн (Pipeline Processing):**
-    Обработка данных происходит линейно: `Чтение` → `Нормализация` → `Классификация` → `Обогащение` → `Вывод`. Это позволяет легко добавлять новые шаги (например, AI-классификацию) без переписывания всего кода.
+Обработка данных идёт линейно:
 
-2.  **Гибридная архитектура (Dual GUI):**
-    Ядро приложения (`bom_categorizer/`) полностью отделено от интерфейса. Это позволяет поддерживать две версии GUI (Standard на Tkinter и Modern на PySide6) и CLI-режим, используя одну и ту же бизнес-логику.
+```
+Чтение → Нормализация → Классификация → Обогащение → Вывод
+```
 
-3.  **Двухуровневая база знаний:**
-    *   **Static:** Шаблон базы данных поставляется с приложением (Read-only при установке).
-    *   **Dynamic:** Пользовательская база накапливается в профиле пользователя (`%APPDATA%`).
-    Это обеспечивает безопасность данных (локальное хранение) и возможность обновлять приложение без потери накопленного опыта.
+Это позволяет добавлять новые шаги (AI-классификацию) без переписывания всего кода.
 
-4.  **Эвристика + Правила:**
-    Классификация не полагается на один метод. Используется каскад:
-    *   *Точное совпадение* (База данных)
-    *   *Regex паттерны* (Технические характеристики)
-    *   *Пользовательские правила* (Rules.json)
+### 2. Гибридная архитектура (Dual GUI)
+
+Ядро (`bom_categorizer/`) отделено от интерфейса:
+- **Standard Edition** — Tkinter (легковесный)
+- **Modern Edition** — PySide6 (современный)
+- **CLI режим** — для автоматизации
+
+### 3. Двухуровневая база знаний
+
+| Уровень | Описание | Расположение |
+|---------|----------|--------------|
+| **Static** | Шаблон БД (Read-only) | `data/component_database_template.json` |
+| **Dynamic** | Пользовательская БД | `%APPDATA%/BOMCategorizer/` |
+
+Обновление приложения не теряет накопленный опыт.
+
+### 4. Каскадная классификация
+
+```
+1. Точное совпадение (База данных)
+      ↓ не найдено
+2. Regex паттерны (Технические характеристики)
+      ↓ не найдено
+3. Пользовательские правила (rules.json)
+      ↓ не найдено
+4. AI классификация (TelegramHelper API)
+```
 
 ---
 
@@ -35,105 +64,279 @@
 
 | Область | Технологии | Назначение |
 |---------|------------|------------|
-| **Core** | **Python 3.13+** | Основной язык разработки. |
-| **Data** | **Pandas** | Обработка табличных данных (DataFrame), фильтрация, сортировка. |
-| **GUI (Modern)** | **PySide6 (Qt)** | Современный интерфейс, стили, анимации, потоки (QThread). |
-| **GUI (Standard)** | **Tkinter** | Легковесный интерфейс, встроенный в Python (для слабых ПК). |
-| **IO** | **OpenPyXL, python-docx** | Чтение/запись Excel и Word файлов. |
-| **Build** | **Inno Setup, py2app** | Сборка инсталляторов для Windows и macOS. |
-| **QA** | **pytest** | Модульное и интеграционное тестирование. |
+| **Core** | Python 3.13+ | Основной язык |
+| **Data** | Pandas | DataFrame, фильтрация, сортировка |
+| **GUI (Modern)** | PySide6 (Qt) | Современный интерфейс, QThread |
+| **GUI (Standard)** | Tkinter | Легковесный интерфейс |
+| **IO** | OpenPyXL, python-docx | Excel и Word файлы |
+| **PDF** | ReportLab | Экспорт в PDF с кириллицей |
+| **AI** | HTTP API | Интеграция с TelegramHelper |
+| **Build** | Inno Setup, py2app | Инсталляторы Win/macOS |
+| **QA** | pytest | Тестирование |
 
 ---
 
 ## 🔑 Ключевые модули системы
 
-Здесь описаны самые важные файлы, формирующие ядро системы:
+### Ядро (Core)
 
-*   **`main.py` (Оркестратор):**
-    Главный контроллер. Запускает процесс обработки, вызывает парсеры, передает данные классификаторам и инициирует запись результатов.
+| Модуль | Роль | Описание |
+|--------|------|----------|
+| `main.py` | 🧠 Оркестратор | Запускает пайплайн обработки |
+| `classifiers.py` | 🔍 Мозг | Regex и эвристики классификации |
+| `component_database.py` | 💾 Память | Управление базой знаний |
+| `formatters.py` | 🧹 Инструменты | Очистка данных, извлечение номиналов |
+| `parsers.py` | 📥 Ввод | Чтение .docx, .xlsx, .txt |
+| `config_manager.py` | ⚙️ Конфиг | Управление настройками |
 
-*   **`classifiers.py` (Мозг):**
-    Содержит всю логику определения типа компонента. Здесь живут регулярные выражения для резисторов (`R\d+`), конденсаторов (`C\d+`) и микросхем.
+### GUI Modern Edition (`gui/`)
 
-*   **`component_database.py` (Память):**
-    Отвечает за "долговременную память" приложения. Умеет загружать JSON базу, искать в ней компоненты и сохранять новые знания.
+| Модуль | Описание |
+|--------|----------|
+| `main_window.py` | Главное окно |
+| `dialogs.py` | Диалоговые окна |
+| `sections.py` | Виджеты и секции |
+| `menu.py` | Главное меню |
+| `scaling.py` | Масштабирование и темы |
+| `search.py` | Глобальный поиск |
+| `search_methods.py` | Методы поиска |
+| `workers.py` | Фоновые потоки (QThread) |
+| `drag_drop.py` | Drag & Drop файлов |
+| `ai_classifier.py` | AI классификация |
+| `pdf_search.py` | Поиск компонентов |
+| `pdf_search_dialogs.py` | Диалоги AI поиска |
 
-*   **`formatters.py` (Инструменты):**
-    Набор функций для очистки "грязных" данных из BOM. Умеет вытаскивать номиналы (10k, 0.1uF), допуски (±5%) и ТУ-коды.
+### Вывод (Output)
 
-*   **`gui_qt.py` (Лицо):**
-    Реализация современного интерфейса. Обрабатывает нажатия кнопок, перетаскивание файлов и обновляет прогресс-бары.
+| Модуль | Описание |
+|--------|----------|
+| `excel_writer.py` | Excel отчёты (.xlsx) |
+| `txt_writer.py` | Текстовые отчёты |
+| `pdf_exporter.py` | PDF с кириллицей |
+
+---
+
+## 🤖 AI интеграция
+
+BOM Categorizer интегрируется с **TelegramHelper** для AI-поиска информации о компонентах.
+
+### Архитектура
+
+```
+┌─────────────────────┐     HTTP/HTTPS      ┌─────────────────────┐
+│   BOM Categorizer   │ ←──────────────────→ │   TelegramHelper    │
+│   (Desktop App)     │     API Request      │   (VPS Server)      │
+└─────────────────────┘                      └─────────────────────┘
+         │                                            │
+         │ config_qt.json                             │ .env
+         │ - telegram_url                             │ - API_SECRET_KEY
+         │ - telegram_key                             │ - ANTHROPIC_API_KEY
+         └────────────────────────────────────────────┘
+```
+
+### Возможности
+
+- **Описание компонента** — характеристики, корпус, применение
+- **Поиск аналогов** — совместимые замены
+- **IVP описание** — входящий контроль
+- **Поиск по PDF** — даташиты онлайн
+
+### Получение API ключа
+
+В Telegram боте (для админов):
+```
+/api
+```
+
+### Конфигурация
+
+`config_qt.json`:
+```json
+{
+  "telegram_url": "http://IP:8000/ai_query",
+  "telegram_key": "YOUR_API_KEY"
+}
+```
+
+### CLI использование
+
+```bash
+# AI поиск компонента
+python tools/ai_search.py "TPS54302"
+
+# Поиск аналогов
+python tools/ai_search.py "LM2596" --prompt analogs
+
+# JSON вывод
+python tools/ai_search.py "NE555" --json
+```
 
 ---
 
 ## 📂 Структура файлов проекта
 
 ```
-ProjectSnabjenie/
+BOMCategorizer/
 ├── 📦 bom_categorizer/              # Основной пакет (бизнес-логика)
 │   ├── __init__.py
 │   ├── main.py                      # 🧠 Оркестратор пайплайна
-│   ├── classifiers.py               # 🔍 Логика классификации (Regex, эвристики)
-│   ├── parsers.py                   # 📥 Чтение файлов (.docx, .xlsx, .txt)
-│   ├── formatters.py                # 🧹 Очистка данных, извлечение ТУ/номиналов
-│   ├── component_database.py        # 💾 Управление базой знаний (JSON)
-│   ├── excel_writer.py              # 📊 Генерация Excel отчетов
-│   ├── txt_writer.py                # 📝 Генерация текстовых отчетов
-│   ├── utils.py                     # 🛠 Вспомогательные утилиты
+│   ├── classifiers.py               # 🔍 Логика классификации
+│   ├── parsers.py                   # 📥 Чтение файлов
+│   ├── formatters.py                # 🧹 Очистка данных
+│   ├── component_database.py        # 💾 База знаний (JSON)
+│   ├── config_manager.py            # ⚙️ Управление конфигурацией
+│   ├── excel_writer.py              # 📊 Excel отчёты
+│   ├── txt_writer.py                # 📝 Текстовые отчёты
+│   ├── pdf_exporter.py              # 📄 PDF экспорт
+│   ├── podborka_extractor.py        # 📋 Извлечение подборки
+│   ├── utils.py                     # 🛠 Утилиты
+│   ├── cli_interactive.py           # 💬 Интерактивная консоль
+│   ├── styles.py                    # 🎨 Стили GUI
 │   │
-│   ├── gui_qt.py                    # ✨ Modern Edition GUI (PySide6)
-│   ├── dialogs_qt.py                # ✨ Диалоговые окна (статистика, настройки)
-│   ├── gui_sections_qt.py           # ✨ Виджеты и секции интерфейса
-│   ├── gui_menu_qt.py               # ✨ Главное меню
-│   ├── gui_scaling_qt.py            # ✨ Масштабирование и темы
-│   ├── search_qt.py                 # ✨ Глобальный поиск
-│   ├── workers_qt.py                # ✨ Фоновые потоки (QThread)
-│   ├── drag_drop_qt.py              # ✨ Drag & Drop
-│   ├── pdf_exporter.py              # ✨ Экспорт в PDF
-│   ├── ai_classifier_qt.py          # ✨ AI классификация
-│   └── gui.py                       # ✅ Standard Edition GUI (Tkinter)
+│   ├── 📁 gui/                      # ✨ Modern Edition (PySide6)
+│   │   ├── __init__.py
+│   │   ├── main_window.py           # Главное окно
+│   │   ├── dialogs.py               # Диалоги
+│   │   ├── sections.py              # Виджеты
+│   │   ├── menu.py                  # Меню
+│   │   ├── scaling.py               # Масштабирование
+│   │   ├── search.py                # Поиск
+│   │   ├── search_methods.py        # Методы поиска
+│   │   ├── workers.py               # QThread
+│   │   ├── drag_drop.py             # Drag & Drop
+│   │   ├── ai_classifier.py         # AI классификация
+│   │   ├── pdf_search.py            # Поиск компонентов
+│   │   └── pdf_search_dialogs.py    # AI диалоги
+│   │
+│   └── gui.py                       # ✅ Standard Edition (Tkinter)
 │
 ├── 🚀 Точки входа:
-│   ├── app_qt.py                    # ▶️ Запуск Modern Edition
-│   ├── app.py                       # ▶️ Запуск Standard Edition
-│   ├── split_bom.py                 # 💻 CLI интерфейс
-│   ├── build_installer.py           # 🔨 Сборка инсталлятора (Windows)
-│   ├── build_macos.sh               # 🍎 Сборка приложения (macOS)
-│   ├── manage_database.py           # 🗄️ Утилита управления БД
-│   └── interactive_classify.py      # 🎓 Консольное обучение
+│   ├── app_qt.py                    # ▶️ Modern Edition
+│   └── app.py                       # ▶️ Standard Edition
 │
-├── ⚙️ Конфигурация:
-│   ├── config_qt.json               # Настройки Modern Edition
-│   ├── config.json                  # Настройки Standard Edition
-│   ├── rules.json                   # Пользовательские правила
-│   ├── component_database.json      # Локальная БД (dev)
-│   ├── component_database_template.json # Шаблон БД (prod)
-│   └── requirements.txt             # Зависимости
+├── 📁 tools/                        # 🛠 CLI утилиты
+│   ├── ai_search.py                 # 🤖 AI поиск компонентов
+│   ├── split_bom.py                 # 💻 CLI обработка BOM
+│   ├── manage_database.py           # 🗄️ Управление БД
+│   ├── interactive_classify.py      # 🎓 Обучение классификатора
+│   ├── interactive_classify_improved.py # 🎓 Улучшенное обучение
+│   ├── preview_unclassified.py      # 👁 Предпросмотр
+│   ├── merge_component_database.py  # 🔀 Слияние БД
+│   ├── update_version.py            # 🔄 Синхронизация версий
+│   ├── sync_installer_versions.py   # 🔄 Версии инсталляторов
+│   ├── create_icons.py              # 🎨 Создание иконок
+│   ├── check_pdf_fonts.py           # 🔤 Проверка шрифтов
+│   └── init_project.py              # 🚀 Инициализация
 │
-├── 📝 Документация:
-│   ├── ANALYSIS_PROJECT.md          # 🏗 Архитектура проекта
-│   ├── README.md                    # 📖 Главная страница
-│   ├── CHANGELOG.md                 # 🕒 История изменений
-│   ├── LAUNCHER_GUIDE.md            # 🚀 Инструкция по запуску
-│   ├── TESTING_README.md            # 🧪 Тестирование
-│   ├── CREATE_GIT_RELEASE.md        # 📦 Создание релизов
-│   ├── BUILD.md                     # 🛠 Сборка инсталляторов
-│   └── SETUP.md                     # ⚙️ Настройка окружения
+├── 📁 deployment/                   # 📦 Сборка и развёртывание
+│   ├── build_installer.py           # 🔨 Windows инсталлятор
+│   ├── build_macos.sh               # 🍎 macOS сборка
+│   ├── build_macos_simple.sh        # 🍎 Упрощённая сборка
+│   ├── setup_macos.py               # 🍎 py2app конфиг
+│   ├── installer_clean.iss          # 📄 Inno Setup (Standard)
+│   ├── installer_qt.iss             # 📄 Inno Setup (Modern)
+│   ├── create_release.ps1           # 📦 Релиз (Windows)
+│   ├── create_release.sh            # 📦 Релиз (Unix)
+│   ├── upload_to_existing_release.ps1 # ⬆️ Публикация (Win)
+│   └── upload_to_existing_release.sh  # ⬆️ Публикация (Unix)
 │
-├── 🧪 Тесты (tests/):
+├── 📁 scripts/                      # 🖥 BAT/PS1 скрипты
+│   ├── run_app.bat                  # ▶️ Запуск
+│   ├── run_modern_debug.bat         # 🐞 Debug Modern
+│   ├── run_standard_debug.bat       # 🐞 Debug Standard
+│   ├── run_tests.bat                # 🧪 Тесты
+│   ├── test_examples.bat            # 🧪 Тесты на файлах
+│   ├── post_install.ps1             # 🔧 Пост-установка
+│   ├── repair_install.ps1           # 🔧 Восстановление
+│   ├── rebuild_venv.ps1             # 🔄 Пересборка venv
+│   ├── database_backup.bat          # 💾 Бэкап БД
+│   ├── database_export.bat          # 📤 Экспорт БД
+│   ├── database_stats.bat           # 📊 Статистика БД
+│   ├── manage_database.bat          # 🗄️ Управление БД
+│   ├── split_bom.bat                # 💻 CLI обработка
+│   ├── check_pdf_fonts.bat          # 🔤 Проверка шрифтов
+│   └── download_fonts.bat/ps1       # 📥 Загрузка шрифтов
+│
+├── 📁 config/                       # ⚙️ Конфигурация
+│   ├── config.json.template         # Шаблон Standard
+│   ├── config_qt.json.template      # Шаблон Modern
+│   └── rules.json                   # Правила классификации
+│
+├── 📁 data/                         # 💾 Данные
+│   ├── component_database_template.json # Шаблон БД
+│   └── component_database.json      # Рабочая БД
+│
+├── 📁 assets/                       # 🎨 Ресурсы
+│   ├── icon.png                     # Иконка (PNG)
+│   ├── icon.ico                     # Иконка (Windows)
+│   └── icon.icns                    # Иконка (macOS)
+│
+├── 📁 fonts/                        # 🔤 Шрифты для PDF
+│   ├── DejaVuSans.ttf
+│   └── DejaVuSans-Bold.ttf
+│
+├── 📁 docs/                         # 📚 Документация
+│   ├── AI_INTEGRATION_GUIDE.md      # 🤖 AI интеграция
+│   ├── AI_CLASSIFIER_README.md      # 🤖 AI классификатор
+│   ├── CLI_USAGE.md                 # 💻 CLI использование
+│   ├── TESTING_GUIDE.md             # 🧪 Тестирование
+│   ├── USER_MANUAL.md               # 📖 Руководство
+│   ├── DATABASE_GUIDE.md            # 💾 Работа с БД
+│   ├── DATABASE_ARCHITECTURE.md     # 💾 Архитектура БД
+│   ├── CLASSIFICATION_RULES.md      # 📋 Правила классификации
+│   ├── INTERACTIVE_MODE_GUIDE.md    # 💬 Интерактивный режим
+│   ├── PDF_SEARCH_GUIDE.md          # 🔍 Поиск компонентов
+│   ├── DRAG_DROP_README.md          # 📎 Drag & Drop
+│   ├── DISPLAY_FIXES.md             # 🖥 Исправления отображения
+│   ├── OFFLINE_INSTALLATION_GUIDE.md # 📦 Офлайн установка
+│   ├── PLATFORM_COMPARISON.md       # ⚖️ Сравнение версий
+│   ├── VERSION_MANAGEMENT.md        # 🔄 Управление версиями
+│   ├── BAT_FILES_GUIDE.md           # 🖥 BAT файлы
+│   ├── FONT_SETUP_QUICK.md          # 🔤 Настройка шрифтов
+│   ├── ICONS_SETUP.md               # 🎨 Иконки
+│   ├── PDF_COLUMN_WIDTH_GUIDE.md    # 📄 Ширина колонок PDF
+│   ├── TXT_EXPORT_GUIDE.md          # 📝 TXT экспорт
+│   └── PROJECT_STRUCTURE.md         # 📂 Структура проекта
+│
+├── 📁 tests/                        # 🧪 Тесты
+│   ├── conftest.py                  # Фикстуры pytest
 │   ├── test_classifiers.py          # Тесты классификации
 │   ├── test_formatters.py           # Тесты форматирования
 │   ├── test_database.py             # Тесты БД
-│   ├── test_integration.py          # Интеграционные тесты
-│   └── conftest.py                  # Фикстуры pytest
+│   └── test_integration.py          # Интеграционные тесты
 │
-└── 🛠 Скрипты (Windows):
-    ├── run_modern_debug.bat         # 🐞 Debug запуск Modern
-    ├── run_standard_debug.bat       # 🐞 Debug запуск Standard
-    ├── run_tests.bat                # 🧪 Запуск тестов
-    └── create_release.ps1           # 📦 Создание релиза
+├── 📝 Документация (корень):
+│   ├── README.md                    # 📖 Главная страница
+│   ├── ANALYSIS_PROJECT.md          # 🏗 Архитектура (этот файл)
+│   ├── CHANGELOG.md                 # 🕒 История изменений
+│   ├── BUILD.md                     # 🛠 Сборка инсталляторов
+│   ├── SETUP.md                     # ⚙️ Настройка окружения
+│   ├── LAUNCHER_GUIDE.md            # 🚀 Инструкция по запуску
+│   └── CREATE_GIT_RELEASE.md        # 📦 Создание релизов
+│
+└── ⚙️ Конфигурация проекта:
+    ├── requirements.txt             # Основные зависимости
+    ├── requirements_install.txt     # Зависимости установки
+    ├── config.json                  # Конфиг Standard
+    ├── config_qt.json               # Конфиг Modern
+    ├── run_tests.py                 # Запуск тестов
+    └── .gitignore                   # Исключения Git
 ```
 
 ---
 
-**Разработчик:** Куреин М.Н.
+## 📊 Статистика проекта
+
+| Метрика | Значение |
+|---------|----------|
+| Файлов Python | ~50 |
+| Строк кода | ~15,000 |
+| Документов | 21 |
+| Тестов | 4 модуля |
+| Поддерживаемых форматов | .doc, .docx, .xlsx, .txt |
+| Категорий компонентов | 20+ |
+
+---
+
+**Разработчик:** Куреин М.Н.  
+**Обновлено:** 25.11.2025
