@@ -127,26 +127,142 @@ class InteractiveCLI(QWidget):
         
         layout.addLayout(input_layout)
         
-        # Автодополнение
+        # Автодополнение с улучшенными настройками
         self.completer = QCompleter()
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setFilterMode(Qt.MatchStartsWith)  # Фильтр по началу
+        self.completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)  # Popup меню
+        self.completer.setMaxVisibleItems(10)  # Максимум 10 подсказок
         self.completer_model = QStringListModel()
         self.completer.setModel(self.completer_model)
         self.input_field.setCompleter(self.completer)
         
-        # Обработка истории (стрелки вверх/вниз)
+        # Стилизация popup автодополнения
+        popup = self.completer.popup()
+        popup.setStyleSheet("""
+            QListView {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                border: 1px solid #585b70;
+                border-radius: 4px;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 13px;
+                padding: 4px;
+            }
+            QListView::item {
+                padding: 4px 8px;
+                border-radius: 3px;
+            }
+            QListView::item:selected {
+                background-color: #45475a;
+                color: #f5c2e7;
+            }
+            QListView::item:hover {
+                background-color: #313244;
+            }
+        """)
+        
+        # Обработка истории (стрелки вверх/вниз) и автодополнения
         self.input_field.installEventFilter(self)
+        
+        # Обновление автодополнения при вводе
+        self.input_field.textChanged.connect(self._on_text_changed)
     
     def eventFilter(self, obj, event):
-        """Фильтр событий для истории команд"""
+        """Фильтр событий для истории команд и автодополнения"""
         if obj == self.input_field and event.type() == event.Type.KeyPress:
-            if event.key() == Qt.Key_Up:
-                self._history_up()
+            popup_visible = self.completer.popup().isVisible()
+            
+            # Если popup открыт, стрелки управляют им
+            if popup_visible:
+                if event.key() == Qt.Key_Up:
+                    # Перемещаем выбор вверх в popup
+                    current = self.completer.popup().currentIndex()
+                    if current.row() > 0:
+                        new_index = self.completer_model.index(current.row() - 1)
+                        self.completer.popup().setCurrentIndex(new_index)
+                    return True
+                elif event.key() == Qt.Key_Down:
+                    # Перемещаем выбор вниз в popup
+                    current = self.completer.popup().currentIndex()
+                    row_count = self.completer_model.rowCount()
+                    if current.row() < row_count - 1:
+                        new_index = self.completer_model.index(current.row() + 1)
+                        self.completer.popup().setCurrentIndex(new_index)
+                    return True
+                elif event.key() == Qt.Key_Escape:
+                    self.completer.popup().hide()
+                    return True
+            else:
+                # История команд (если popup закрыт)
+                if event.key() == Qt.Key_Up:
+                    self._history_up()
+                    return True
+                elif event.key() == Qt.Key_Down:
+                    self._history_down()
+                    return True
+            
+            # Автодополнение по Tab или стрелке вправо
+            if event.key() == Qt.Key_Tab:
+                self._accept_completion()
                 return True
-            elif event.key() == Qt.Key_Down:
-                self._history_down()
-                return True
+            elif event.key() == Qt.Key_Right:
+                # Стрелка вправо принимает автодополнение только если курсор в конце
+                if self.input_field.cursorPosition() == len(self.input_field.text()):
+                    if self._accept_completion():
+                        return True
         return super().eventFilter(obj, event)
+    
+    def _accept_completion(self) -> bool:
+        """Принимает текущее автодополнение"""
+        # Если popup открыт и есть выбранный элемент
+        if self.completer.popup().isVisible():
+            current_index = self.completer.popup().currentIndex()
+            if current_index.isValid():
+                completion = self.completer.currentCompletion()
+                if completion:
+                    self.input_field.setText(completion)
+                    self.input_field.setCursorPosition(len(completion))
+                    self.completer.popup().hide()
+                    return True
+        
+        # Fallback - ищем первое совпадение вручную
+        current_text = self.input_field.text().strip().lower()
+        if not current_text:
+            return False
+        
+        # Ищем первое совпадение
+        all_commands = list(self.commands.keys())
+        for cmd in self.commands.values():
+            all_commands.extend(cmd.aliases)
+        
+        for cmd in sorted(set(all_commands)):
+            if cmd.startswith(current_text) and cmd != current_text:
+                self.input_field.setText(cmd)
+                self.input_field.setCursorPosition(len(cmd))
+                return True
+        
+        return False
+    
+    def _on_text_changed(self, text: str):
+        """Обработчик изменения текста - показывает автодополнение"""
+        text = text.strip().lower()
+        if not text:
+            self.completer.popup().hide()
+            return
+        
+        # Проверяем, есть ли совпадения
+        all_commands = list(self.commands.keys())
+        for cmd in self.commands.values():
+            all_commands.extend(cmd.aliases)
+        
+        matches = [cmd for cmd in sorted(set(all_commands)) if cmd.startswith(text)]
+        
+        if matches and len(matches) > 0 and text not in matches:
+            # Показываем popup если есть совпадения и текст не точное совпадение
+            self.completer.complete()
+        else:
+            self.completer.popup().hide()
     
     def _history_up(self):
         """Навигация по истории вверх"""
@@ -361,6 +477,50 @@ class InteractiveCLI(QWidget):
             self._cmd_scale
         )
         
+        # === КОМАНДЫ СИНХРОНИЗАЦИИ ===
+        
+        self.commands["version"] = CLICommand(
+            "version",
+            "Показывает версии приложения",
+            "version",
+            self._cmd_version
+        ).add_alias("ver")
+        
+        self.commands["vsync"] = CLICommand(
+            "vsync",
+            "Синхронизирует версии из шаблонов",
+            "vsync",
+            self._cmd_version_sync
+        )
+        
+        self.commands["vset"] = CLICommand(
+            "vset",
+            "Устанавливает новую версию",
+            "vset <версия>",
+            self._cmd_version_set
+        )
+        
+        self.commands["api"] = CLICommand(
+            "api",
+            "Показывает настройки Telegram API",
+            "api",
+            self._cmd_api_show
+        )
+        
+        self.commands["apisync"] = CLICommand(
+            "apisync",
+            "Синхронизирует API ключ с сервера",
+            "apisync",
+            self._cmd_api_sync
+        )
+        
+        self.commands["apitest"] = CLICommand(
+            "apitest",
+            "Проверяет подключение к API",
+            "apitest",
+            self._cmd_api_test
+        )
+        
         # Обновляем автодополнение
         command_names = list(self.commands.keys())
         for cmd in self.commands.values():
@@ -393,7 +553,8 @@ class InteractiveCLI(QWidget):
             "Общие": ["help", "clear", "exit", "history"],
             "Файлы": ["list", "add", "remove", "process"],
             "База данных": ["dbstats", "dbsearch", "dbexport", "dbbackup"],
-            "Система": ["status", "config", "theme", "scale"]
+            "Система": ["status", "config", "theme", "scale"],
+            "Синхронизация": ["version", "vsync", "vset", "api", "apisync", "apitest"]
         }
         
         for category, commands in categories.items():
@@ -611,4 +772,291 @@ class InteractiveCLI(QWidget):
                 return "❌ Масштаб должен быть от 0.7 до 1.25"
         except ValueError:
             return "❌ Неверное значение масштаба"
+    
+    # === КОМАНДЫ СИНХРОНИЗАЦИИ ===
+    
+    def _get_project_root(self) -> str:
+        """Получает корень проекта BOMCategorizer"""
+        # Пробуем несколько способов найти корень проекта
+        
+        # Способ 1: относительно текущего файла
+        # __file__ = bom_categorizer/cli_interactive.py
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        parent_dir = os.path.dirname(current_dir)
+        
+        if os.path.exists(os.path.join(parent_dir, 'tools', 'sync_telegram_api.py')):
+            return parent_dir
+        
+        # Способ 2: через main_window
+        if hasattr(self.main_window, 'project_root'):
+            return self.main_window.project_root
+        
+        # Способ 3: поиск вверх по директориям
+        search_dir = current_dir
+        for _ in range(5):  # Максимум 5 уровней вверх
+            if os.path.exists(os.path.join(search_dir, 'tools', 'sync_telegram_api.py')):
+                return search_dir
+            search_dir = os.path.dirname(search_dir)
+        
+        # Способ 4: текущая рабочая директория
+        cwd = os.getcwd()
+        if os.path.exists(os.path.join(cwd, 'tools', 'sync_telegram_api.py')):
+            return cwd
+        
+        # Способ 5: стандартные пути разработки
+        dev_paths = [
+            os.path.expanduser("~/Project/ProjectPython/BOMCategorizer"),
+            os.path.expanduser("~/Documents/BOMCategorizer"),
+            "/Users/olgazaharova/Project/ProjectPython/BOMCategorizer",
+        ]
+        for path in dev_paths:
+            if os.path.exists(os.path.join(path, 'tools', 'sync_telegram_api.py')):
+                return path
+        
+        return parent_dir  # Fallback
+    
+    def _is_app_bundle(self) -> bool:
+        """Проверяет, запущено ли приложение из .app bundle"""
+        current_path = os.path.abspath(__file__)
+        # Проверяем несколько признаков bundled app
+        return (
+            '.app/Contents/' in current_path or
+            '/Applications/' in current_path or
+            'Resources/lib/python' in current_path
+        )
+    
+    def _cmd_version(self, args: List[str]) -> str:
+        """Команда version - показать версии"""
+        import subprocess
+        
+        result = "\n📋 Версии приложения:\n"
+        result += "=" * 50 + "\n"
+        
+        # Текущая версия из конфига
+        app_info = self.main_window.cfg.get('app_info', {})
+        result += f"Текущая версия: {app_info.get('version', 'N/A')}\n"
+        result += f"Edition: {app_info.get('edition', 'N/A')}\n"
+        result += f"Дата релиза: {app_info.get('release_date', 'N/A')}\n"
+        result += f"Обновлено: {app_info.get('last_updated', 'N/A')}\n\n"
+        
+        # Пробуем запустить update_version.py status
+        try:
+            project_root = self._get_project_root()
+            script_path = os.path.join(project_root, 'tools', 'update_version.py')
+            
+            if os.path.exists(script_path):
+                result += "💡 Для полной информации выполните:\n"
+                result += "   python tools/update_version.py status\n"
+            else:
+                result += f"💡 Скрипт update_version.py не найден\n"
+                result += f"   Путь: {script_path}\n"
+        except Exception:
+            pass
+        
+        return result
+    
+    def _cmd_version_sync(self, args: List[str]) -> str:
+        """Команда vsync - синхронизировать версии"""
+        import subprocess
+        
+        try:
+            project_root = self._get_project_root()
+            script_path = os.path.join(project_root, 'tools', 'update_version.py')
+            
+            if not os.path.exists(script_path):
+                return ("❌ Скрипт update_version.py не найден\n\n"
+                        "💡 В терминале из папки проекта:\n"
+                        "   python tools/update_version.py status\n"
+                        "   python tools/update_version.py sync")
+            
+            result = subprocess.run(
+                [sys.executable, script_path, 'sync'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=30
+            )
+            
+            output = result.stdout + result.stderr
+            # Убираем ANSI цвета для CLI
+            import re
+            output = re.sub(r'\033\[[0-9;]*m', '', output)
+            
+            return f"🔄 Синхронизация версий:\n{output}"
+            
+        except subprocess.TimeoutExpired:
+            return "❌ Таймаут выполнения команды"
+        except Exception as e:
+            return f"❌ Ошибка синхронизации: {e}"
+    
+    def _cmd_version_set(self, args: List[str]) -> str:
+        """Команда vset - установить версию"""
+        if not args:
+            return "❌ Укажите версию: vset <версия>\nПример: vset 4.6.0"
+        
+        import subprocess
+        new_version = args[0]
+        
+        # Валидация формата версии
+        import re
+        if not re.match(r'^\d+\.\d+\.\d+$', new_version):
+            return f"❌ Неверный формат версии: {new_version}\nОжидается формат: X.Y.Z (например, 4.6.0)"
+        
+        try:
+            project_root = self._get_project_root()
+            script_path = os.path.join(project_root, 'tools', 'update_version.py')
+            
+            if not os.path.exists(script_path):
+                return f"❌ Скрипт update_version.py не найден\n   Путь: {script_path}"
+            
+            result = subprocess.run(
+                [sys.executable, script_path, 'set', 'modern', new_version],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=30
+            )
+            
+            output = result.stdout + result.stderr
+            # Убираем ANSI цвета
+            import re
+            output = re.sub(r'\033\[[0-9;]*m', '', output)
+            
+            if result.returncode == 0:
+                return f"✅ Версия обновлена до {new_version}\n{output}"
+            else:
+                return f"❌ Ошибка обновления:\n{output}"
+            
+        except subprocess.TimeoutExpired:
+            return "❌ Таймаут выполнения команды"
+        except Exception as e:
+            return f"❌ Ошибка установки версии: {e}"
+    
+    def _cmd_api_show(self, args: List[str]) -> str:
+        """Команда api - показать настройки API"""
+        result = "\n🔐 Настройки Telegram API:\n"
+        result += "=" * 50 + "\n"
+        
+        api_keys = self.main_window.cfg.get('api_keys', {})
+        
+        telegram_url = api_keys.get('telegram_url', 'Не настроен')
+        telegram_key = api_keys.get('telegram_key', '')
+        
+        result += f"URL: {telegram_url}\n"
+        
+        if telegram_key:
+            # Показываем только часть ключа
+            masked_key = telegram_key[:16] + "..." if len(telegram_key) > 16 else telegram_key
+            result += f"Key: {masked_key}\n"
+            result += f"Длина ключа: {len(telegram_key)} символов\n"
+        else:
+            result += "Key: ❌ Не настроен\n"
+        
+        result += "\n💡 Команды:\n"
+        result += "  apisync - получить ключ с сервера\n"
+        result += "  apitest - проверить подключение\n"
+        
+        return result
+    
+    def _cmd_api_sync(self, args: List[str]) -> str:
+        """Команда apisync - синхронизировать API ключ"""
+        import subprocess
+        
+        # Проверяем, запущено ли из .app bundle
+        if self._is_app_bundle():
+            return ("⚠️ Команда apisync недоступна в установленном приложении.\n\n"
+                    "💡 Используйте один из способов:\n"
+                    "   1. /api в Telegram боте → скопируйте ключ\n"
+                    "   2. Настройки → API Ключи → Telegram Bot API\n"
+                    "   3. В терминале из папки проекта:\n"
+                    "      python tools/sync_telegram_api.py --fetch")
+        
+        try:
+            project_root = self._get_project_root()
+            script_path = os.path.join(project_root, 'tools', 'sync_telegram_api.py')
+            
+            if not os.path.exists(script_path):
+                return (f"❌ Скрипт sync_telegram_api.py не найден\n"
+                        f"   Путь: {script_path}\n"
+                        f"   Проект: {project_root}\n\n"
+                        f"💡 Альтернативы:\n"
+                        f"   1. /api в Telegram боте → скопируйте ключ\n"
+                        f"   2. Настройки → API Ключи → Telegram Bot API\n"
+                        f"   3. В терминале из папки проекта:\n"
+                        f"      python tools/sync_telegram_api.py --fetch\n"
+                        f"      python tools/sync_telegram_api.py --test")
+            
+            self._print("🔄 Подключение к серверу...", color="#f9e2af")
+            
+            result = subprocess.run(
+                [sys.executable, script_path, '--fetch'],
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',
+                timeout=60
+            )
+            
+            output = result.stdout + result.stderr
+            
+            if result.returncode == 0:
+                # Перезагружаем конфиг
+                try:
+                    config_path = os.path.join(project_root, 'config_qt.json')
+                    if os.path.exists(config_path):
+                        with open(config_path, 'r', encoding='utf-8') as f:
+                            new_config = json.load(f)
+                        self.main_window.cfg.update(new_config)
+                except Exception:
+                    pass
+                
+                return f"✅ API ключ синхронизирован!\n{output}\n\n⚠️ Перезапустите приложение для применения изменений."
+            else:
+                return f"❌ Ошибка синхронизации:\n{output}"
+            
+        except subprocess.TimeoutExpired:
+            return "❌ Таймаут подключения к серверу (60 сек)"
+        except Exception as e:
+            return f"❌ Ошибка синхронизации API: {e}"
+    
+    def _cmd_api_test(self, args: List[str]) -> str:
+        """Команда apitest - проверить подключение к API"""
+        import subprocess
+        
+        api_keys = self.main_window.cfg.get('api_keys', {})
+        telegram_url = api_keys.get('telegram_url', '')
+        telegram_key = api_keys.get('telegram_key', '')
+        
+        if not telegram_url or not telegram_key:
+            return "❌ API не настроен. Выполните apisync или настройте вручную."
+        
+        # Формируем URL для health check
+        base_url = telegram_url.replace('/ai_query', '')
+        health_url = f"{base_url}/health"
+        
+        try:
+            import urllib.request
+            import urllib.error
+            
+            self._print(f"🔄 Проверка {health_url}...", color="#f9e2af")
+            
+            req = urllib.request.Request(health_url)
+            req.add_header('User-Agent', 'BOMCategorizer-CLI')
+            
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = response.read().decode('utf-8')
+                
+                result = "\n✅ API доступен!\n"
+                result += "=" * 50 + "\n"
+                result += f"URL: {health_url}\n"
+                result += f"Статус: {response.status}\n"
+                result += f"Ответ: {data}\n"
+                return result
+                
+        except urllib.error.URLError as e:
+            return f"❌ Ошибка подключения: {e.reason}\nURL: {health_url}"
+        except Exception as e:
+            return f"❌ Ошибка проверки API: {e}"
 

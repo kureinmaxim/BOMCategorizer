@@ -16,8 +16,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem, QFileDialog, QMessageBox, QTabWidget,
     QWidget, QGridLayout, QTextBrowser, QCheckBox, QFormLayout, QDialogButtonBox
 )
-from PySide6.QtCore import Qt, Signal, QThread
-from PySide6.QtGui import QFont, QTextCursor, QColor
+from PySide6.QtCore import Qt, Signal, QThread, QUrl
+from PySide6.QtGui import QFont, QTextCursor, QColor, QDesktopServices
 
 
 class PDFSearchDialog(QDialog):
@@ -214,12 +214,12 @@ class PDFSearchDialog(QDialog):
         
         self.prompt_combo = QComboBox()
         self.prompt_combo.addItems([
-            "🔧 Стандартный (информация о компоненте)",
-            "📋 Краткое описание ИВП (характеристики + невозможность замены)",
-            "📖 Развёрнутое описание ИВП (200-400 слов, обзор даташита)",
-            "🔄 Поиск аналогов (с ссылками на альтернативы)",
-            "📊 Сравнительный анализ (с конкурентами)",
-            "✍️ Свой промпт (ввести вручную)"
+            "🔧 Стандартный",
+            "📋 Краткое описание ИВП",
+            "📖 Развёрнутое описание ИВП",
+            "🔄 Поиск аналогов",
+            "📊 Сравнительный анализ",
+            "✍️ Свой промпт"
         ])
         self.prompt_combo.currentIndexChanged.connect(self._on_prompt_type_changed)
         
@@ -251,14 +251,36 @@ class PDFSearchDialog(QDialog):
         prompt_group.setLayout(prompt_layout)
         layout.addWidget(prompt_group)
         
+        # === ДОПОЛНИТЕЛЬНЫЙ КОНТЕКСТ (HINT) ===
+        hint_group = QGroupBox("💡 Уточняющая подсказка (опционально)")
+        hint_layout = QVBoxLayout()
+        
+        hint_desc = QLabel("Добавьте контекст для уменьшения ошибок AI.")
+        hint_desc.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        hint_layout.addWidget(hint_desc)
+        
+        self.hint_edit = QTextEdit()
+        self.hint_edit.setPlaceholderText(
+            "Например: This is a frequency divider from Analog Devices"
+        )
+        self.hint_edit.setMaximumHeight(35)
+        hint_layout.addWidget(self.hint_edit)
+        
+        hint_group.setLayout(hint_layout)
+        layout.addWidget(hint_group)
+        
         # Результаты AI поиска
         results_label = QLabel("Результаты поиска:")
         results_label.setProperty("class", "bold")
         layout.addWidget(results_label)
         
         self.ai_results_browser = QTextBrowser()
-        self.ai_results_browser.setOpenExternalLinks(True)
-        layout.addWidget(self.ai_results_browser)
+        self.ai_results_browser.setMinimumHeight(250)  # Увеличенная зона результатов
+        # Отключаем внутреннюю навигацию, открываем ссылки во внешнем браузере
+        self.ai_results_browser.setOpenExternalLinks(False)
+        self.ai_results_browser.setOpenLinks(False)
+        self.ai_results_browser.anchorClicked.connect(self._open_external_link)
+        layout.addWidget(self.ai_results_browser, 1)  # stretch factor для растяжения
         
         # Кнопка сохранения
         save_layout = QHBoxLayout()
@@ -291,8 +313,13 @@ class PDFSearchDialog(QDialog):
         self.prompt_preview_label.setText(f"ℹ️ {previews[index]}")
     
     def _get_prompt_template(self, component_name: str) -> str:
-        """Возвращает промпт на основе выбранного типа"""
+        """Возвращает промпт на основе выбранного типа с учётом подсказки"""
         index = self.prompt_combo.currentIndex()
+        
+        # Получаем уточняющую подсказку (hint)
+        hint = ""
+        if hasattr(self, 'hint_edit'):
+            hint = self.hint_edit.toPlainText().strip()
         
         prompts = {
             0: f"""Найди информацию об электронном компоненте: {component_name}
@@ -433,14 +460,27 @@ class PDFSearchDialog(QDialog):
 Язык: русский"""
         }
         
+        # Получаем базовый промпт
         if index == 5:  # Свой промпт
             custom = self.custom_prompt_edit.toPlainText().strip()
             if custom:
-                return custom.replace("{component}", component_name)
+                base_prompt = custom.replace("{component}", component_name)
             else:
-                return prompts[0]  # Fallback на стандартный
+                base_prompt = prompts[0]  # Fallback на стандартный
+        else:
+            base_prompt = prompts.get(index, prompts[0])
         
-        return prompts.get(index, prompts[0])
+        # Добавляем уточняющую подсказку, если она есть
+        if hint:
+            hint_instruction = f"""
+
+ВАЖНАЯ ДОПОЛНИТЕЛЬНАЯ ИНФОРМАЦИЯ от пользователя (учитывай при ответе):
+{hint}
+
+ОБЯЗАТЕЛЬНО: Ответ должен быть ТОЛЬКО на русском языке, независимо от языка подсказки выше."""
+            return base_prompt + hint_instruction
+        
+        return base_prompt
     
     def on_search(self):
         """Запускает поиск"""
@@ -555,18 +595,29 @@ class PDFSearchDialog(QDialog):
         custom_prompt = self._get_prompt_template(query)
         prompt_type = self.prompt_combo.currentText()
         
+        # Проверяем наличие подсказки
+        hint = ""
+        if hasattr(self, 'hint_edit'):
+            hint = self.hint_edit.toPlainText().strip()
+        
         # Показываем индикатор загрузки с информацией о типе запроса
+        hint_info = f"<p style='color: #a6e3a1;'>💡 Подсказка: {hint[:50]}{'...' if len(hint) > 50 else ''}</p>" if hint else ""
         self.ai_results_browser.setHtml(
             f"<h3>⏳ Поиск...</h3>"
             f"<p>Запрашиваем информацию у AI...</p>"
             f"<p style='color: #6c7086;'>Тип запроса: {prompt_type}</p>"
             f"<p style='color: #6c7086;'>Компонент: {query}</p>"
+            f"{hint_info}"
         )
         
         # Запускаем поиск в отдельном потоке с кастомным промптом
         self.ai_worker = AISearchWorker(provider_name, api_key, query, api_url, custom_prompt)
         self.ai_worker.finished.connect(self.display_ai_results)
         self.ai_worker.start()
+    
+    def _open_external_link(self, url: QUrl):
+        """Открывает ссылку во внешнем браузере"""
+        QDesktopServices.openUrl(url)
     
     def display_ai_results(self, results: Dict):
         """Отображает результаты AI поиска"""
@@ -978,18 +1029,148 @@ class PDFSearchDialog(QDialog):
         if not hasattr(self, 'ai_results_browser'):
             return
         
-        file_path, _ = QFileDialog.getSaveFileName(
+        filters = (
+            "HTML Files (*.html);;"
+            "Text Files (*.txt);;"
+            "Word Document (*.docx);;"
+            "PDF (*.pdf)"
+        )
+        
+        # Формируем безопасное имя файла (убираем спецсимволы)
+        safe_name = "".join(c if c.isalnum() or c in "._- " else "_" for c in self.search_input.text())
+        
+        # Начальный путь — рабочий стол или домашняя директория
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+        if not os.path.exists(desktop):
+            desktop = os.path.expanduser("~")
+        
+        default_path = os.path.join(desktop, f"ai_search_{safe_name}.html")
+        
+        file_path, selected_filter = QFileDialog.getSaveFileName(
             self,
             "Сохранить результаты",
-            f"ai_search_{self.search_input.text()}.html",
-            "HTML Files (*.html);;Text Files (*.txt)"
+            default_path,
+            filters
         )
         
         if file_path:
-            content = self.ai_results_browser.toHtml()
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            QMessageBox.information(self, "Сохранено", f"Результаты сохранены:\n{file_path}")
+            ext = os.path.splitext(file_path)[1].lower()
+            
+            if not ext:
+                # Определяем расширение по выбранному фильтру
+                if "Text Files" in selected_filter:
+                    ext = ".txt"
+                elif "Word Document" in selected_filter:
+                    ext = ".docx"
+                elif "PDF" in selected_filter:
+                    ext = ".pdf"
+                else:
+                    ext = ".html"
+                file_path += ext
+            
+            try:
+                if ext == ".html":
+                    content = self.ai_results_browser.toHtml()
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                elif ext == ".txt":
+                    content = self.ai_results_browser.toPlainText()
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                elif ext == ".docx":
+                    try:
+                        from docx import Document
+                    except ImportError:
+                        QMessageBox.warning(
+                            self,
+                            "Отсутствует зависимость",
+                            "Для сохранения в DOCX требуется пакет python-docx.\n"
+                            "Установите его командой:\n\npip install python-docx"
+                        )
+                        return
+                    
+                    doc = Document()
+                    doc.add_heading(f"AI поиск — {self.search_input.text()}", level=1)
+                    for line in self.ai_results_browser.toPlainText().splitlines():
+                        doc.add_paragraph(line if line else "")
+                    doc.save(file_path)
+                elif ext == ".pdf":
+                    try:
+                        from reportlab.lib.pagesizes import A4
+                        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+                        from reportlab.lib.styles import ParagraphStyle
+                        from reportlab.lib.units import mm
+                    except ImportError:
+                        QMessageBox.warning(
+                            self,
+                            "Отсутствует зависимость",
+                            "Для сохранения в PDF требуется пакет reportlab.\n"
+                            "Установите его командой:\n\npip install reportlab"
+                        )
+                        return
+                    
+                    # Используем PDFExporter для правильной регистрации шрифтов
+                    try:
+                        from ..pdf_exporter import PDFExporter
+                        pdf_exporter = PDFExporter()
+                        font_name = pdf_exporter.cyrillic_font
+                    except Exception as e:
+                        print(f"Ошибка при инициализации PDFExporter: {e}")
+                        font_name = 'Helvetica'
+                    
+                    # Создаём PDF документ
+                    doc = SimpleDocTemplate(
+                        file_path,
+                        pagesize=A4,
+                        leftMargin=15*mm,
+                        rightMargin=15*mm,
+                        topMargin=15*mm,
+                        bottomMargin=15*mm
+                    )
+                    
+                    # Стили
+                    title_style = ParagraphStyle(
+                        'Title',
+                        fontName=font_name,
+                        fontSize=12,
+                        leading=14,
+                        spaceAfter=10
+                    )
+                    
+                    body_style = ParagraphStyle(
+                        'Body',
+                        fontName=font_name,
+                        fontSize=9,
+                        leading=11,
+                        spaceAfter=3
+                    )
+                    
+                    # Содержимое
+                    story = []
+                    
+                    # Заголовок
+                    title = f"AI поиск: {self.search_input.text()}"
+                    story.append(Paragraph(title, title_style))
+                    story.append(Spacer(1, 10))
+                    
+                    # Текст результатов
+                    text = self.ai_results_browser.toPlainText()
+                    for line in text.splitlines():
+                        if line.strip():
+                            # Экранируем HTML-специальные символы
+                            safe_line = line.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                            story.append(Paragraph(safe_line, body_style))
+                        else:
+                            story.append(Spacer(1, 6))
+                    
+                    doc.build(story)
+                else:
+                    QMessageBox.warning(self, "Неизвестный формат", f"Расширение {ext} не поддерживается.")
+                    return
+                
+                QMessageBox.information(self, "Сохранено", f"Результаты сохранены:\n{file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка сохранения", f"Не удалось сохранить файл:\n{e}")
     
     def open_settings(self):
         """Открывает настройки"""
@@ -1249,7 +1430,8 @@ class UnifiedSettingsDialog(QDialog):
             "💡 <b>Как получить API ключи:</b><br>"
             "• <b>Anthropic:</b> <a href='https://console.anthropic.com/'>console.anthropic.com</a><br>"
             "• <b>OpenAI:</b> <a href='https://platform.openai.com/api-keys'>platform.openai.com/api-keys</a><br>"
-            "• <b>Ollama:</b> <a href='https://ollama.ai/'>ollama.ai</a> (для локального запуска)"
+            "• <b>Ollama:</b> <a href='https://ollama.ai/'>ollama.ai</a> (для локального запуска)<br>"
+            "• <b>Telegram Bot:</b> команда <code>/api</code> в боте (только для админа)"
         )
         help_label.setOpenExternalLinks(True)
         help_label.setWordWrap(True)
@@ -1404,7 +1586,10 @@ class UnifiedSettingsDialog(QDialog):
         
         # --- 3. Сохраняем весь файл config_qt.json ---
         try:
-            config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+            # __file__ = bom_categorizer/gui/pdf_search_dialogs.py
+            # Нужно 3 уровня вверх: gui -> bom_categorizer -> корень проекта
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            config_path = os.path.join(project_root, "config_qt.json")
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
             

@@ -41,12 +41,41 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     window.lockable_widgets.append(add_btn)
     buttons_layout.addWidget(add_btn, 1)
 
-    clear_btn = QPushButton("🗑️ Очистить список")
+    clear_btn = QPushButton("🗑️ Очистить")
     clear_btn.setProperty("class", "danger")
     clear_btn.setMinimumHeight(32)
     clear_btn.clicked.connect(window.on_clear_files)
     window.lockable_widgets.append(clear_btn)
     buttons_layout.addWidget(clear_btn, 1)
+    
+    # Кнопка CLI - в той же строке, тёмно-синий фон
+    open_cli_button = QPushButton("💻 CLI")
+    open_cli_button.setObjectName("openCliButton")
+    open_cli_button.setToolTip(
+        "Открыть интерактивную командную строку:\n"
+        "• Выполнение команд для обработки файлов\n"
+        "• Управление базой данных через CLI\n"
+        "• Синхронизация версий и API\n"
+        "• Автодополнение и история команд"
+    )
+    open_cli_button.setMinimumHeight(32)
+    open_cli_button.setStyleSheet("""
+        QPushButton {
+            background-color: #0f2744;
+            color: white;
+            border: 1px solid #1e3a5f;
+            border-radius: 5px;
+        }
+        QPushButton:hover {
+            background-color: #1a3352;
+            border-color: #3d5a80;
+        }
+        QPushButton:pressed {
+            background-color: #081830;
+        }
+    """)
+    open_cli_button.clicked.connect(window.open_interactive_cli)
+    buttons_layout.addWidget(open_cli_button, 1)
 
     layout.addLayout(buttons_layout)
 
@@ -180,26 +209,27 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
 
     layout.addLayout(grid)
 
-    # Кнопки запуска
+    # Кнопки запуска (такой же стиль как верхний ряд)
     action_layout = QHBoxLayout()
     action_layout.setSpacing(8)
 
     run_btn = QPushButton("▶️ Запустить обработку")
     run_btn.setProperty("class", "accent")
-    run_btn.setMinimumHeight(36)
+    run_btn.setMinimumHeight(32)
     run_btn.clicked.connect(window.on_run)
     window.lockable_widgets.append(run_btn)
     action_layout.addWidget(run_btn, 1)
 
-    interactive_btn = QPushButton("🔄 Интерактивная классификация")
-    interactive_btn.setMinimumHeight(36)
+    interactive_btn = QPushButton("🔄 Ручной режим")
+    interactive_btn.setMinimumHeight(32)
+    interactive_btn.setToolTip("Интерактивная классификация компонентов вручную")
     interactive_btn.clicked.connect(window.on_interactive_classify)
     window.lockable_widgets.append(interactive_btn)
     action_layout.addWidget(interactive_btn, 1)
 
     export_pdf_button = QPushButton("📄 Экспорт в PDF")
     export_pdf_button.setObjectName("exportPdfButton")
-    export_pdf_button.setMinimumHeight(36)
+    export_pdf_button.setMinimumHeight(32)
     export_pdf_button.clicked.connect(window.export_last_result_to_pdf)
     export_pdf_button.setToolTip(
         "Конвертирует выходной Excel файл в PDF документ:\n"
@@ -209,15 +239,18 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     )
     export_pdf_button.setStyleSheet("""
         QPushButton {
-            background-color: #f38ba8;
+            background-color: #5c1f3d;
             color: white;
-            border: none;
+            border: 1px solid #7a2d52;
             border-radius: 5px;
-            padding: 8px 15px;
             font-weight: bold;
         }
         QPushButton:hover {
-            background-color: #f5c2e7;
+            background-color: #7a2d52;
+            border-color: #a04d76;
+        }
+        QPushButton:pressed {
+            background-color: #3d1428;
         }
         QPushButton:disabled {
             background-color: #6c7086;
@@ -383,41 +416,6 @@ def create_expert_tools_section(window: 'BOMCategorizerMainWindow') -> QGroupBox
     window.auto_open_output_checkbox.setToolTip("После удачной обработки BOM-файлов будет автоматически открыт проводник с результатом.")
     window.auto_open_output_checkbox.stateChanged.connect(window.on_toggle_auto_open_output)
     layout.addWidget(window.auto_open_output_checkbox)
-    
-    # Улучшенный Drag & Drop
-    window.enhanced_dragdrop_checkbox = QCheckBox("🎯 Улучшенный Drag & Drop (перетаскивание между панелями, контекстное меню)")
-    window.enhanced_dragdrop_checkbox.setToolTip(
-        "Включает расширенные возможности перетаскивания:\n"
-        "• Изменение порядка файлов в списке\n"
-        "• Перетаскивание между разными списками\n"
-        "• Контекстное меню (ПКМ): открыть файл, показать в проводнике, копировать путь\n"
-        "• Визуальная подсветка зоны сброса"
-    )
-    window.enhanced_dragdrop_checkbox.stateChanged.connect(window.on_toggle_enhanced_dragdrop)
-    layout.addWidget(window.enhanced_dragdrop_checkbox)
-    
-    # Интерактивная командная строка
-    cli_layout = QHBoxLayout()
-    cli_label = QLabel("💻 Интерактивная командная строка:")
-    cli_label.setToolTip(
-        "Открывает интерактивную консоль для управления приложением:\n"
-        "• Выполнение команд для обработки файлов\n"
-        "• Управление базой данных через CLI\n"
-        "• Автодополнение и история команд\n"
-        "• Быстрый доступ ко всем функциям"
-    )
-    cli_layout.addWidget(cli_label)
-    
-    open_cli_button = QPushButton("Открыть CLI")
-    open_cli_button.setObjectName("openCliButton")
-    # Масштабируем ширину кнопки в зависимости от scale_factor
-    button_width = int(120 * window.scale_factor)
-    open_cli_button.setMinimumWidth(button_width)
-    open_cli_button.clicked.connect(window.open_interactive_cli)
-    cli_layout.addWidget(open_cli_button)
-    cli_layout.addStretch()
-    
-    layout.addLayout(cli_layout)
     
     # Опция автоматического экспорта в PDF
     window.auto_export_pdf_checkbox = QCheckBox("Автоматически создавать PDF после обработки")
