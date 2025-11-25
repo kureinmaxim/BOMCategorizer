@@ -1,106 +1,110 @@
 # 🧪 Руководство по тестированию BOM Categorizer
 
-**Версия:** 4.3.3 (Modern Edition) / 3.3.0 (Standard Edition)  
-**Обновлено:** 2025-01-XX  
-**Автор:** Куреин М.Н. / Kurein M.N.
-
-## Обзор
-
-Проект включает комплексную систему тестирования:
-- **Unit-тесты** - тестирование отдельных модулей
-- **Интеграционные тесты** - тестирование на реальных файлах
-- **Автоматизация** - BAT-файлы для быстрого запуска
+> **Версия:** 2.1  
+> **Дата:** 25.11.2025  
+> **Автор:** Куреин М.Н.
 
 ---
 
-## Быстрый старт
+## 📋 Содержание
 
-### Windows (рекомендуется)
+1. [Быстрый старт](#-быстрый-старт)
+2. [Структура тестов](#-структура-тестов)
+3. [Типы тестов](#-типы-тестов)
+4. [Как создавать тесты](#-как-создавать-тесты)
+5. [Запуск тестов](#-запуск-тестов)
+6. [Тестирование на реальных файлах](#-тестирование-на-реальных-файлах)
+7. [Отчёты и метрики](#-отчёты-и-метрики)
+8. [База данных компонентов](#-база-данных-компонентов)
+9. [Рабочий процесс](#-рабочий-процесс)
+10. [CI/CD интеграция](#-cicd-интеграция)
+11. [Устранение проблем](#-устранение-проблем)
+
+---
+
+## ⚡ Быстрый старт
+
+### Windows
 
 ```cmd
-# Все тесты
-scripts\run_tests.bat
-
-# Только быстрые unit-тесты (2-3 секунды)
+# Быстрые unit-тесты (2-3 секунды)
 scripts\run_tests.bat quick
 
-# Только интеграционные тесты (20-30 секунд)
+# Полный прогон всех тестов
+scripts\run_tests.bat
+
+# Интеграционные тесты
 scripts\run_tests.bat integration
 
 # С покрытием кода
 scripts\run_tests.bat coverage
 ```
 
-### Прямой запуск через Python
+### macOS / Linux
 
-```cmd
-# Активировать окружение
-.venv\Scripts\activate
+```bash
+# Активация окружения
+source venv/bin/activate
 
+# Запуск всех тестов
+pytest
+
+# Быстрые тесты
+pytest tests/test_classifiers.py tests/test_formatters.py tests/test_database.py -v
+
+# Конкретный тест
+pytest tests/test_classifiers.py -v
+```
+
+### Через Python (универсально)
+
+```bash
 # Все тесты
 python run_tests.py -v
 
 # Быстрые unit-тесты
 python run_tests.py --quick -v
 
-# Интеграционные тесты
-python run_tests.py --integration -v
-
-# С HTML отчетом
+# С HTML отчётом
 python run_tests.py --html -v
 
-# С покрытием кода
+# С покрытием
 python run_tests.py --coverage -v
-
-# Конкретный тест
-python run_tests.py -k test_resistor_classification -v
-```
-
-### Тестирование на реальных файлах
-
-**⚠️ Примечание:** Папка `example/` исключена из Git (содержит конфиденциальные данные).  
-Для тестирования добавьте свои BOM файлы в папку `example/` локально.
-
-```cmd
-# Протестировать все файлы из example/ (если папка создана локально)
-test_examples.bat
-
-# Протестировать конкретный файл
-test_examples.bat plata.doc
-
-# Протестировать несколько файлов
-test_examples.bat plata.doc Plata_Pr.xlsx
 ```
 
 ---
 
-## Структура системы тестирования
+## 🏗 Структура тестов
 
 ```
 BOMCategorizer/
 ├── tests/                      # Unit и интеграционные тесты
-│   ├── __init__.py            # Инициализация пакета тестов
+│   ├── __init__.py            # Инициализация пакета
 │   ├── conftest.py            # Общие фикстуры pytest
 │   ├── test_classifiers.py    # Тесты классификации
 │   ├── test_database.py       # Тесты базы данных
 │   ├── test_formatters.py     # Тесты форматирования
 │   └── test_integration.py    # Интеграционные тесты
 │
-├── run_tests.py                # Скрипт запуска pytest тестов
-│
-├── scripts/                    # Скрипты запуска
-│   └── run_tests.bat           # BAT файл для Windows
-│
-└── test_output/                # Результаты тестирования (создается автоматически)
+├── run_tests.py               # Скрипт запуска pytest
+├── scripts/run_tests.bat      # BAT файл для Windows
+└── test_output/               # Результаты (создаётся автоматически)
 ```
+
+| Файл | Назначение | Время |
+|------|------------|-------|
+| `test_classifiers.py` | Классификация компонентов | ~1-2 сек |
+| `test_formatters.py` | Форматирование и нормализация | ~0.5-1 сек |
+| `test_database.py` | Работа с базой данных | ~0.5-1 сек |
+| `test_integration.py` | Обработка реальных файлов | ~20-30 сек |
 
 ---
 
-## Типы тестов
+## 🧩 Типы тестов
 
-### 1. Unit-тесты классификации (`test_classifiers.py`)
+### 1. Unit-тесты классификации
 
-Проверяют правильность классификации различных компонентов:
+Проверяют правильность определения категорий:
 
 ```python
 # Примеры тестов
@@ -109,46 +113,16 @@ BOMCategorizer/
 - test_ic_classification          # Микросхемы
 - test_semiconductor_classification # Полупроводники
 - test_optical_classification     # Оптические компоненты
-- test_debug_boards_classification # Отладочные платы
 ```
 
-**Время выполнения:** ~1-2 секунды
-
 **Что тестируется:**
-- ✅ Классификация компонентов (резисторы, конденсаторы, микросхемы и т.д.)
+- ✅ Классификация по категориям
 - ✅ Работа с базой данных компонентов
 - ✅ Нормализация описаний
 - ✅ Извлечение ТУ кодов
 - ✅ Сортировка по номиналу
 
-**Команды:**
-```cmd
-# Все unit-тесты
-scripts\run_tests.bat quick
-
-# Конкретный модуль
-pytest tests/test_classifiers.py -v
-
-# Конкретный тест
-pytest tests/test_classifiers.py::TestBasicClassification::test_resistor_classification -v
-```
-
-### 2. Unit-тесты базы данных (`test_database.py`)
-
-Проверяют работу с базой данных компонентов:
-
-```python
-- test_load_empty_database        # Создание начальной базы
-- test_save_and_load_database    # Сохранение/загрузка
-- test_add_component             # Добавление компонентов
-- test_get_component_category    # Получение категории
-```
-
-**Время выполнения:** ~0.5-1 секунда
-
-### 3. Unit-тесты форматирования (`test_formatters.py`)
-
-Проверяют нормализацию и форматирование:
+### 2. Unit-тесты форматирования
 
 ```python
 - test_normalize_spaces_around_dashes  # Пробелы вокруг дефисов
@@ -157,9 +131,16 @@ pytest tests/test_classifiers.py::TestBasicClassification::test_resistor_classif
 - test_sort_resistors                  # Сортировка по номиналу
 ```
 
-**Время выполнения:** ~0.5-1 секунда
+### 3. Unit-тесты базы данных
 
-### 4. Интеграционные тесты (`test_integration.py`)
+```python
+- test_load_empty_database        # Создание начальной базы
+- test_save_and_load_database    # Сохранение/загрузка
+- test_add_component             # Добавление компонентов
+- test_get_component_category    # Получение категории
+```
+
+### 4. Интеграционные тесты
 
 Проверяют обработку реальных файлов из `example/`:
 
@@ -167,576 +148,136 @@ pytest tests/test_classifiers.py::TestBasicClassification::test_resistor_classif
 - test_process_doc_file          # Обработка .doc
 - test_process_xlsx_file         # Обработка .xlsx
 - test_process_txt_file          # Обработка .txt
-- test_plata_mkvh_doc           # Проблемный файл plata_MKVH.doc
 ```
 
-**Время выполнения:** ~20-30 секунд (зависит от размера файлов)
-
 **Что тестируется:**
-- ✅ Обработка .doc файлов
-- ✅ Обработка .xlsx файлов
-- ✅ Обработка .txt файлов
+- ✅ Обработка .doc, .docx, .xlsx, .txt файлов
 - ✅ Обработка нескольких файлов одновременно
 - ✅ Валидация выходных данных
 
-**Команда:**
-```cmd
-scripts\run_tests.bat integration
-```
-
-### 5. Тесты на примерах (реальные файлы)
-
-Тестирование на файлах из папки `example/` с созданием выходных файлов.
-
-**⚠️ Важно:** Папка `example/` не включена в Git репозиторий (`.gitignore`).  
-**Для тестирования:**
-1. Создайте папку `example/` в корне проекта
-2. Добавьте туда свои BOM файлы (.doc, .docx, .xlsx, .txt)
-3. Запустите тесты
-
-**Команды:**
-```cmd
-# Все файлы из example/
-test_examples.bat
-
-# Конкретный файл
-test_examples.bat plata.doc
-
-# Несколько файлов
-test_examples.bat plata.doc Plata_Pr.xlsx
-```
-
-**Что создается:**
-- Выходные .xlsx файлы в папке `test_output/`
-- Детальная информация о каждом файле
-- Статистика по листам и строкам
-
 ---
 
-## Установка зависимостей для тестирования
+## 📝 Как создавать тесты
 
-```cmd
-# Активировать окружение
-.venv\Scripts\activate
-
-# Установить зависимости (включая тестовые)
-python -m pip install -r requirements.txt
-```
-
-**Примечание:** `requirements.txt` включает тестовые зависимости:
-- `pytest` - фреймворк тестирования
-- `pytest-html` - HTML отчеты
-- `pytest-cov` - покрытие кода
-- `PySide6` - для тестирования Modern Edition GUI
-- `reportlab` - для тестирования PDF экспорта
-
-**Или установить вручную:**
-```cmd
-python -m pip install pytest pytest-html pytest-cov
-```
-
----
-
-## Запуск конкретных тестов
-
-### По имени теста
-
-```cmd
-# Один конкретный тест
-pytest tests/test_classifiers.py::TestBasicClassification::test_resistor_classification -v
-
-# Все тесты резисторов
-pytest tests/test_classifiers.py::TestBasicClassification -v
-
-# По ключевому слову
-pytest -k resistor -v
-pytest -k "resistor or capacitor" -v
-```
-
-### По файлу
-
-```cmd
-# Только классификаторы
-pytest tests/test_classifiers.py -v
-
-# Только база данных
-pytest tests/test_database.py -v
-
-# Несколько файлов
-pytest tests/test_classifiers.py tests/test_database.py -v
-```
-
----
-
-## Рабочий процесс разработки
-
-### 1. Перед началом работы
-
-Убедитесь что окружение настроено:
-
-```cmd
-# Если окружение не создано
-python -m venv .venv
-.venv\Scripts\activate
-
-# Установите зависимости (включая тестовые)
-python -m pip install -r requirements.txt
-```
-
-### 2. Во время разработки
-
-После изменения кода запустите быстрые тесты:
-
-```cmd
-scripts\run_tests.bat quick
-```
-
-Если всё OK - продолжайте работу.
-
-### 3. Перед коммитом
-
-Запустите полные тесты:
-
-```cmd
-scripts\run_tests.bat
-```
-
-Убедитесь что все тесты проходят.
-
-### 4. Тестирование на реальных данных
-
-Периодически проверяйте на реальных файлах (добавьте их в `example/` локально):
-
-```cmd
-# Создайте папку example/ если её нет
-mkdir example
-
-# Добавьте туда свои BOM файлы
-# Затем запустите тесты
-test_examples.bat your_file.doc
-```
-
-Проверьте что выходной файл корректен.
-
-### 5. Перед релизом
-
-Полное тестирование с покрытием:
-
-```cmd
-scripts\run_tests.bat coverage
-```
-
-Проверьте:
-- ✅ Все тесты проходят (100%)
-- ✅ Покрытие кода > 70%
-- ✅ Реальные файлы обрабатываются корректно
-
----
-
-## База данных компонентов
-
-### Расположение
-
-База хранится в файле `component_database.json` в корне проекта (при разработке) или в `%APPDATA%\BOMCategorizer\Data\` (при установке).
-
-### Как работает
-
-1. **При первом запуске** - создается с начальными компонентами
-2. **При интерактивной классификации** - пополняется автоматически
-3. **При тестировании** - используется временная база (не влияет на основную)
-4. **В инсталляторе** - база включена и переносится на другие компьютеры (v2.0.33+)
-5. **При обновлении** - автоматическое слияние с сохранением пользовательских записей
-
-### Начальные компоненты (v2.0.33+)
-
-База включает распространенные компоненты:
-- **Микросхемы:** 1594ТЛ2Т, HMC435AMS8GE, HMC742ALP5E, PE43713A-Z, 1533АП5, и др.
-- **Аттенюаторы:** PAT-0+ ... PAT-30+, РАТ-0+ ... РАТ-30+ (все варианты, включая с пробелами)
-- **Логика:** 1533АГ3, 1533ЛП5, 533ТЛ2
-
-### Просмотр статистики
+### Простой тест
 
 ```python
-from bom_categorizer.component_database import get_database_stats
+from bom_categorizer.classifiers import classify_component
 
-stats = get_database_stats()
-print(f"Всего компонентов: {stats['total']}")
-print(f"По категориям: {stats['by_category']}")
-```
-
-### Ручное редактирование
-
-Откройте `component_database.json` в текстовом редакторе:
-
-```json
-{
-  "1594ТЛ2Т": "ics",
-  "Резистор 100 Ом": "resistors",
-  "Конденсатор 100 нФ": "capacitors"
-}
-```
-
-База автоматически пополняется при:
-- Интерактивной классификации в GUI
-- Использовании `--interactive` режима
-
-### Мокирование базы данных в тестах
-
-```python
-def test_with_mock_db(mock_component_database):
-    """Тест с временной базой данных"""
-    from bom_categorizer.component_database import add_component_to_database
+def test_resistor_classification():
+    # 1. Подготовка (Arrange)
+    description = "RES 10k 1% 0603"
     
-    add_component_to_database("Test", "resistors")
-    # База будет автоматически очищена после теста
+    # 2. Действие (Act)
+    category = classify_component(description)
+    
+    # 3. Проверка (Assert)
+    assert category == "resistors"
+
+def test_unknown_component():
+    description = "Strange Device 3000"
+    category = classify_component(description)
+    assert category == "unclassified"
 ```
 
----
+### Использование фикстур
 
-## Отчеты
-
-### HTML отчет по тестам
-
-```cmd
-python run_tests.py --html -v
+```python
+def test_database_add(mock_database):
+    # mock_database - временная копия БД, удалится после теста
+    mock_database.add("New Part", "chips")
+    assert mock_database.get("New Part") == "chips"
 ```
 
-Создаст файл `test_report.html` с подробным отчетом. Откройте его в браузере.
+### Параметризация (много тестов в одном)
 
-### Отчет покрытия кода
+```python
+import pytest
+from bom_categorizer.formatters import normalize_value
 
-```cmd
-python run_tests.py --coverage -v
+@pytest.mark.parametrize("input_val, expected", [
+    ("10k", "10 kOhm"),
+    ("4k7", "4.7 kOhm"),
+    ("100R", "100 Ohm"),
+    ("0.1uF", "100 nF"),
+])
+def test_normalization(input_val, expected):
+    assert normalize_value(input_val) == expected
 ```
 
-Создаст:
-- Отчет в консоли
-- HTML отчет в папке `htmlcov/`
-
-Откройте `htmlcov/index.html` в браузере для просмотра.
-
----
-
-## Разработка тестов
-
-### Добавление нового теста
-
-1. Выберите подходящий файл (или создайте новый)
-2. Добавьте тестовый класс или функцию:
+### Тестовый класс
 
 ```python
 class TestNewFeature:
     """Тесты новой функции"""
     
     def test_basic_case(self):
-        """Тест базового случая"""
+        """Базовый случай"""
         result = my_function("input")
         assert result == "expected"
     
     def test_edge_case(self):
-        """Тест граничного случая"""
+        """Граничный случай"""
         result = my_function("")
         assert result is None
 ```
 
-3. Запустите тест:
-
-```cmd
-pytest tests/test_new.py -v
-```
-
-### Использование фикстур
-
-Фикстуры определены в `conftest.py`:
-
-```python
-def test_with_temp_dir(temp_dir):
-    """Тест с временной директорией"""
-    file_path = temp_dir / "test.txt"
-    file_path.write_text("test")
-    assert file_path.exists()
-
-def test_with_example_files(example_dir):
-    """Тест с файлами из example/"""
-    doc_file = example_dir / "plata_MKVH.doc"
-    if doc_file.exists():
-        # Ваш тест
-        pass
-```
-
 ---
 
-## Интеграция с разработкой
+## 🏃 Запуск тестов
 
-### Before commit (перед коммитом)
+### По режиму
 
-```cmd
-# Быстрая проверка
+```bash
+# Быстрые unit-тесты
 scripts\run_tests.bat quick
-```
 
-Если все прошло успешно - можно коммитить.
+# Интеграционные
+scripts\run_tests.bat integration
 
-### Before merge (перед слиянием)
-
-```cmd
-# Полная проверка
-scripts\run_tests.bat
-```
-
-### Before release (перед релизом)
-
-```cmd
-# Полная проверка с покрытием
+# С покрытием
 scripts\run_tests.bat coverage
 ```
 
-Проверьте что покрытие > 70%.
+### По файлу
 
----
-
-## Continuous Integration (CI/CD)
-
-### GitHub Actions
-
-```yaml
-name: Tests
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
-        with:
-          python-version: '3.13'
-      - name: Install dependencies
-        run: python -m pip install -r requirements.txt
-      - name: Run unit tests
-        run: python run_tests.py --quick -v
-      - name: Run integration tests
-        run: python run_tests.py --integration -v
-      - name: Generate coverage report
-        run: python run_tests.py --coverage -v
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./htmlcov/coverage.xml
+```bash
+pytest tests/test_classifiers.py -v
+pytest tests/test_database.py -v
+pytest tests/test_classifiers.py tests/test_database.py -v
 ```
 
----
+### По имени теста
 
-## Troubleshooting
+```bash
+# Один конкретный тест
+pytest tests/test_classifiers.py::TestBasicClassification::test_resistor_classification -v
 
-### ❌ Тесты не запускаются
-
-**Проблема:** `pytest не найден`
-
-**Решение:**
-```cmd
-# Активируйте виртуальное окружение
-.venv\Scripts\activate
-
-# Установите тестовые зависимости
-python -m pip install pytest pytest-html pytest-cov
-```
-
-**Или используйте requirements.txt:**
-```cmd
-python -m pip install -r requirements.txt
-```
-
-### ❌ Ошибка импорта модулей
-
-**Проблема:** `ModuleNotFoundError: No module named 'bom_categorizer'`
-
-**Решение:**
-```cmd
-# Убедитесь что находитесь в корне проекта
-cd C:\Project\BOMCategorizer
-
-# Активируйте виртуальное окружение
-.venv\Scripts\activate
-
-# Переустановите зависимости
-python -m pip install -r requirements.txt
-```
-
-### ❌ Интеграционные тесты падают
-
-**Проблема:** Файлы из `example/` не найдены
-
-**Решение:**
-```cmd
-# Создайте папку example/ (она исключена из Git)
-mkdir example
-
-# Добавьте свои BOM файлы для тестирования
-# Пример структуры:
-# example/
-#   ├── plata.doc
-#   ├── Plata_P.xlsx
-#   └── Б.doc
-
-# Проверьте что файлы есть
-dir example\*.doc
-dir example\*.xlsx
-```
-
-**Почему example/ не в Git:**  
-Папка исключена через `.gitignore` для защиты конфиденциальных данных проектов.
-
-### ❌ База данных конфликтует
-
-**Проблема:** Тесты изменяют основную базу данных
-
-**Решение:** Используйте фикстуру `mock_component_database`:
-```python
-def test_with_temp_db(mock_component_database):
-    # Тест будет использовать временную базу
-    pass
-```
-
-### Тесты не находятся
-
-```cmd
-# Убедитесь что находитесь в корне проекта
-cd C:\Project\BOMCategorizer
-
-# Проверьте структуру
-dir tests\
-```
-
-### База данных не очищается между тестами
-
-Используйте фикстуру `mock_component_database` - она автоматически создает временную базу.
-
----
-
-## Полезные команды
-
-### pytest
-
-```cmd
-# Показать все тесты
-pytest --collect-only
-
-# Запустить с остановкой на первой ошибке
-pytest -x
-
-# Запустить последние упавшие тесты
-pytest --lf
-
-# Показать медленные тесты
-pytest --durations=10
-
-# Конкретный тест по ключевому слову
+# По ключевому слову
 pytest -k resistor -v
-
-# Запустить в параллель (если установлен pytest-xdist)
-pytest -n auto
+pytest -k "resistor or capacitor" -v
 ```
 
-### Тестирование примеров
+### Полезные флаги pytest
 
-**Требование:** Создайте папку `example/` и добавьте туда BOM файлы локально.
-
-```cmd
-# Все файлы из example/
-test_examples.bat
-
-# Конкретный файл
-test_examples.bat plata.doc
-
-# Несколько файлов
-test_examples.bat plata.doc Plata_Pr.xlsx
+```bash
+pytest -v                  # Подробный вывод
+pytest -x                  # Остановка на первой ошибке
+pytest --lf                # Только упавшие в прошлый раз
+pytest --durations=10      # Показать 10 самых медленных
+pytest --collect-only      # Показать все тесты без запуска
 ```
 
 ---
 
-## Метрики качества
+## 📂 Тестирование на реальных файлах
 
-### Целевые показатели
+> ⚠️ **Важно:** Папка `example/` исключена из Git для защиты конфиденциальных данных.
 
-- ✅ **Покрытие кода:** > 70%
-- ✅ **Успешность тестов:** 100%
-- ✅ **Время unit-тестов:** < 5 секунд
-- ✅ **Время интеграционных:** < 60 секунд
-- ✅ **Поддержка обеих версий:** Standard и Modern Edition
+### Настройка
 
-### Проверка метрик
-
-```cmd
-# Запустить все тесты с покрытием
-python run_tests.py --coverage -v
-
-# Посмотреть отчет
-start htmlcov\index.html
-```
-
----
-
-## Современные возможности (v4.3.3+)
-
-### Поддержка Modern Edition
-
-Тесты работают с обеими версиями приложения:
-- **Standard Edition** (Tkinter GUI) - версия 3.3.0+
-- **Modern Edition** (PySide6 GUI) - версия 4.3.3+
-
-### Тестирование GUI компонентов
-
-Для тестирования Modern Edition требуется PySide6:
-```cmd
-# Убедитесь что PySide6 установлен
-python -m pip install PySide6
-
-# Запустите тесты
-scripts\run_tests.bat
-```
-
-### Тесты PDF экспорта
-
-Проверка генерации PDF с поддержкой кириллицы:
-- Использование шрифтов DejaVu Sans из папки `fonts/`
-- Корректное отображение русских символов
-- Форматирование таблиц и текста
-
-**Требования:**
-- Установлен `reportlab` (входит в requirements.txt)
-- Шрифты в папке `fonts/` (DejaVuSans.ttf, DejaVuSans-Bold.ttf)
-
----
-
-## Best Practices
-
-1. **Быстрые тесты сначала** - запускайте `--quick` для быстрой проверки
-2. **Изолированные тесты** - каждый тест независим
-3. **Понятные имена** - `test_resistor_classification` лучше чем `test_1`
-4. **Один assert = одна проверка** - по возможности
-5. **Используйте фикстуры** - для повторяющейся настройки
-
----
-
-## ⚠️ Важные изменения
-
-### v4.3.3+ (Modern Edition)
-
-- ✅ Добавлена поддержка PySide6 для Modern Edition
-- ✅ Тесты работают с обеими версиями (Standard и Modern)
-- ✅ Добавлены тесты для PDF экспорта с кириллицей
-- ✅ Обновлены зависимости (PySide6, reportlab)
-
-### v3.1.3+
-
-**Папка example/ исключена из Git**
-
-**Причина:** Защита конфиденциальных данных проектов
-
-**Для тестирования локально:**
 1. Создайте папку `example/` в корне проекта:
-   ```cmd
+   ```bash
    mkdir example
    ```
 
@@ -749,43 +290,173 @@ scripts\run_tests.bat
      └── zakupka.txt
    ```
 
-3. Запускайте тесты как обычно:
-   ```cmd
-   test_examples.bat
-   ```
+### Запуск
 
-**На GitHub:** Папка `example/` будет пустой или отсутствовать (защищена `.gitignore`).
+```bash
+# Windows
+test_examples.bat                    # Все файлы
+test_examples.bat plata.doc          # Конкретный файл
+test_examples.bat plata.doc Plata.xlsx  # Несколько файлов
+
+# macOS/Linux
+pytest tests/test_integration.py -v
+```
+
+### Результаты
+
+Выходные файлы создаются в `test_output/`.
 
 ---
 
-## Зависимости для тестирования
+## 📊 Отчёты и метрики
 
-Все тестовые зависимости включены в `requirements.txt`:
-- `pytest` - фреймворк тестирования
-- `pytest-html` - HTML отчеты
-- `pytest-cov` - покрытие кода
-- `PySide6` - для тестирования Modern Edition GUI
-- `reportlab` - для тестирования PDF экспорта
+### HTML отчёт по тестам
 
-**Установка:**
-```cmd
-python -m pip install -r requirements.txt
+```bash
+python run_tests.py --html -v
+# Создаёт test_report.html
+```
+
+### Отчёт покрытия кода
+
+```bash
+python run_tests.py --coverage -v
+# Создаёт htmlcov/index.html
+```
+
+Откройте в браузере для просмотра.
+
+### Целевые показатели
+
+| Метрика | Цель |
+|---------|------|
+| Покрытие кода | > 70% |
+| Успешность тестов | 100% |
+| Время unit-тестов | < 5 сек |
+| Время интеграционных | < 60 сек |
+
+---
+
+## 🗄 База данных компонентов
+
+### Расположение
+
+- **Разработка:** `component_database.json` в корне проекта
+- **Установка:** `%APPDATA%\BOMCategorizer\Data\` (Windows) или `~/Library/Application Support/BOMCategorizer/` (macOS)
+
+### Мокирование в тестах
+
+```python
+def test_with_mock_db(mock_component_database):
+    """Тест с временной базой данных"""
+    from bom_categorizer.component_database import add_component_to_database
+    
+    add_component_to_database("Test", "resistors")
+    # База автоматически очистится после теста
+```
+
+### Просмотр статистики
+
+```python
+from bom_categorizer.component_database import get_database_stats
+
+stats = get_database_stats()
+print(f"Всего компонентов: {stats['total']}")
+print(f"По категориям: {stats['by_category']}")
 ```
 
 ---
 
-## Дополнительная документация
+## 🔄 Рабочий процесс
 
-- 📘 [QUICK_START.md](QUICK_START.md) - Быстрый старт приложения
-- 📘 [INTERACTIVE_MODE_GUIDE.md](INTERACTIVE_MODE_GUIDE.md) - Интерактивная классификация
-- 🔧 [REPAIR_INSTALLATION.md](REPAIR_INSTALLATION.md) - Восстановление установки
-- 📦 [OFFLINE_INSTALLATION_GUIDE.md](OFFLINE_INSTALLATION_GUIDE.md) - Офлайн установка
-- 📚 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - Структура проекта
-- 📊 [DATABASE_MANAGEMENT_GUIDE.md](DATABASE_MANAGEMENT_GUIDE.md) - Управление базой данных
+### Во время разработки
+
+```bash
+# После каждого изменения - быстрые тесты
+scripts\run_tests.bat quick
+```
+
+### Перед коммитом
+
+```bash
+# Полный прогон
+scripts\run_tests.bat
+```
+
+### Перед релизом
+
+```bash
+# Полная проверка с покрытием
+scripts\run_tests.bat coverage
+```
+
+Проверьте:
+- ✅ Все тесты проходят (100%)
+- ✅ Покрытие кода > 70%
+- ✅ Реальные файлы обрабатываются корректно
 
 ---
 
-**Версия документа:** 2.0  
-**Обновлено:** 2025-01-XX  
-**Для версии:** BOM Categorizer Standard 3.3.0+ / Modern Edition 4.3.3+  
-**Автор:** Куреин М.Н. / Kurein M.N.
+## 🚀 CI/CD интеграция
+
+### GitHub Actions
+
+```yaml
+name: Tests
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run unit tests
+        run: python run_tests.py --quick -v
+      - name: Run integration tests
+        run: python run_tests.py --integration -v
+      - name: Generate coverage
+        run: python run_tests.py --coverage -v
+```
+
+---
+
+## 🚫 Устранение проблем
+
+| Проблема | Решение |
+|----------|---------|
+| **pytest не найден** | `pip install -r requirements.txt` |
+| **ModuleNotFoundError** | Активируйте venv: `.venv\Scripts\activate` (Win) или `source venv/bin/activate` (macOS) |
+| **Тесты падают на файлах** | Создайте папку `example/` и добавьте туда BOM файлы |
+| **Ошибка кодировки (Windows)** | Выполните `chcp 65001` перед запуском |
+| **Database locked** | Используйте фикстуру `mock_component_database` |
+
+### Подробная диагностика
+
+```bash
+# Проверить структуру тестов
+pytest --collect-only
+
+# Проверить что pytest видит тесты
+pytest tests/ --collect-only
+
+# Запустить с максимальной детализацией
+pytest -vvv --tb=long
+```
+
+---
+
+## 📚 Дополнительно
+
+- [CLI_USAGE.md](CLI_USAGE.md) — Использование командной строки
+- [INTERACTIVE_MODE_GUIDE.md](INTERACTIVE_MODE_GUIDE.md) — Интерактивная классификация
+- [AI_INTEGRATION_GUIDE.md](AI_INTEGRATION_GUIDE.md) — AI интеграция
+- [DATABASE_MANAGEMENT_GUIDE.md](DATABASE_MANAGEMENT_GUIDE.md) — Управление базой данных
+
+---
+
+*Для версии: BOM Categorizer Standard 3.3.0+ / Modern Edition 4.4.9+*

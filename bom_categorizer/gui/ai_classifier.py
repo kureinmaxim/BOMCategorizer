@@ -231,7 +231,9 @@ class AIClassifierSettings:
     def __init__(self, config_path: str = None):
         if config_path is None:
             # Используем config_qt.json в корне проекта
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # __file__ = bom_categorizer/gui/ai_classifier.py
+            # Нужно 3 уровня вверх: gui -> bom_categorizer -> корень проекта
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             config_path = os.path.join(project_root, "config_qt.json")
         
         self.config_path = config_path

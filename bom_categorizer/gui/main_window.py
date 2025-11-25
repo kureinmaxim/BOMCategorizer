@@ -105,8 +105,11 @@ def get_config_path() -> str:
         
         return installed_path
     
-    # 1. Рядом с модулем (разработка)
-    dev_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_qt.json")
+    # 1. В корне проекта (разработка)
+    # __file__ = bom_categorizer/gui/main_window.py
+    # Нужно 3 уровня вверх: gui -> bom_categorizer -> корень проекта
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    dev_path = os.path.join(project_root, "config_qt.json")
     if os.path.exists(dev_path):
         return dev_path
     
@@ -4298,7 +4301,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
     def open_interactive_cli(self):
         """Открывает интерактивную командную строку"""
         from PySide6.QtWidgets import QDialog
-        from .cli_interactive import InteractiveCLI
+        from ..cli_interactive import InteractiveCLI
         
         # Создаем диалог
         dialog = QDialog(self)
