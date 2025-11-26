@@ -382,6 +382,11 @@ class AIPDFSearcher:
             
             data = response.json()
             response_text = data.get("response", "")
+            model_used = data.get("model", "unknown")
+            api_provider = data.get("provider", "anthropic")
+            
+            # Формируем строку провайдера с моделью
+            provider_str = f"Telegram Bot ({api_provider}: {model_used})"
             
             # Пытаемся извлечь JSON из ответа
             json_match = re.search(r'\{[\s\S]*\}', response_text)
@@ -389,7 +394,8 @@ class AIPDFSearcher:
                 try:
                     result = json.loads(json_match.group(0))
                     result['component'] = component_name
-                    result['provider'] = 'Telegram Bot (Anthropic)'
+                    result['provider'] = provider_str
+                    result['model'] = model_used
                     result['raw_response'] = response_text
                     return result
                 except json.JSONDecodeError:
@@ -399,7 +405,8 @@ class AIPDFSearcher:
             return {
                 'found': True,
                 'component': component_name,
-                'provider': 'Telegram Bot (Anthropic)',
+                'provider': provider_str,
+                'model': model_used,
                 'description': response_text,
                 'raw_response': response_text
             }
@@ -596,18 +603,25 @@ class AIPDFSearcher:
             
             data = response.json()
             response_text = data.get("response", "")
+            model_used = data.get("model", "unknown")
+            api_provider = data.get("provider", "anthropic")
+            
+            # Формируем строку провайдера с моделью
+            provider_str = f"Telegram Bot ({api_provider}: {model_used})"
             
             # Пытаемся извлечь JSON из ответа
             json_match = re.search(r'\{[\s\S]*\}', response_text)
             if json_match:
                 result = json.loads(json_match.group(0))
                 result['component'] = component_name
-                result['provider'] = 'Telegram Bot (Anthropic)'
+                result['provider'] = provider_str
+                result['model'] = model_used
                 return result
             else:
                 return {
                     'component': component_name,
-                    'provider': 'Telegram Bot',
+                    'provider': provider_str,
+                    'model': model_used,
                     'error': 'Не удалось распарсить ответ',
                     'raw_response': response_text
                 }

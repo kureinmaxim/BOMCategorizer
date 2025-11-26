@@ -691,8 +691,14 @@ class PDFSearchDialog(QDialog):
             # Преобразуем markdown-подобное форматирование в HTML
             formatted_text = self._format_markdown_to_html(text_content)
             
+            # Информация о модели
+            model_info = ""
+            if results.get('model'):
+                model_info = f"<p style='color: #6c7086; font-size: 11px;'>🤖 Модель: {results.get('model')} | Провайдер: {results.get('provider', 'N/A')}</p>"
+            
             html += f"""
             <h2>📋 {results.get('component', 'Компонент')}</h2>
+            {model_info}
             <div class="text-response">{formatted_text}</div>
             """
         else:
