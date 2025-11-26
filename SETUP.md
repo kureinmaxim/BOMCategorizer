@@ -2,6 +2,8 @@
 
 Этот файл содержит инструкции по первоначальной настройке проекта **BOM Categorizer** после клонирования с GitHub.
 
+**Версии:** Standard 3.3.0 | Modern 4.5.1
+
 ---
 
 ## 📋 Что происходит при клонировании
@@ -14,7 +16,7 @@
   - `config/config.json.template` (Standard Edition)
   - `config/config_qt.json.template` (Modern Edition)
 - Шаблон базы данных: `data/component_database_template.json`
-- Документация
+- Документация в `docs/`
 - Скрипты сборки в `deployment/`, утилиты в `tools/`, скрипты запуска в `scripts/`
 
 ❌ **НЕТ в репозитории** (они в `.gitignore`):
@@ -22,7 +24,7 @@
 - `config_qt.json` - локальный config Modern Edition
 - `venv/` или `.venv/` - виртуальное окружение Python
 - `component_database.json` - ваша персональная база данных компонентов
-- `*.exe` - установочные файлы
+- `*.exe`, `*.dmg` - установочные файлы
 
 ---
 
@@ -136,7 +138,7 @@ python tools/update_version.py status
 Должно показать:
 ```
 Standard Edition: v3.3.0
-Modern Edition: v4.4.4
+Modern Edition: v4.5.1
 ```
 
 ---
@@ -169,9 +171,9 @@ Modern Edition: v4.4.4
 ```json
 {
   "app_info": {
-    "version": "4.4.4",
+    "version": "4.5.1",
     "edition": "Modern Edition",
-    "release_date": "20.11.2025"
+    "release_date": "26.11.2025"
   },
   "security": {
     "pin": "1234",
@@ -190,13 +192,20 @@ Modern Edition: v4.4.4
     "scale_factor": 1.0,
     "view_mode": "simple"
   },
+  "api_keys": {
+    "telegram_url": "http://YOUR_SERVER:8000/ai_query",
+    "telegram_key": "",
+    "anthropic": "",
+    "openai": ""
+  },
+  "ai_provider": "telegram",
   "pdf_search": {
     "custom_directories": []
   }
 }
 ```
 
-**Важно:** Файлы `config.json` и `config_qt.json` находятся в `.gitignore` и не попадают в Git. Это сделано специально, чтобы сохранить ваши персональные настройки (PIN, размеры окна, тему и т.д.)
+**Важно:** Файлы `config.json` и `config_qt.json` находятся в `.gitignore` и не попадают в Git. Это сделано специально, чтобы сохранить ваши персональные настройки (PIN, размеры окна, тему, API ключи и т.д.)
 
 ---
 
@@ -213,6 +222,63 @@ python tools/update_version.py sync
 - ✅ Синхронизирует файлы сборки (.iss)
 - ✅ Обновляет захардкоженные версии в Python коде
 - ⚠️ **НЕ затрагивает** ваши персональные настройки (theme, scale_factor, window sizes)
+
+---
+
+## 🤖 Настройка AI интеграции
+
+Modern Edition поддерживает AI поиск информации о компонентах. 
+
+### Способ 1: Через Telegram Bot (рекомендуется)
+
+Не требует собственных API ключей Anthropic/OpenAI!
+
+1. **Получите API ключ:**
+   - Отправьте команду `/api` боту в Telegram (только для админа)
+   - Скопируйте URL и Key
+
+2. **Синхронизируйте ключ:**
+   ```bash
+   # Автоматически с сервера
+   python tools/sync_telegram_api.py --fetch
+   
+   # Или вручную
+   python tools/sync_telegram_api.py --key "ваш_ключ"
+   ```
+
+3. **Проверьте подключение:**
+   ```bash
+   python tools/sync_telegram_api.py --test
+   ```
+
+### Способ 2: Напрямую через Anthropic/OpenAI
+
+Если у вас есть собственные API ключи:
+
+1. Откройте `config_qt.json`
+2. Добавьте ключи в секцию `api_keys`:
+   ```json
+   {
+     "api_keys": {
+       "anthropic": "sk-ant-api03-...",
+       "openai": "sk-proj-..."
+     }
+   }
+   ```
+
+### Встроенные CLI команды для AI
+
+В интерактивном CLI (кнопка 💻 CLI):
+
+| Команда | Описание |
+|---------|----------|
+| `ai` | Показать все настройки AI |
+| `aiprovider anthropic` | Сменить провайдера |
+| `aimodel claude-opus-4-5-20251101` | Сменить модель |
+| `aimodels` | Список доступных моделей |
+| `apitest` | Проверить подключение |
+
+> 📖 Подробнее: `docs/AI_INTEGRATION_GUIDE.md`
 
 ---
 
@@ -292,14 +358,35 @@ pytest tests/
 
 ## 📚 Дополнительная информация
 
-- **Сборка инсталлятора:** см. `BUILD.md`
-- **Структура проекта:** см. `ANALYSIS_PROJECT.md`
-- **Управление версиями:** см. `tools/update_version.py --help`
-- **Changelog:** см. `CHANGELOG.md`
+| Документ | Описание |
+|----------|----------|
+| `BUILD.md` | Сборка инсталлятора |
+| `ANALYSIS_PROJECT.md` | Структура проекта |
+| `CHANGELOG.md` | История изменений |
+| `docs/CLI_USAGE.md` | Использование CLI |
+| `docs/AI_INTEGRATION_GUIDE.md` | Настройка AI интеграции |
+| `docs/API_MANAGEMENT.md` | Управление API ключами |
+
+### Полезные команды
+
+```bash
+# Проверить версии
+python tools/update_version.py status
+
+# Синхронизировать версии
+python tools/update_version.py sync
+
+# Синхронизировать API ключ
+python tools/sync_telegram_api.py --fetch
+
+# AI поиск компонента
+python tools/ai_search.py "TPS54302"
+```
 
 ---
 
 **Дата создания:** 20.11.2025  
+**Обновлено:** 26.11.2025  
 **Автор:** Куреин М.Н. / Kurein M.N.  
-**Версия документа:** 1.0
+**Версия документа:** 1.1
 
