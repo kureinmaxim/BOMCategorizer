@@ -521,6 +521,36 @@ class InteractiveCLI(QWidget):
             self._cmd_api_test
         )
         
+        # === КОМАНДЫ AI ===
+        
+        self.commands["aiprovider"] = CLICommand(
+            "aiprovider",
+            "Показывает/меняет провайдера AI",
+            "aiprovider [anthropic|openai|telegram]",
+            self._cmd_ai_provider
+        ).add_alias("provider")
+        
+        self.commands["aimodel"] = CLICommand(
+            "aimodel",
+            "Показывает/меняет модель AI",
+            "aimodel [название_модели]",
+            self._cmd_ai_model
+        ).add_alias("model")
+        
+        self.commands["aimodels"] = CLICommand(
+            "aimodels",
+            "Список доступных моделей",
+            "aimodels [anthropic|openai]",
+            self._cmd_ai_models
+        ).add_alias("models")
+        
+        self.commands["aiinfo"] = CLICommand(
+            "aiinfo",
+            "Показывает текущие настройки AI",
+            "aiinfo",
+            self._cmd_ai_info
+        ).add_alias("ai")
+        
         # Обновляем автодополнение
         command_names = list(self.commands.keys())
         for cmd in self.commands.values():
@@ -554,7 +584,8 @@ class InteractiveCLI(QWidget):
             "Файлы": ["list", "add", "remove", "process"],
             "База данных": ["dbstats", "dbsearch", "dbexport", "dbbackup"],
             "Система": ["status", "config", "theme", "scale"],
-            "Синхронизация": ["version", "vsync", "vset", "api", "apisync", "apitest"]
+            "Синхронизация": ["version", "vsync", "vset", "api", "apisync", "apitest"],
+            "AI настройки": ["aiinfo", "aiprovider", "aimodel", "aimodels"]
         }
         
         for category, commands in categories.items():
@@ -1059,4 +1090,191 @@ class InteractiveCLI(QWidget):
             return f"❌ Ошибка подключения: {e.reason}\nURL: {health_url}"
         except Exception as e:
             return f"❌ Ошибка проверки API: {e}"
+    
+    def _cmd_ai_info(self, args: List[str]) -> str:
+        """Команда aiinfo - показать настройки AI"""
+        result = "\n🤖 Настройки AI:\n"
+        result += "=" * 50 + "\n"
+        
+        api_keys = self.main_window.cfg.get('api_keys', {})
+        
+        # Текущий провайдер
+        current_provider = self.main_window.cfg.get('ai_provider', 'telegram')
+        result += f"\n📍 Текущий провайдер: {current_provider.upper()}\n"
+        
+        # Telegram Bot
+        result += "\n🔹 Telegram Bot API:\n"
+        telegram_url = api_keys.get('telegram_url', 'Не настроен')
+        telegram_key = api_keys.get('telegram_key', '')
+        result += f"   URL: {telegram_url}\n"
+        if telegram_key:
+            result += f"   Key: {telegram_key[:16]}... ({len(telegram_key)} симв.)\n"
+            result += "   Статус: ✅ Настроен\n"
+        else:
+            result += "   Статус: ❌ Не настроен\n"
+        
+        # Anthropic
+        result += "\n🔹 Anthropic (Claude):\n"
+        anthropic_key = api_keys.get('anthropic', '')
+        anthropic_model = self.main_window.cfg.get('anthropic_model', 'claude-3-5-sonnet-20241022')
+        if anthropic_key:
+            result += f"   Key: {anthropic_key[:16]}... ({len(anthropic_key)} симв.)\n"
+            result += f"   Model: {anthropic_model}\n"
+            result += "   Статус: ✅ Настроен\n"
+        else:
+            result += "   Статус: ❌ Не настроен\n"
+        
+        # OpenAI
+        result += "\n🔹 OpenAI (GPT):\n"
+        openai_key = api_keys.get('openai', '')
+        openai_model = self.main_window.cfg.get('openai_model', 'gpt-4')
+        if openai_key:
+            result += f"   Key: {openai_key[:16]}... ({len(openai_key)} симв.)\n"
+            result += f"   Model: {openai_model}\n"
+            result += "   Статус: ✅ Настроен\n"
+        else:
+            result += "   Статус: ❌ Не настроен\n"
+        
+        result += "\n💡 Команды:\n"
+        result += "  aiprovider <имя>  - сменить провайдера\n"
+        result += "  aimodel <модель>  - сменить модель\n"
+        result += "  aimodels          - список моделей\n"
+        
+        return result
+    
+    def _cmd_ai_provider(self, args: List[str]) -> str:
+        """Команда aiprovider - показать/сменить провайдера"""
+        valid_providers = ['anthropic', 'openai', 'telegram']
+        
+        if not args:
+            current = self.main_window.cfg.get('ai_provider', 'telegram')
+            result = f"\n📍 Текущий AI провайдер: {current.upper()}\n"
+            result += "\n💡 Доступные провайдеры:\n"
+            for p in valid_providers:
+                marker = "✅" if p == current else "  "
+                result += f"   {marker} {p}\n"
+            result += "\nДля смены: aiprovider <имя>\n"
+            result += "Пример: aiprovider anthropic\n"
+            return result
+        
+        new_provider = args[0].lower()
+        
+        if new_provider not in valid_providers:
+            return f"❌ Неизвестный провайдер: {new_provider}\nДоступные: {', '.join(valid_providers)}"
+        
+        # Сохраняем в конфиг
+        self.main_window.cfg['ai_provider'] = new_provider
+        
+        # Пытаемся сохранить в файл
+        try:
+            project_root = self._get_project_root()
+            config_path = os.path.join(project_root, 'config_qt.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                config['ai_provider'] = new_provider
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass  # Не критично если не сохранилось
+        
+        return f"✅ AI провайдер изменён на {new_provider.upper()}"
+    
+    def _cmd_ai_model(self, args: List[str]) -> str:
+        """Команда aimodel - показать/сменить модель"""
+        current_provider = self.main_window.cfg.get('ai_provider', 'telegram')
+        
+        if not args:
+            # Показываем текущие модели
+            result = "\n🤖 Текущие модели AI:\n"
+            result += "=" * 50 + "\n"
+            
+            anthropic_model = self.main_window.cfg.get('anthropic_model', 'claude-3-5-sonnet-20241022')
+            openai_model = self.main_window.cfg.get('openai_model', 'gpt-4')
+            
+            result += f"\n📍 Активный провайдер: {current_provider.upper()}\n"
+            result += f"\n🔹 Anthropic: {anthropic_model}\n"
+            result += f"🔹 OpenAI: {openai_model}\n"
+            result += f"🔹 Telegram: (модель настраивается на сервере через /ch_model)\n"
+            
+            result += "\n💡 Для смены модели:\n"
+            result += "   aimodel claude-3-5-sonnet-20241022\n"
+            result += "   aimodel gpt-4-turbo\n"
+            result += "   aimodels - показать список моделей\n"
+            return result
+        
+        new_model = args[0]
+        
+        # Определяем для какого провайдера модель
+        if 'claude' in new_model.lower() or 'anthropic' in new_model.lower():
+            self.main_window.cfg['anthropic_model'] = new_model
+            provider_name = 'Anthropic'
+        elif 'gpt' in new_model.lower() or 'openai' in new_model.lower():
+            self.main_window.cfg['openai_model'] = new_model
+            provider_name = 'OpenAI'
+        else:
+            # По умолчанию для текущего провайдера
+            if current_provider == 'anthropic':
+                self.main_window.cfg['anthropic_model'] = new_model
+                provider_name = 'Anthropic'
+            else:
+                self.main_window.cfg['openai_model'] = new_model
+                provider_name = 'OpenAI'
+        
+        # Пытаемся сохранить в файл
+        try:
+            project_root = self._get_project_root()
+            config_path = os.path.join(project_root, 'config_qt.json')
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                if provider_name == 'Anthropic':
+                    config['anthropic_model'] = new_model
+                else:
+                    config['openai_model'] = new_model
+                with open(config_path, 'w', encoding='utf-8') as f:
+                    json.dump(config, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        
+        return f"✅ Модель {provider_name} изменена на {new_model}"
+    
+    def _cmd_ai_models(self, args: List[str]) -> str:
+        """Команда aimodels - список доступных моделей"""
+        result = "\n📋 Доступные модели AI:\n"
+        result += "=" * 50 + "\n"
+        
+        result += "\n🔹 Anthropic Claude:\n"
+        anthropic_models = [
+            "claude-opus-4-5-20251101 (новейшая, самая мощная)",
+            "claude-sonnet-4-5-20251101 (баланс скорости/качества)",
+            "claude-3-5-sonnet-20241022 (рекомендуется)",
+            "claude-3-5-haiku-20241022 (быстрая)",
+            "claude-3-opus-20240229 (мощная)",
+            "claude-3-sonnet-20240229 (средняя)",
+            "claude-3-haiku-20240307 (быстрая)"
+        ]
+        for m in anthropic_models:
+            result += f"   • {m}\n"
+        
+        result += "\n🔹 OpenAI GPT:\n"
+        openai_models = [
+            "gpt-4-turbo (рекомендуется)",
+            "gpt-4 (мощная)",
+            "gpt-4o (оптимизированная)",
+            "gpt-4o-mini (быстрая)",
+            "gpt-3.5-turbo (быстрая, дешёвая)"
+        ]
+        for m in openai_models:
+            result += f"   • {m}\n"
+        
+        result += "\n🔹 Telegram Bot:\n"
+        result += "   • Модель настраивается на сервере\n"
+        result += "   • Используйте команду /ch_model в боте\n"
+        
+        result += "\n💡 Для смены модели:\n"
+        result += "   aimodel <название>\n"
+        result += "   Пример: aimodel claude-3-5-sonnet-20241022\n"
+        
+        return result
 
