@@ -44,6 +44,15 @@
   "pdf_search": {
     "custom_directories": []
   },
+  "ai_classifier": {
+    "enabled": false,
+    "provider": "anthropic",
+    "model": "",
+    "auto_classify": false,
+    "confidence_threshold": "medium",
+    "telegram_api_url": "http://localhost:8000",
+    "encryption_key": ""
+  },
   "api_keys": {
     "anthropic": "",
     "openai": "",
