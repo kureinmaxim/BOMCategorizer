@@ -1,7 +1,9 @@
+```python
 import json
-import os
 import time
-from typing import Optional, Dict, Any, List
+import requests
+import base64
+from typing import Dict, List, Optional, Any, List
 from PySide6.QtCore import QThread, Signal, QObject
 
 try:
@@ -76,63 +78,102 @@ class AIClassifierWorker(QThread):
             raise ImportError("Установите библиотеку: pip install requests")
             
         if not self.telegram_url:
-            raise ValueError("Не указан URL Telegram API")
-            
+    def _classify_telegram(self, component: str, prompt: str) -> Dict:
+        """Классификация через Telegram Bot API с шифрованием и маскировкой"""
         if not self.encryption_key:
-            raise ValueError("Не указан ключ шифрования для Telegram API")
+            return {"error": "Encryption key not configured"}
             
         if not SecureMessenger:
-            raise ImportError("Модуль шифрования не найден")
+            return {"error": "Encryption module not found"}
 
         try:
+            # Инициализируем шифрование
             messenger = SecureMessenger(self.encryption_key)
-        except Exception as e:
-            raise ValueError(f"Ошибка инициализации шифрования: {e}")
-
-        prompt = self._build_classification_prompt()
-        
-        # Подготовка данных запроса
-        payload = {
-            "prompt": prompt,
-            "provider": "anthropic", # TelegramHelper использует Anthropic под капотом по умолчанию
-            "max_tokens": 500
-        }
-        
-        try:
-            # Шифруем данные
-            encrypted_data = messenger.encrypt(payload)
             
-            # Формируем заголовки
-            headers = {
-                "X-API-KEY": self.api_key, # Используем API ключ для аутентификации
-                "X-APP-ID": "bomcategorizer-v4",
-                "X-Timestamp": str(int(time.time())),
-                "X-Nonce": os.urandom(8).hex(),
-                "Content-Type": "application/octet-stream"
+            # Подготавливаем данные
+            request_data = {
+                "query": prompt,
+                "provider": "openai", # Telegram бот сам выберет провайдера по умолчанию
+                "model": "gpt-4"
             }
             
-            # URL для зашифрованного запроса
-            url = f"{self.telegram_url.rstrip('/')}/ai_query/encrypted"
+            # 1. Шифруем данные
+            encrypted_bytes = messenger.encrypt(request_data)
             
-            response = requests.post(
-                url,
-                data=encrypted_data,
-                headers=headers,
-                timeout=30
-            )
-            response.raise_for_status()
+            # 2. Маскируем трафик (Base64 + JSON)
+            # Это делает запрос похожим на обычный REST API JSON
+            b64_payload = base64.b64encode(encrypted_bytes).decode('utf-8')
             
-            # Расшифровываем ответ
-            decrypted_response = messenger.decrypt(response.content)
-            
-            if isinstance(decrypted_response, dict):
-                response_text = decrypted_response.get("response", "")
-                return self._parse_classification_response(response_text)
+            # Отправляем запрос на obfuscated endpoint
+            # Если URL заканчивается на /ai_query, заменяем на /ai_query/secure
+            # Если нет, предполагаем, что пользователь ввел базовый URL
+            base_url = self.telegram_url.rstrip('/')
+            if base_url.endswith('/ai_query'):
+                endpoint = base_url.replace('/ai_query', '/ai_query/secure')
+            elif base_url.endswith('/ai_query/encrypted'):
+                endpoint = base_url.replace('/ai_query/encrypted', '/ai_query/secure')
             else:
-                raise ValueError("Получен некорректный ответ от сервера")
+                endpoint = f"{base_url}/ai_query/secure"
+                
+            response = requests.post(
+                endpoint,
+                json={"data": b64_payload},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" # Fake UA
+                },
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                return {"error": f"API Error: {response.status_code} - {response.text}"}
+                
+            # 3. Разбираем ответ
+            try:
+                response_json = response.json()
+                if "data" not in response_json:
+                     return {"error": "Invalid response format: missing 'data' field"}
+                     
+                # 4. Декодируем Base64
+                encrypted_response_bytes = base64.b64decode(response_json["data"])
+                
+                # 5. Расшифровываем
+                decrypted_response = messenger.decrypt(encrypted_response_bytes)
+                
+                # Если вернулись байты, декодируем в JSON
+                if isinstance(decrypted_response, bytes):
+                    response_data = json.loads(decrypted_response.decode('utf-8'))
+                else:
+                    response_data = decrypted_response
+                    
+                # The Telegram bot returns a text response, which needs to be parsed
+                # We'll try to parse it using the existing _parse_classification_response logic
+                parsed_classification = self._parse_classification_response(response_data.get("response", ""))
+                
+                if parsed_classification:
+                    category, confidence = parsed_classification
+                    return {
+                        "category": category,
+                        "description": response_data.get("response", ""),
+                        "confidence": confidence,
+                        "reasoning": "Classified by Telegram Bot AI",
+                        "raw_response": response_data.get("response", "")
+                    }
+                else:
+                    # Fallback if parsing fails, return a generic category
+                    return {
+                        "category": "others", # Default category if parsing fails
+                        "description": response_data.get("response", ""),
+                        "confidence": "low",
+                        "reasoning": "Telegram Bot AI response parsing failed",
+                        "raw_response": response_data.get("response", "")
+                    }
+                
+            except Exception as e:
+                return {"error": f"Failed to process response: {str(e)}"}
                 
         except Exception as e:
-            raise Exception(f"Ошибка Telegram API: {str(e)}")
+            return {"error": f"Encryption/Network error: {str(e)}"}
 
     def _classify_anthropic(self) -> Optional[tuple[str, str]]:
         """Классификация через Anthropic Claude API"""
@@ -385,6 +426,14 @@ class AIClassifierSettings:
 
     def get_encryption_key(self) -> str:
         """Получить ключ шифрования"""
+        # Сначала ищем в секции api_keys (новое место)
+        api_keys = self.full_config.get("api_keys", {})
+        key = api_keys.get("telegram_enc_key")
+        
+        if key:
+            return key
+            
+        # Если нет, ищем в старом месте (ai_classifier section)
         return self.settings.get("encryption_key", "")
 
 
