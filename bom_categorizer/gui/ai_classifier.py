@@ -1,23 +1,18 @@
-"""
-AI-подсказки для классификации компонентов через LLM API
-
-Этот модуль предоставляет интеграцию с LLM для автоматической
-классификации неизвестных компонентов.
-
-Поддерживаемые провайдеры:
-- Anthropic Claude (claude-3-sonnet, claude-3-opus)
-- OpenAI GPT (gpt-4, gpt-3.5-turbo)
-- Ollama (локальные модели)
-
-Автор: Куреин М.Н.
-Дата: 12.11.2025
-Версия: 1.0
-"""
-
 import json
 import os
+import time
 from typing import Optional, Dict, Any, List
 from PySide6.QtCore import QThread, Signal, QObject
+
+try:
+    from ..encryption import SecureMessenger, EncryptionError
+except ImportError:
+    # Fallback for when running from different context
+    try:
+        from bom_categorizer.encryption import SecureMessenger, EncryptionError
+    except ImportError:
+        SecureMessenger = None
+        EncryptionError = None
 
 
 class AIClassifierWorker(QThread):
@@ -28,19 +23,23 @@ class AIClassifierWorker(QThread):
     error_occurred = Signal(str)
     progress_update = Signal(str)
     
-    def __init__(self, component_name: str, provider: str, api_key: str, model: str = None):
+    def __init__(self, component_name: str, provider: str, api_key: str, model: str = None, 
+                 telegram_url: str = None, encryption_key: str = None):
         super().__init__()
         self.component_name = component_name
         self.provider = provider.lower()
         self.api_key = api_key
         self.model = model or self._get_default_model()
+        self.telegram_url = telegram_url
+        self.encryption_key = encryption_key
         
     def _get_default_model(self) -> str:
         """Получить модель по умолчанию для провайдера"""
         defaults = {
             "anthropic": "claude-3-sonnet-20240229",
             "openai": "gpt-4",
-            "ollama": "llama2"
+            "ollama": "llama2",
+            "telegram": "telegram-default"
         }
         return defaults.get(self.provider, "gpt-4")
     
@@ -55,6 +54,8 @@ class AIClassifierWorker(QThread):
                 result = self._classify_openai()
             elif self.provider == "ollama":
                 result = self._classify_ollama()
+            elif self.provider == "telegram":
+                result = self._classify_telegram()
             else:
                 raise ValueError(f"Неподдерживаемый провайдер: {self.provider}")
             
@@ -66,7 +67,73 @@ class AIClassifierWorker(QThread):
                 
         except Exception as e:
             self.error_occurred.emit(f"Ошибка: {str(e)}")
-    
+
+    def _classify_telegram(self) -> Optional[tuple[str, str]]:
+        """Классификация через TelegramHelper API (Encrypted)"""
+        try:
+            import requests
+        except ImportError:
+            raise ImportError("Установите библиотеку: pip install requests")
+            
+        if not self.telegram_url:
+            raise ValueError("Не указан URL Telegram API")
+            
+        if not self.encryption_key:
+            raise ValueError("Не указан ключ шифрования для Telegram API")
+            
+        if not SecureMessenger:
+            raise ImportError("Модуль шифрования не найден")
+
+        try:
+            messenger = SecureMessenger(self.encryption_key)
+        except Exception as e:
+            raise ValueError(f"Ошибка инициализации шифрования: {e}")
+
+        prompt = self._build_classification_prompt()
+        
+        # Подготовка данных запроса
+        payload = {
+            "prompt": prompt,
+            "provider": "anthropic", # TelegramHelper использует Anthropic под капотом по умолчанию
+            "max_tokens": 500
+        }
+        
+        try:
+            # Шифруем данные
+            encrypted_data = messenger.encrypt(payload)
+            
+            # Формируем заголовки
+            headers = {
+                "X-API-KEY": self.api_key, # Используем API ключ для аутентификации
+                "X-APP-ID": "bomcategorizer-v4",
+                "X-Timestamp": str(int(time.time())),
+                "X-Nonce": os.urandom(8).hex(),
+                "Content-Type": "application/octet-stream"
+            }
+            
+            # URL для зашифрованного запроса
+            url = f"{self.telegram_url.rstrip('/')}/ai_query/encrypted"
+            
+            response = requests.post(
+                url,
+                data=encrypted_data,
+                headers=headers,
+                timeout=30
+            )
+            response.raise_for_status()
+            
+            # Расшифровываем ответ
+            decrypted_response = messenger.decrypt(response.content)
+            
+            if isinstance(decrypted_response, dict):
+                response_text = decrypted_response.get("response", "")
+                return self._parse_classification_response(response_text)
+            else:
+                raise ValueError("Получен некорректный ответ от сервера")
+                
+        except Exception as e:
+            raise Exception(f"Ошибка Telegram API: {str(e)}")
+
     def _classify_anthropic(self) -> Optional[tuple[str, str]]:
         """Классификация через Anthropic Claude API"""
         try:
@@ -257,7 +324,9 @@ class AIClassifierSettings:
             "provider": "anthropic",
             "model": "",
             "auto_classify": False,
-            "confidence_threshold": "medium"
+            "confidence_threshold": "medium",
+            "telegram_api_url": "http://localhost:8000",
+            "encryption_key": ""
         }
 
     def save_settings(self, settings: Dict[str, Any]) -> bool:
@@ -310,28 +379,43 @@ class AIClassifierSettings:
         """Получить порог уверенности (high, medium, low)"""
         return self.settings.get("confidence_threshold", "medium")
 
+    def get_telegram_url(self) -> str:
+        """Получить URL Telegram API"""
+        return self.settings.get("telegram_api_url", "http://localhost:8000")
+
+    def get_encryption_key(self) -> str:
+        """Получить ключ шифрования"""
+        return self.settings.get("encryption_key", "")
+
 
 def classify_component_with_ai(
     component_name: str,
     provider: str,
     api_key: str,
     model: str = None,
-    callback = None
+    callback = None,
+    telegram_url: str = None,
+    encryption_key: str = None
 ) -> Optional[tuple[str, str]]:
     """
     Синхронная функция для классификации компонента через AI
     
     Args:
         component_name: Название компонента
-        provider: Провайдер AI (anthropic, openai, ollama)
+        provider: Провайдер AI (anthropic, openai, ollama, telegram)
         api_key: API ключ
         model: Название модели (опционально)
         callback: Функция обратного вызова для прогресса
+        telegram_url: URL Telegram API (для провайдера telegram)
+        encryption_key: Ключ шифрования (для провайдера telegram)
     
     Returns:
         Tuple (category, confidence) или None
     """
-    worker = AIClassifierWorker(component_name, provider, api_key, model)
+    worker = AIClassifierWorker(
+        component_name, provider, api_key, model, 
+        telegram_url=telegram_url, encryption_key=encryption_key
+    )
     
     result = [None]  # Используем список для изменяемости в замыкании
     
@@ -366,6 +450,7 @@ if __name__ == "__main__":
     print(f"Провайдер: {settings.get_provider()}")
     print(f"Включен: {settings.is_enabled()}")
     print(f"Автоклассификация: {settings.is_auto_classify()}")
+    print(f"Telegram URL: {settings.get_telegram_url()}")
     
     print("\nДля реального тестирования необходим API ключ.")
     print("Настройте ключи через GUI: Экспертный режим → AI-подсказки → Настройки")

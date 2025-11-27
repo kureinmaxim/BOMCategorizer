@@ -7,3 +7,4 @@ pytest-cov
 PySide6>=6.6.0
 requests>=2.31.0
 reportlab
+cryptography>=42.0.0
