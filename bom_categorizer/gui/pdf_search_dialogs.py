@@ -14,7 +14,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QTextEdit, QGroupBox, QComboBox, QListWidget,
     QListWidgetItem, QFileDialog, QMessageBox, QTabWidget,
-    QWidget, QGridLayout, QTextBrowser, QCheckBox, QFormLayout, QDialogButtonBox
+    QWidget, QGridLayout, QTextBrowser, QCheckBox, QFormLayout, QDialogButtonBox,
+    QSpinBox
 )
 from PySide6.QtCore import Qt, Signal, QThread, QUrl
 from PySide6.QtGui import QFont, QTextCursor, QColor, QDesktopServices
@@ -1409,6 +1410,13 @@ class UnifiedSettingsDialog(QDialog):
         telegram_url_label = QLabel("Bot API URL:")
         self.telegram_url_input = QLineEdit()
         self.telegram_url_input.setPlaceholderText("http://localhost:8000/ai_query")
+        self.telegram_url_input.textChanged.connect(self._on_telegram_url_changed)
+        
+        telegram_port_label = QLabel("Порт:")
+        self.telegram_port_input = QSpinBox()
+        self.telegram_port_input.setRange(1, 65535)
+        self.telegram_port_input.setValue(8000)
+        self.telegram_port_input.valueChanged.connect(self._on_telegram_port_changed)
         
         telegram_key_label = QLabel("Bot API Key:")
         self.telegram_key_input = QLineEdit()
@@ -1422,11 +1430,30 @@ class UnifiedSettingsDialog(QDialog):
             )
         )
 
+        telegram_enc_label = QLabel("Encryption Key:")
+        self.telegram_enc_input = QLineEdit()
+        self.telegram_enc_input.setEchoMode(QLineEdit.Password)
+        self.telegram_enc_input.setPlaceholderText("32-byte hex key")
+        
+        show_enc_btn = QCheckBox("Показать")
+        show_enc_btn.stateChanged.connect(
+            lambda state: self.telegram_enc_input.setEchoMode(
+                QLineEdit.Normal if state else QLineEdit.Password
+            )
+        )
+
         telegram_layout.addWidget(telegram_url_label, 0, 0)
         telegram_layout.addWidget(self.telegram_url_input, 0, 1)
+        telegram_layout.addWidget(telegram_port_label, 0, 2)
+        telegram_layout.addWidget(self.telegram_port_input, 0, 3)
+        
         telegram_layout.addWidget(telegram_key_label, 1, 0)
-        telegram_layout.addWidget(self.telegram_key_input, 1, 1)
-        telegram_layout.addWidget(show_telegram_btn, 1, 2)
+        telegram_layout.addWidget(self.telegram_key_input, 1, 1, 1, 3) # Span across columns
+        telegram_layout.addWidget(show_telegram_btn, 1, 4)
+
+        telegram_layout.addWidget(telegram_enc_label, 2, 0)
+        telegram_layout.addWidget(self.telegram_enc_input, 2, 1, 1, 3) # Span across columns
+        telegram_layout.addWidget(show_enc_btn, 2, 4)
 
         telegram_group.setLayout(telegram_layout)
         layout.addWidget(telegram_group)
@@ -1495,6 +1522,64 @@ class UnifiedSettingsDialog(QDialog):
         layout.addStretch()
         return tab
     
+    def _on_telegram_url_changed(self, text: str):
+        """Обработчик изменения URL: обновляет поле порта"""
+        from urllib.parse import urlparse
+        
+        # Блокируем сигналы, чтобы не вызвать зацикливание
+        self.telegram_port_input.blockSignals(True)
+        try:
+            # Пытаемся распарсить URL
+            if not text.startswith(('http://', 'https://')):
+                # Если нет схемы, urlparse может работать некорректно для наших целей
+                # Но мы пока просто игнорируем
+                pass
+            else:
+                parsed = urlparse(text)
+                if parsed.port:
+                    self.telegram_port_input.setValue(parsed.port)
+                else:
+                    # Если порта нет явно, ставим дефолтный для схемы
+                    if parsed.scheme == 'https':
+                        self.telegram_port_input.setValue(443)
+                    elif parsed.scheme == 'http':
+                        self.telegram_port_input.setValue(80)
+        except Exception:
+            pass
+        finally:
+            self.telegram_port_input.blockSignals(False)
+
+    def _on_telegram_port_changed(self, port: int):
+        """Обработчик изменения порта: обновляет URL"""
+        from urllib.parse import urlparse, urlunparse
+        
+        text = self.telegram_url_input.text()
+        if not text:
+            return
+            
+        self.telegram_url_input.blockSignals(True)
+        try:
+            if not text.startswith(('http://', 'https://')):
+                # Если URL неполный, просто ничего не делаем или можно добавить http
+                pass
+            else:
+                parsed = urlparse(text)
+                # Заменяем netloc на новый с портом
+                # netloc обычно выглядит как "hostname:port" или "hostname"
+                
+                hostname = parsed.hostname or "localhost"
+                new_netloc = f"{hostname}:{port}"
+                
+                # Собираем URL обратно
+                new_parsed = parsed._replace(netloc=new_netloc)
+                new_url = urlunparse(new_parsed)
+                
+                self.telegram_url_input.setText(new_url)
+        except Exception:
+            pass
+        finally:
+            self.telegram_url_input.blockSignals(False)
+    
     def _load_settings(self):
         """Загружает настройки из config_qt.json"""
         # --- 0. Загрузка пользовательских путей PDF ---
@@ -1535,8 +1620,15 @@ class UnifiedSettingsDialog(QDialog):
         telegram_url = api_keys.get("telegram_url") or "http://localhost:8000/ai_query"
         self.telegram_url_input.setText(telegram_url)
         
+        # Инициализируем порт из URL
+        self._on_telegram_url_changed(telegram_url)
+        
         telegram_key = api_keys.get("telegram_key") or ""
         self.telegram_key_input.setText(telegram_key)
+        
+        telegram_enc_key = api_keys.get("telegram_enc_key") or \
+                           ai_classifier_conf.get("encryption_key") or ""
+        self.telegram_enc_input.setText(telegram_enc_key)
         
         # --- 2. Загрузка настроек AI Классификатора ---
         settings = ai_classifier_conf # Используем уже загруженный конфиг
@@ -1568,7 +1660,8 @@ class UnifiedSettingsDialog(QDialog):
             "openai": self.openai_key_input.text().strip(),
             "ollama_url": self.ollama_url_input.text().strip(),
             "telegram_url": self.telegram_url_input.text().strip(),
-            "telegram_key": self.telegram_key_input.text().strip()
+            "telegram_key": self.telegram_key_input.text().strip(),
+            "telegram_enc_key": self.telegram_enc_input.text().strip()
         }
 
         # --- 2. Сохраняем настройки AI классификатора ---

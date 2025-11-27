@@ -1,4 +1,5 @@
 {
+  "_comment": "LEGACY CONFIGURATION FILE for Standard Edition (v3) and CLI tools. Does NOT support AI or Telegram settings.",
   "app_info": {
     "version": "3.3.0",
     "edition": "Standard",
