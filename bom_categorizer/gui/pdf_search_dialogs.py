@@ -281,10 +281,41 @@ class PDFSearchDialog(QDialog):
         
         self.hint_edit = QTextEdit()
         self.hint_edit.setPlaceholderText(
-            "Примеры: Питание 5В, ток до 500мА | Только automotive grade (-40...+125°C) | "
-            "Корпус SOIC-8 или меньше | Критично низкое потребление"
+            "Например: This is a frequency divider from Analog Devices"
         )
-        self.hint_edit.setMaximumHeight(35)
+        self.hint_edit.setMinimumHeight(60)
+        self.hint_edit.setMaximumHeight(80)
+        # Стили для тёмной темы: светлый текст, удобный скроллбар
+        self.hint_edit.setStyleSheet("""
+            QTextEdit {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                border: 1px solid #45475a;
+                border-radius: 6px;
+                padding: 8px;
+                font-size: 13px;
+            }
+            QTextEdit::placeholder {
+                color: #6c7086;
+            }
+            QScrollBar:vertical {
+                background: #313244;
+                width: 14px;
+                border-radius: 7px;
+                margin: 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: #585b70;
+                border-radius: 5px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #7f849c;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+        """)
         hint_layout.addWidget(self.hint_edit)
         
         hint_group.setLayout(hint_layout)

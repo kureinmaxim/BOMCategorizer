@@ -88,61 +88,63 @@ scripts/bump_version.py
 
 ### Основные команды
 
+> Все команды работают одинаково на Windows, macOS и Linux.
+
 #### 🐛 Исправление бага (Patch)
 ```bash
-./scripts/bump_version.py --bump patch
-# 5.0.0 → 5.0.1 (только Modern Edition)
+python scripts/bump_version.py --bump patch
+# 5.0.0 → 5.0.1
 ```
 
 #### ✨ Новая функция (Minor)
 ```bash
-./scripts/bump_version.py --bump minor
-# 5.0.0 → 5.1.0 (только Modern Edition)
+python scripts/bump_version.py --bump minor
+# 5.0.0 → 5.1.0
 ```
 
 #### 💥 Критические изменения (Major)
 ```bash
-./scripts/bump_version.py --bump major
-# 5.0.0 → 6.0.0 (только Modern Edition)
+python scripts/bump_version.py --bump major
+# 5.0.0 → 6.0.0
 ```
 
 ### Выбор редакции
 
 ```bash
 # Modern Edition (по умолчанию)
-./scripts/bump_version.py --bump patch
+python scripts/bump_version.py --bump patch
 
 # Standard Edition
-./scripts/bump_version.py --bump patch --edition standard
+python scripts/bump_version.py --bump patch --edition standard
 
 # Обе редакции
-./scripts/bump_version.py --bump patch --edition both
+python scripts/bump_version.py --bump patch --edition both
 ```
 
 ### Установка конкретной версии
 
 ```bash
 # Modern Edition
-./scripts/bump_version.py --version 5.2.0
+python scripts/bump_version.py --version 5.2.0
 
 # Standard Edition
-./scripts/bump_version.py --version 3.4.0 --edition standard
+python scripts/bump_version.py --version 3.4.0 --edition standard
 ```
 
 ### Дополнительные опции
 
 ```bash
 # Без обновления даты релиза
-./scripts/bump_version.py --bump patch --no-release-date
+python scripts/bump_version.py --bump patch --no-release-date
 
 # С конкретной датой релиза
-./scripts/bump_version.py --version 5.5.0 --release-date 31.12.2025
+python scripts/bump_version.py --version 5.5.0 --release-date 31.12.2025
 
 # Изменить разработчика
-./scripts/bump_version.py --developer "Иванов И.И."
+python scripts/bump_version.py --developer "Иванов И.И."
 
 # Тестовый запуск (без записи)
-./scripts/bump_version.py --bump patch --dry-run
+python scripts/bump_version.py --bump patch --dry-run
 ```
 
 ---
@@ -168,10 +170,10 @@ python tools/update_version.py set modern 5.1.0
 # Обновить Standard Edition
 python tools/update_version.py set standard 3.4.0
 
-# Обновить обе
+# Обновить обе редакции
 python tools/update_version.py set both 5.0.0
 
-# Синхронизировать файлы
+# Синхронизировать файлы сборки
 python tools/update_version.py sync
 ```
 
@@ -209,11 +211,11 @@ python app.py       # Создаст config.json из шаблона
 ### Вручную
 
 ```bash
+# Windows (PowerShell)
+Copy-Item config/config_qt.json.template config_qt.json
+
 # macOS / Linux
 cp config/config_qt.json.template config_qt.json
-
-# Windows PowerShell
-Copy-Item config/config_qt.json.template config_qt.json
 ```
 
 ### Разделение настроек
@@ -255,7 +257,7 @@ python tools/update_version.py sync
 
 ```bash
 # 1. Обновить версию
-./scripts/bump_version.py --bump minor
+python scripts/bump_version.py --bump minor
 
 # 2. Синхронизировать файлы сборки
 python tools/update_version.py sync
@@ -270,14 +272,18 @@ git commit -m "Release: Modern Edition v5.1.0"
 # 5. Создать тег (опционально)
 git tag v5.1.0
 
-# 6. Собрать
+# 6. Собрать инсталлятор
+# Windows:
+python deployment/build_installer.py
+
+# macOS:
 ./deployment/build_macos.sh
 ```
 
 ### Standard Edition (если нужно)
 
 ```bash
-./scripts/bump_version.py --bump patch --edition standard
+python scripts/bump_version.py --bump patch --edition standard
 ```
 
 ---
@@ -288,7 +294,7 @@ git tag v5.1.0
 
 ```bash
 # 1. Обновить версию
-./scripts/bump_version.py --bump minor
+python scripts/bump_version.py --bump minor
 
 # 2. Синхронизировать и проверить
 python tools/update_version.py sync
@@ -298,32 +304,24 @@ python tools/update_version.py status
 git add config/ deployment/
 git commit -m "Release: Modern Edition v5.1.0"
 
-# 4. Собрать и выпустить
-./deployment/build_macos.sh
-gh release create v5.1.0 --title "v5.1.0" BOMCategorizer-5.1.0-macOS-Modern.dmg
+# 4. Собрать инсталлятор
+python deployment/build_installer.py     # Windows
+./deployment/build_macos.sh              # macOS
 ```
 
 ### 🎯 Сценарий 2: Работа на новой машине
 
 ```bash
-# 1. Клонировать
 git clone <repo-url>
 cd BOMCategorizer
-
-# 2. Проверить версии
 python tools/update_version.py status
-
-# 3. Синхронизировать
 python tools/update_version.py sync
-
-# 4. Запустить (создаст локальный config)
 python app_qt.py
 ```
 
 ### 🎯 Сценарий 3: После git pull
 
 ```bash
-# Проверить и синхронизировать если нужно
 python tools/update_version.py status
 python tools/update_version.py sync
 ```
@@ -333,26 +331,22 @@ python tools/update_version.py sync
 ## FAQ
 
 ### ❓ Как узнать текущую версию?
-
 ```bash
 python tools/update_version.py status
 ```
 
 ### ❓ Как обновить только Modern Edition?
-
 ```bash
-./scripts/bump_version.py --bump patch
-# По умолчанию обновляется только Modern Edition
+python scripts/bump_version.py --bump patch
 ```
+По умолчанию обновляется только Modern Edition.
 
 ### ❓ Как обновить Standard Edition?
-
 ```bash
-./scripts/bump_version.py --bump patch --edition standard
+python scripts/bump_version.py --bump patch --edition standard
 ```
 
 ### ❓ Версии рассинхронизировались, что делать?
-
 ```bash
 python tools/update_version.py sync
 ```
@@ -365,7 +359,7 @@ python tools/update_version.py sync
 
 Чтобы локальные настройки пользователя не попадали в Git. Каждая машина может иметь свои настройки UI, но версия проекта одна для всех.
 
-### ❓ Windows installer собирается со старой версией?
+### ❓ Installer собирается со старой версией?
 
 Выполните перед сборкой:
 ```bash
@@ -394,7 +388,8 @@ BOMCategorizer/
 │   └── sync_installer_versions.py
 │
 └── deployment/
-    ├── build_macos.sh           (читает версию автоматически)
+    ├── build_installer.py       ← Сборка Windows (Inno Setup)
+    ├── build_macos.sh           ← Сборка macOS (DMG)
     ├── installer_qt.iss         (синхронизируется)
     └── installer_clean.iss      (синхронизируется)
 ```
