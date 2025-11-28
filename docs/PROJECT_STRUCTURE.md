@@ -1,7 +1,7 @@
 # 📁 Структура проекта BOM Categorizer
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v4.5.0 (PySide6)  
-> **Обновлено:** 25.11.2025
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.0.0 (PySide6)  
+> **Обновлено:** 28.11.2025
 
 ---
 
@@ -39,6 +39,7 @@ BOMCategorizer/
 │   ├── formatters.py                     # Форматирование и очистка
 │   ├── component_database.py             # Управление базой знаний
 │   ├── config_manager.py                 # Управление конфигурацией
+│   ├── encryption.py                     # 🔐 AES-256-GCM шифрование
 │   ├── excel_writer.py                   # Генерация Excel отчётов
 │   ├── txt_writer.py                     # Генерация текстовых отчётов
 │   ├── pdf_exporter.py                   # Экспорт в PDF
@@ -77,7 +78,8 @@ BOMCategorizer/
 │   ├── icon.ico                          # Иконка (Windows)
 │   └── icon.icns                         # Иконка (macOS)
 │
-├── 📁 scripts/                           # 🔨 Скрипты запуска (BAT/PS1)
+├── 📁 scripts/                           # 🔨 Скрипты
+│   ├── bump_version.py                   # 🔄 Управление версиями
 │   ├── run_app.bat                       # Универсальный запуск
 │   ├── run_modern_debug.bat              # Отладка Modern Edition
 │   ├── run_standard_debug.bat            # Отладка Standard Edition
@@ -140,11 +142,7 @@ BOMCategorizer/
 │   ├── INTERACTIVE_MODE_GUIDE.md         # 💬 Интерактивный режим
 │   ├── PDF_SEARCH_GUIDE.md               # 🔍 Поиск компонентов
 │   ├── DRAG_DROP_README.md               # 📎 Drag & Drop
-│   ├── DISPLAY_FIXES.md                  # 🖥 Исправления отображения
-│   ├── OFFLINE_INSTALLATION_GUIDE.md     # 📦 Офлайн установка
-│   ├── PLATFORM_COMPARISON.md            # ⚖️ Сравнение версий
 │   ├── VERSION_MANAGEMENT.md             # 🔄 Управление версиями
-│   ├── BAT_FILES_GUIDE.md                # 🖥 BAT файлы
 │   ├── PROJECT_STRUCTURE.md              # 📂 Структура (этот файл)
 │   └── ...                               # Другие документы
 │
@@ -222,18 +220,26 @@ Modern Edition разделён на модули для лучшей подде
 
 Подключается к **TelegramHelper API** для получения информации.
 
-### 3. База данных компонентов
+### 3. Шифрование данных
+
+| Компонент | Описание |
+|-----------|----------|
+| **`encryption.py`** | AES-256-GCM шифрование |
+| **Автоопределение** | API сам определяет режим (plain/encrypted) |
+| **Ключи** | `/encryption_key` и `/gen_encryption_key` в боте |
+
+### 4. База данных компонентов
 
 | Уровень | Файл | Доступ |
 |---------|------|--------|
 | Static | `data/component_database_template.json` | Read-only |
 | Dynamic | `%APPDATA%/BOMCategorizer/` | Read-write |
 
-### 4. Организация директорий
+### 5. Организация директорий
 
 | Директория | Назначение | Для кого |
 |------------|------------|----------|
-| `scripts/` | BAT/PS1 скрипты запуска | Пользователи |
+| `scripts/` | BAT/PS1 скрипты + bump_version.py | Все |
 | `tools/` | Python CLI утилиты | Разработчики |
 | `deployment/` | Сборка инсталляторов | Разработчики |
 | `config/` | Шаблоны конфигурации | Все |
@@ -277,8 +283,9 @@ scripts/run_tests.bat
 # 4. AI поиск (CLI)
 python tools/ai_search.py "TPS54302"
 
-# 5. Обновление версии
-python tools/update_version.py set modern 4.5.1
+# 5. Обновление версии (только Modern по умолчанию)
+./scripts/bump_version.py --bump patch
+./scripts/bump_version.py --bump minor --edition both  # Обе редакции
 
 # 6. Сборка
 python deployment/build_installer.py  # Windows
@@ -294,10 +301,11 @@ python deployment/build_installer.py  # Windows
 | **Разделение** | Скрипты пользователя отделены от инструментов разработчика |
 | **Модульность** | GUI разделён на логические компоненты |
 | **AI Ready** | Встроенная интеграция с TelegramHelper |
+| **Шифрование** | AES-256-GCM для защиты данных |
 | **Масштабируемость** | Легко добавлять новые модули |
-| **Документация** | 21 документ охватывает все аспекты |
+| **Документация** | Полный набор документов охватывает все аспекты |
 
 ---
 
-*Версия документа: 2.1*  
+*Версия документа: 3.0*  
 *Автор: Куреин М.Н.*
