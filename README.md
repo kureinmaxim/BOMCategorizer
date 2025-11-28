@@ -3,7 +3,7 @@
 **Автоматическая сортировка электронных компонентов из спецификаций (BOM) по категориям.**  
 Загружаете файл → Получаете Excel с разделением на: Резисторы, Конденсаторы, Микросхемы и др.
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v4.5.0 (PySide6)
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.0.0 (PySide6)
 
 ---
 
@@ -51,6 +51,7 @@ pip install -r requirements.txt
 | 🧠 **Умный парсинг** | Номиналы, допуски, корпуса, ТУ |
 | 💾 **База знаний** | Запоминает ваш выбор |
 | 🔍 **AI поиск** | Информация о компонентах через TelegramHelper |
+| 🔐 **Шифрование** | AES-256-GCM для защиты данных |
 | 📄 **PDF экспорт** | С поддержкой кириллицы |
 | 🖥️ **Два интерфейса** | Modern (Qt) и Standard (Tkinter) |
 
@@ -74,8 +75,17 @@ BOMCategorizer интегрируется с **TelegramHelper API** для AI-п
 ### Как работает
 
 ```
-BOMCategorizer → HTTP → TelegramHelper (VPS) → Claude/GPT → Ответ
+BOMCategorizer → HTTP (+ AES-256) → TelegramHelper (VPS) → Claude/GPT → Ответ
 ```
+
+### Режимы передачи
+
+| Режим | Описание | Когда использовать |
+|-------|----------|-------------------|
+| **Plain** | Обычный JSON | Локальная сеть |
+| **Encrypted** | AES-256-GCM | Интернет, публичные сети |
+
+API автоматически определяет режим по содержимому запроса.
 
 ### Быстрая настройка
 
@@ -92,18 +102,21 @@ python tools/ai_search.py "NE555"
 
 ### Настройка через GUI
 
-1. Получить ключ: команда `/api` в Telegram боте
+1. Получить ключи в Telegram боте:
+   - `/api` — API ключ для авторизации
+   - `/encryption_key` — ключ шифрования
 2. BOMCategorizer → режим **Expert** → секция "API ключи"
-3. Заполнить **Telegram URL** и **Telegram Key**
+3. Заполнить **Telegram URL**, **Telegram Key**, **Encryption Key**
 4. Сохранить настройки
 
 ### Преимущества
 
 - ✅ Не нужны собственные API ключи Anthropic/OpenAI
 - ✅ Централизованное управление
+- ✅ Шифрование данных (AES-256-GCM)
 - ✅ Работает на любом ПК с интернетом
 
-> **Подробнее:** [docs/API_MANAGEMENT.md](docs/API_MANAGEMENT.md)
+> **Подробнее:** [docs/AI_INTEGRATION_GUIDE.md](docs/AI_INTEGRATION_GUIDE.md)
 
 ---
 
@@ -144,6 +157,19 @@ python tools/sync_telegram_api.py --show
 python tools/sync_telegram_api.py --test
 ```
 
+### Управление версиями
+
+```bash
+# Увеличить patch версию (только Modern Edition)
+./scripts/bump_version.py --bump patch
+
+# Увеличить minor версию обеих редакций
+./scripts/bump_version.py --bump minor --edition both
+
+# Установить конкретную версию
+./scripts/bump_version.py --version 5.1.0
+```
+
 > **Подробнее:** [docs/CLI_USAGE.md](docs/CLI_USAGE.md)
 
 ---
@@ -165,13 +191,13 @@ python tools/sync_telegram_api.py --test
 | [SETUP.md](SETUP.md) | Настройка окружения |
 | [BUILD.md](BUILD.md) | Сборка инсталляторов |
 | [ANALYSIS_PROJECT.md](ANALYSIS_PROJECT.md) | Архитектура проекта |
+| [docs/VERSION_MANAGEMENT.md](docs/VERSION_MANAGEMENT.md) | Управление версиями |
 | [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | Тестирование |
 
 ### AI и API
 
 | Документ | Описание |
 |----------|----------|
-| [docs/API_MANAGEMENT.md](docs/API_MANAGEMENT.md) | Управление API ключами |
 | [docs/AI_INTEGRATION_GUIDE.md](docs/AI_INTEGRATION_GUIDE.md) | Интеграция с TelegramHelper |
 | [docs/CLI_USAGE.md](docs/CLI_USAGE.md) | Командная строка |
 
@@ -196,9 +222,12 @@ BOMCategorizer/
 ├── app_qt.py              # Modern Edition
 ├── app.py                 # Standard Edition
 ├── bom_categorizer/       # Ядро приложения
+│   ├── encryption.py      # 🔐 AES-256-GCM
+│   └── gui/               # Modern GUI модули
+├── scripts/
+│   └── bump_version.py    # Управление версиями
 ├── tools/                 # CLI утилиты
 │   ├── ai_search.py       # AI поиск компонентов
-│   ├── sync_telegram_api.py  # Синхронизация API
 │   └── split_bom.py       # Обработка BOM
 ├── config_qt.json         # Конфигурация Modern
 ├── config.json            # Конфигурация Standard
@@ -210,4 +239,5 @@ BOMCategorizer/
 ---
 
 **Разработчик:** Куреин М.Н.  
-**Лицензия:** Proprietary
+**Лицензия:** Proprietary  
+**Обновлено:** 28.11.2025

@@ -2,9 +2,9 @@
 
 **BOM Categorizer** — десктопное приложение для автоматической классификации электронных компонентов из спецификаций (BOM).
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v4.5.0 (PySide6)  
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.0.0 (PySide6)  
 > **Язык:** Python 3.13+  
-> **Архитектура:** Модульный пайплайн + AI интеграция
+> **Архитектура:** Модульный пайплайн + AI интеграция + Шифрование
 
 ---
 
@@ -14,7 +14,8 @@
 2. [Технологический стек](#-технологический-стек)
 3. [Ключевые модули системы](#-ключевые-модули-системы)
 4. [AI интеграция](#-ai-интеграция)
-5. [Структура файлов проекта](#-структура-файлов-проекта)
+5. [Шифрование данных](#-шифрование-данных)
+6. [Структура файлов проекта](#-структура-файлов-проекта)
 
 ---
 
@@ -71,6 +72,7 @@
 | **IO** | OpenPyXL, python-docx | Excel и Word файлы |
 | **PDF** | ReportLab | Экспорт в PDF с кириллицей |
 | **AI** | HTTP API | Интеграция с TelegramHelper |
+| **Crypto** | cryptography | AES-256-GCM шифрование |
 | **Build** | Inno Setup, py2app | Инсталляторы Win/macOS |
 | **QA** | pytest | Тестирование |
 
@@ -88,6 +90,7 @@
 | `formatters.py` | 🧹 Инструменты | Очистка данных, извлечение номиналов |
 | `parsers.py` | 📥 Ввод | Чтение .docx, .xlsx, .txt |
 | `config_manager.py` | ⚙️ Конфиг | Управление настройками |
+| `encryption.py` | 🔐 Безопасность | AES-256-GCM шифрование |
 
 ### GUI Modern Edition (`gui/`)
 
@@ -123,15 +126,16 @@ BOM Categorizer интегрируется с **TelegramHelper** для AI-по�
 ### Архитектура
 
 ```
-┌─────────────────────┐     HTTP/HTTPS      ┌─────────────────────┐
-│   BOM Categorizer   │ ←──────────────────→ │   TelegramHelper    │
-│   (Desktop App)     │     API Request      │   (VPS Server)      │
-└─────────────────────┘                      └─────────────────────┘
-         │                                            │
-         │ config_qt.json                             │ .env
-         │ - telegram_url                             │ - API_SECRET_KEY
-         │ - telegram_key                             │ - ANTHROPIC_API_KEY
-         └────────────────────────────────────────────┘
+┌─────────────────────┐                         ┌─────────────────────┐
+│   BOM Categorizer   │      HTTP + AES-256     │   TelegramHelper    │
+│   (Desktop App)     │ ◄─────────────────────► │   (VPS Server)      │
+└─────────────────────┘                         └─────────────────────┘
+         │                                               │
+         │ config_qt.json                                │ .env
+         │ - telegram_url                                │ - API_SECRET_KEY
+         │ - telegram_key                                │ - ENCRYPTION_KEY
+         │ - encryption_key                              │ - ANTHROPIC_API_KEY
+         └───────────────────────────────────────────────┘
 ```
 
 ### Возможности
@@ -141,11 +145,22 @@ BOM Categorizer интегрируется с **TelegramHelper** для AI-по�
 - **IVP описание** — входящий контроль
 - **Поиск по PDF** — даташиты онлайн
 
-### Получение API ключа
+### Режимы передачи данных
+
+| Режим | Описание | Когда использовать |
+|-------|----------|-------------------|
+| **Plain** | Обычный JSON | Локальная сеть, доверенное соединение |
+| **Encrypted** | AES-256-GCM + Base64 | Интернет, публичные сети |
+
+API автоматически определяет режим по содержимому запроса.
+
+### Получение ключей
 
 В Telegram боте (для админов):
 ```
-/api
+/api              — API ключ для авторизации
+/encryption_key   — Ключ шифрования (или fallback на API ключ)
+/gen_encryption_key — Сгенерировать новый ключ шифрования
 ```
 
 ### Конфигурация
@@ -153,8 +168,11 @@ BOM Categorizer интегрируется с **TelegramHelper** для AI-по�
 `config_qt.json`:
 ```json
 {
-  "telegram_url": "http://IP:8000/ai_query",
-  "telegram_key": "YOUR_API_KEY"
+  "api_keys": {
+    "telegram_url": "http://IP:8000/ai_query",
+    "telegram_key": "YOUR_API_KEY",
+    "encryption_key": "YOUR_ENCRYPTION_KEY"
+  }
 }
 ```
 
@@ -173,6 +191,46 @@ python tools/ai_search.py "NE555" --json
 
 ---
 
+## 🔐 Шифрование данных
+
+### Алгоритм: AES-256-GCM
+
+| Характеристика | Описание |
+|----------------|----------|
+| **Алгоритм** | AES-256-GCM (Galois/Counter Mode) |
+| **Ключ** | 256 бит (32 байта) |
+| **Nonce** | 12 байт (уникальный для каждого сообщения) |
+| **Auth Tag** | 16 байт (проверка целостности) |
+
+### Преимущества
+
+- **AEAD** — шифрование + аутентификация в одном
+- **Zero Trust** — защита даже при компрометации TLS
+- **Автоопределение** — один endpoint для обоих режимов
+
+### Структура зашифрованного пакета
+
+```
+┌─────────┬──────────┬─────────────┬─────────────────┬──────────┐
+│ Version │  Key ID  │    Nonce    │   Ciphertext    │   Tag    │
+│  1 byte │ 4 bytes  │  12 bytes   │    N bytes      │ 16 bytes │
+└─────────┴──────────┴─────────────┴─────────────────┴──────────┘
+```
+
+### Пример запроса
+
+**Обычный (Plain):**
+```json
+{"prompt": "Опиши компонент TPS54302", "provider": "anthropic"}
+```
+
+**Зашифрованный (Encrypted):**
+```json
+{"data": "AQAAAAEAAACnK8x2...base64..."}
+```
+
+---
+
 ## 📂 Структура файлов проекта
 
 ```
@@ -185,6 +243,7 @@ BOMCategorizer/
 │   ├── formatters.py                # 🧹 Очистка данных
 │   ├── component_database.py        # 💾 База знаний (JSON)
 │   ├── config_manager.py            # ⚙️ Управление конфигурацией
+│   ├── encryption.py                # 🔐 AES-256-GCM шифрование
 │   ├── excel_writer.py              # 📊 Excel отчёты
 │   ├── txt_writer.py                # 📝 Текстовые отчёты
 │   ├── pdf_exporter.py              # 📄 PDF экспорт
@@ -218,44 +277,16 @@ BOMCategorizer/
 │   ├── ai_search.py                 # 🤖 AI поиск компонентов
 │   ├── split_bom.py                 # 💻 CLI обработка BOM
 │   ├── manage_database.py           # 🗄️ Управление БД
-│   ├── interactive_classify.py      # 🎓 Обучение классификатора
-│   ├── interactive_classify_improved.py # 🎓 Улучшенное обучение
-│   ├── preview_unclassified.py      # 👁 Предпросмотр
-│   ├── merge_component_database.py  # 🔀 Слияние БД
 │   ├── update_version.py            # 🔄 Синхронизация версий
-│   ├── sync_installer_versions.py   # 🔄 Версии инсталляторов
-│   ├── create_icons.py              # 🎨 Создание иконок
-│   ├── check_pdf_fonts.py           # 🔤 Проверка шрифтов
-│   └── init_project.py              # 🚀 Инициализация
+│   └── ...                          # Другие утилиты
+│
+├── 📁 scripts/                      # 🖥 Скрипты
+│   └── bump_version.py              # 🔄 Управление версиями
 │
 ├── 📁 deployment/                   # 📦 Сборка и развёртывание
-│   ├── build_installer.py           # 🔨 Windows инсталлятор
 │   ├── build_macos.sh               # 🍎 macOS сборка
-│   ├── build_macos_simple.sh        # 🍎 Упрощённая сборка
-│   ├── setup_macos.py               # 🍎 py2app конфиг
-│   ├── installer_clean.iss          # 📄 Inno Setup (Standard)
 │   ├── installer_qt.iss             # 📄 Inno Setup (Modern)
-│   ├── create_release.ps1           # 📦 Релиз (Windows)
-│   ├── create_release.sh            # 📦 Релиз (Unix)
-│   ├── upload_to_existing_release.ps1 # ⬆️ Публикация (Win)
-│   └── upload_to_existing_release.sh  # ⬆️ Публикация (Unix)
-│
-├── 📁 scripts/                      # 🖥 BAT/PS1 скрипты
-│   ├── run_app.bat                  # ▶️ Запуск
-│   ├── run_modern_debug.bat         # 🐞 Debug Modern
-│   ├── run_standard_debug.bat       # 🐞 Debug Standard
-│   ├── run_tests.bat                # 🧪 Тесты
-│   ├── test_examples.bat            # 🧪 Тесты на файлах
-│   ├── post_install.ps1             # 🔧 Пост-установка
-│   ├── repair_install.ps1           # 🔧 Восстановление
-│   ├── rebuild_venv.ps1             # 🔄 Пересборка venv
-│   ├── database_backup.bat          # 💾 Бэкап БД
-│   ├── database_export.bat          # 📤 Экспорт БД
-│   ├── database_stats.bat           # 📊 Статистика БД
-│   ├── manage_database.bat          # 🗄️ Управление БД
-│   ├── split_bom.bat                # 💻 CLI обработка
-│   ├── check_pdf_fonts.bat          # 🔤 Проверка шрифтов
-│   └── download_fonts.bat/ps1       # 📥 Загрузка шрифтов
+│   └── ...                          # Другие скрипты сборки
 │
 ├── 📁 config/                       # ⚙️ Конфигурация
 │   ├── config.json.template         # Шаблон Standard
@@ -263,63 +294,19 @@ BOMCategorizer/
 │   └── rules.json                   # Правила классификации
 │
 ├── 📁 data/                         # 💾 Данные
-│   ├── component_database_template.json # Шаблон БД
-│   └── component_database.json      # Рабочая БД
-│
-├── 📁 assets/                       # 🎨 Ресурсы
-│   ├── icon.png                     # Иконка (PNG)
-│   ├── icon.ico                     # Иконка (Windows)
-│   └── icon.icns                    # Иконка (macOS)
-│
-├── 📁 fonts/                        # 🔤 Шрифты для PDF
-│   ├── DejaVuSans.ttf
-│   └── DejaVuSans-Bold.ttf
+│   └── component_database_template.json # Шаблон БД
 │
 ├── 📁 docs/                         # 📚 Документация
-│   ├── AI_INTEGRATION_GUIDE.md      # 🤖 AI интеграция
-│   ├── AI_CLASSIFIER_README.md      # 🤖 AI классификатор
-│   ├── CLI_USAGE.md                 # 💻 CLI использование
-│   ├── TESTING_GUIDE.md             # 🧪 Тестирование
-│   ├── USER_MANUAL.md               # 📖 Руководство
-│   ├── DATABASE_GUIDE.md            # 💾 Работа с БД
-│   ├── DATABASE_ARCHITECTURE.md     # 💾 Архитектура БД
-│   ├── CLASSIFICATION_RULES.md      # 📋 Правила классификации
-│   ├── INTERACTIVE_MODE_GUIDE.md    # 💬 Интерактивный режим
-│   ├── PDF_SEARCH_GUIDE.md          # 🔍 Поиск компонентов
-│   ├── DRAG_DROP_README.md          # 📎 Drag & Drop
-│   ├── DISPLAY_FIXES.md             # 🖥 Исправления отображения
-│   ├── OFFLINE_INSTALLATION_GUIDE.md # 📦 Офлайн установка
-│   ├── PLATFORM_COMPARISON.md       # ⚖️ Сравнение версий
 │   ├── VERSION_MANAGEMENT.md        # 🔄 Управление версиями
-│   ├── BAT_FILES_GUIDE.md           # 🖥 BAT файлы
-│   ├── FONT_SETUP_QUICK.md          # 🔤 Настройка шрифтов
-│   ├── ICONS_SETUP.md               # 🎨 Иконки
-│   ├── PDF_COLUMN_WIDTH_GUIDE.md    # 📄 Ширина колонок PDF
-│   ├── TXT_EXPORT_GUIDE.md          # 📝 TXT экспорт
-│   └── PROJECT_STRUCTURE.md         # 📂 Структура проекта
+│   ├── AI_INTEGRATION_GUIDE.md      # 🤖 AI интеграция
+│   └── ...                          # Другие документы
 │
 ├── 📁 tests/                        # 🧪 Тесты
-│   ├── conftest.py                  # Фикстуры pytest
-│   ├── test_classifiers.py          # Тесты классификации
-│   ├── test_formatters.py           # Тесты форматирования
-│   ├── test_database.py             # Тесты БД
-│   └── test_integration.py          # Интеграционные тесты
-│
-├── 📝 Документация (корень):
-│   ├── README.md                    # 📖 Главная страница
-│   ├── ANALYSIS_PROJECT.md          # 🏗 Архитектура (этот файл)
-│   ├── CHANGELOG.md                 # 🕒 История изменений
-│   ├── BUILD.md                     # 🛠 Сборка инсталляторов
-│   ├── SETUP.md                     # ⚙️ Настройка окружения
-│   ├── LAUNCHER_GUIDE.md            # 🚀 Инструкция по запуску
-│   └── CREATE_GIT_RELEASE.md        # 📦 Создание релизов
+│   └── ...
 │
 └── ⚙️ Конфигурация проекта:
-    ├── requirements.txt             # Основные зависимости
-    ├── requirements_install.txt     # Зависимости установки
-    ├── config.json                  # Конфиг Standard
-    ├── config_qt.json               # Конфиг Modern
-    ├── run_tests.py                 # Запуск тестов
+    ├── requirements.txt             # Зависимости
+    ├── config_qt.json               # Конфиг Modern (локальный)
     └── .gitignore                   # Исключения Git
 ```
 
@@ -335,8 +322,9 @@ BOMCategorizer/
 | Тестов | 4 модуля |
 | Поддерживаемых форматов | .doc, .docx, .xlsx, .txt |
 | Категорий компонентов | 20+ |
+| Шифрование | AES-256-GCM |
 
 ---
 
 **Разработчик:** Куреин М.Н.  
-**Обновлено:** 25.11.2025
+**Обновлено:** 28.11.2025
