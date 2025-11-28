@@ -1,4 +1,4 @@
-#define MyAppVersion "5.0.0"
+#define MyAppVersion "5.1.1"
 #define MyAppEdition "Modern Edition"
 [Setup]
 AppName=BOM Categorizer Modern Edition

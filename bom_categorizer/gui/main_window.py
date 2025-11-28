@@ -432,10 +432,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         zoom_out_action.triggered.connect(self.on_zoom_out)
         view_menu.addAction(zoom_out_action)
 
-        reset_zoom_action = QAction("Сбросить масштаб (Ctrl+0)", self)
-        reset_zoom_action.setShortcut(QKeySequence("Ctrl+0"))
-        reset_zoom_action.triggered.connect(self.reset_scale)
-        view_menu.addAction(reset_zoom_action)
+
 
         view_menu.addSeparator()
 
@@ -3162,7 +3159,7 @@ class BOMCategorizerMainWindow(QMainWindow):
 <li><b>F1</b> - Контекстная помощь</li>
 <li><b>Ctrl+T</b> - Переключить тему</li>
 <li><b>Ctrl+Plus/Minus</b> - Изменить масштаб</li>
-<li><b>Ctrl+0</b> - Сбросить масштаб</li>
+
 </ul>
 
 <p><b>Drag & Drop:</b></p>
