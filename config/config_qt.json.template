@@ -1,7 +1,7 @@
 {
   "_comment": "MAIN CONFIGURATION FILE for Modern GUI Edition (v4+). Use this for AI, Telegram, and Port settings.",
   "app_info": {
-    "version": "5.1.1",
+    "version": "5.1.2",
     "edition": "Modern Edition",
     "release_date": "28.11.2025",
     "developer": "Куреин М.Н.",
