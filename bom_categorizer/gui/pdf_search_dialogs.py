@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTextEdit, QGroupBox, QComboBox, QListWidget,
     QListWidgetItem, QFileDialog, QMessageBox, QTabWidget,
     QWidget, QGridLayout, QTextBrowser, QCheckBox, QFormLayout, QDialogButtonBox,
-    QSpinBox
+    QSpinBox, QToolTip
 )
 from PySide6.QtCore import Qt, Signal, QThread, QUrl
 from PySide6.QtGui import QFont, QTextCursor, QColor, QDesktopServices
@@ -36,6 +36,25 @@ class PDFSearchDialog(QDialog):
         self.resize(730, 900)  # Увеличена ширина на 30% (900 -> 1170)
         
         self._create_ui()
+        
+    def closeEvent(self, event):
+        """Обработчик закрытия диалога"""
+        # Скрываем любые активные подсказки, которые могли "застрять"
+        QToolTip.hideText()
+        
+        # Если есть активный воркер поиска, отключаем его сигналы
+        if hasattr(self, 'ai_worker') and self.ai_worker:
+             try:
+                 if self.ai_worker.isRunning():
+                     # Отключаем слот, чтобы результат не пытался обновить закрытое окно
+                     try:
+                        self.ai_worker.finished.disconnect()
+                     except Exception:
+                        pass
+             except Exception:
+                 pass
+                 
+        event.accept()
         
     def _create_ui(self):
         """Создает интерфейс"""
@@ -1418,6 +1437,12 @@ class UnifiedSettingsDialog(QDialog):
         self.telegram_port_input.setValue(8000)
         self.telegram_port_input.valueChanged.connect(self._on_telegram_port_changed)
         
+        # Checkbox for encryption (requested by user)
+        self.use_encryption_cb = QCheckBox("Шифрование")
+        self.use_encryption_cb.setToolTip("Если выключено, используется обычный HTTP без шифрования (небезопасно)")
+        self.use_encryption_cb.setChecked(True) # Default to True
+        self.use_encryption_cb.stateChanged.connect(self._on_encryption_toggled)
+        
         telegram_key_label = QLabel("Bot API Key:")
         self.telegram_key_input = QLineEdit()
         self.telegram_key_input.setEchoMode(QLineEdit.Password)
@@ -1446,6 +1471,7 @@ class UnifiedSettingsDialog(QDialog):
         telegram_layout.addWidget(self.telegram_url_input, 0, 1)
         telegram_layout.addWidget(telegram_port_label, 0, 2)
         telegram_layout.addWidget(self.telegram_port_input, 0, 3)
+        telegram_layout.addWidget(self.use_encryption_cb, 0, 4) # Added checkbox here
         
         telegram_layout.addWidget(telegram_key_label, 1, 0)
         telegram_layout.addWidget(self.telegram_key_input, 1, 1, 1, 3) # Span across columns
@@ -1559,26 +1585,30 @@ class UnifiedSettingsDialog(QDialog):
             
         self.telegram_url_input.blockSignals(True)
         try:
-            if not text.startswith(('http://', 'https://')):
-                # Если URL неполный, просто ничего не делаем или можно добавить http
-                pass
-            else:
-                parsed = urlparse(text)
-                # Заменяем netloc на новый с портом
-                # netloc обычно выглядит как "hostname:port" или "hostname"
-                
-                hostname = parsed.hostname or "localhost"
-                new_netloc = f"{hostname}:{port}"
-                
-                # Собираем URL обратно
-                new_parsed = parsed._replace(netloc=new_netloc)
-                new_url = urlunparse(new_parsed)
-                
-                self.telegram_url_input.setText(new_url)
-        except Exception:
-            pass
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(current_url)
+            # Reconstruct with new port
+            netloc_parts = parsed.netloc.split(':')
+            host = netloc_parts[0]
+            new_netloc = f"{host}:{port}"
+            
+            new_parsed = parsed._replace(netloc=new_netloc)
+            new_url = urlunparse(new_parsed)
+            
+            self.telegram_url_input.setText(new_url)
+        except Exception as e:
+            print(f"Error updating URL port: {e}")
         finally:
             self.telegram_url_input.blockSignals(False)
+
+    def _on_encryption_toggled(self, state):
+        """Обработчик переключения шифрования"""
+        from PyQt5.QtCore import Qt
+        is_checked = (state == Qt.Checked)
+        self.telegram_enc_input.setEnabled(is_checked)
+        # Можно добавить логику изменения URL (secure/plain), но это может быть сложно,
+        # так как пользователь может редактировать URL вручную.
+        # Лучше оставить URL как есть, а логику выбора endpoint оставить в ai_classifier.py
     
     def _load_settings(self):
         """Загружает настройки из config_qt.json"""
@@ -1617,18 +1647,24 @@ class UnifiedSettingsDialog(QDialog):
         self.ollama_url_input.setText(ollama_url)
         
         # Telegram Bot
-        telegram_url = api_keys.get("telegram_url") or "http://localhost:8000/ai_query"
-        self.telegram_url_input.setText(telegram_url)
+        # Telegram settings
+        # Use self.config for consistency, not self.full_config
+        telegram_settings = self.config.get("ai_classifier", {}) 
+        # api_keys is already defined at the start of _load_settings
         
-        # Инициализируем порт из URL
-        self._on_telegram_url_changed(telegram_url)
+        self.telegram_url_input.setText(api_keys.get("telegram_url", ""))
+        self.telegram_key_input.setText(api_keys.get("telegram_key", ""))
+        self.telegram_enc_input.setText(api_keys.get("telegram_enc_key", ""))
         
-        telegram_key = api_keys.get("telegram_key") or ""
-        self.telegram_key_input.setText(telegram_key)
+        # Load use_encryption setting (default True)
+        use_encryption = api_keys.get("telegram_use_encryption", True)
+        self.use_encryption_cb.setChecked(use_encryption)
+        self.telegram_enc_input.setEnabled(use_encryption)
         
-        telegram_enc_key = api_keys.get("telegram_enc_key") or \
-                           ai_classifier_conf.get("encryption_key") or ""
-        self.telegram_enc_input.setText(telegram_enc_key)
+        # Try to extract port from URL
+        url = api_keys.get("telegram_url", "") or ""
+        # Initialize port from URL after setting the URL input
+        self._on_telegram_url_changed(url)
         
         # --- 2. Загрузка настроек AI Классификатора ---
         settings = ai_classifier_conf # Используем уже загруженный конфиг
@@ -1655,15 +1691,20 @@ class UnifiedSettingsDialog(QDialog):
         self.config["pdf_search"]["custom_directories"] = custom_dirs
         
         # --- 1. Сохраняем API ключи в централизованную секцию ---
-        self.config["api_keys"] = {
-            "anthropic": self.anthropic_key_input.text().strip(),
-            "openai": self.openai_key_input.text().strip(),
-            "ollama_url": self.ollama_url_input.text().strip(),
-            "telegram_url": self.telegram_url_input.text().strip(),
-            "telegram_key": self.telegram_key_input.text().strip(),
-            "telegram_enc_key": self.telegram_enc_input.text().strip()
-        }
-
+        # Ensure api_keys section exists
+        if "api_keys" not in self.config:
+            self.config["api_keys"] = {}
+            
+        self.config["api_keys"]["anthropic"] = self.anthropic_key_input.text().strip()
+        self.config["api_keys"]["openai"] = self.openai_key_input.text().strip()
+        self.config["api_keys"]["ollama_url"] = self.ollama_url_input.text().strip()
+        
+        # Save Telegram settings to api_keys
+        self.config["api_keys"]["telegram_url"] = self.telegram_url_input.text().strip()
+        self.config["api_keys"]["telegram_key"] = self.telegram_key_input.text().strip()
+        self.config["api_keys"]["telegram_enc_key"] = self.telegram_enc_input.text().strip()
+        self.config["api_keys"]["telegram_use_encryption"] = self.use_encryption_cb.isChecked()
+        
         # --- 2. Сохраняем настройки AI классификатора ---
         # Удаляем старые ключи из секции pdf_search для очистки
         if "pdf_search" in self.config:
