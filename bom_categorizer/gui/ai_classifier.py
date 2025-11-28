@@ -26,7 +26,7 @@ class AIClassifierWorker(QThread):
     progress_update = Signal(str)
     
     def __init__(self, component_name: str, provider: str, api_key: str, model: str = None, 
-                 telegram_url: str = None, encryption_key: str = None):
+                 telegram_url: str = None, encryption_key: str = None, use_encryption: bool = True):
         super().__init__()
         self.component_name = component_name
         self.provider = provider.lower()
@@ -34,6 +34,7 @@ class AIClassifierWorker(QThread):
         self.model = model or self._get_default_model()
         self.telegram_url = telegram_url
         self.encryption_key = encryption_key
+        self.use_encryption = use_encryption
         
     def _get_default_model(self) -> str:
         """Получить модель по умолчанию для провайдера"""
@@ -71,14 +72,23 @@ class AIClassifierWorker(QThread):
             self.error_occurred.emit(f"Ошибка: {str(e)}")
 
     def _classify_telegram(self) -> Optional[tuple[str, str]]:
-        """Классификация через TelegramHelper API (Encrypted)"""
+        """Классификация через TelegramHelper API"""
         try:
             import requests
         except ImportError:
             raise ImportError("Установите библиотеку: pip install requests")
             
         if not self.telegram_url:
-    def _classify_telegram(self, component: str, prompt: str) -> Dict:
+            raise ValueError("Telegram URL не настроен")
+            
+        prompt = self._build_classification_prompt()
+        
+        if self.use_encryption:
+            return self._classify_telegram_secure(self.component_name, prompt)
+        else:
+            return self._classify_telegram_plain(self.component_name, prompt)
+
+    def _classify_telegram_secure(self, component: str, prompt: str) -> Dict:
         """Классификация через Telegram Bot API с шифрованием и маскировкой"""
         if not self.encryption_key:
             return {"error": "Encryption key not configured"}
@@ -174,7 +184,60 @@ class AIClassifierWorker(QThread):
                 
         except Exception as e:
             return {"error": f"Encryption/Network error: {str(e)}"}
-
+    def _classify_telegram_plain(self, component: str, prompt: str) -> Dict:
+        """Классификация через Telegram Bot API без шифрования (HTTP)"""
+        try:
+            # Подготавливаем данные
+            request_data = {
+                "query": prompt,
+                "provider": "openai",
+                "model": "gpt-4"
+            }
+            
+            # Определяем endpoint (убираем /secure если есть)
+            base_url = self.telegram_url.rstrip('/')
+            if base_url.endswith('/ai_query/secure'):
+                endpoint = base_url.replace('/ai_query/secure', '/ai_query')
+            elif base_url.endswith('/ai_query'):
+                endpoint = base_url
+            else:
+                endpoint = f"{base_url}/ai_query"
+                
+            response = requests.post(
+                endpoint,
+                json=request_data,
+                headers={"Content-Type": "application/json"},
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                return {"error": f"API Error: {response.status_code} - {response.text}"}
+                
+            response_data = response.json()
+            
+            # Парсим ответ
+            parsed_classification = self._parse_classification_response(response_data.get("response", ""))
+            
+            if parsed_classification:
+                category, confidence = parsed_classification
+                return {
+                    "category": category,
+                    "description": response_data.get("response", ""),
+                    "confidence": confidence,
+                    "reasoning": "Classified by Telegram Bot AI (Plain)",
+                    "raw_response": response_data.get("response", "")
+                }
+            else:
+                return {
+                    "category": "others",
+                    "description": response_data.get("response", ""),
+                    "confidence": "low",
+                    "reasoning": "Telegram Bot AI response parsing failed",
+                    "raw_response": response_data.get("response", "")
+                }
+                
+        except Exception as e:
+            return {"error": f"Network error: {str(e)}"}
     def _classify_anthropic(self) -> Optional[tuple[str, str]]:
         """Классификация через Anthropic Claude API"""
         try:
@@ -367,7 +430,8 @@ class AIClassifierSettings:
             "auto_classify": False,
             "confidence_threshold": "medium",
             "telegram_api_url": "http://localhost:8000",
-            "encryption_key": ""
+            "encryption_key": "",
+            "use_encryption": True
         }
 
     def save_settings(self, settings: Dict[str, Any]) -> bool:
@@ -435,6 +499,15 @@ class AIClassifierSettings:
             
         # Если нет, ищем в старом месте (ai_classifier section)
         return self.settings.get("encryption_key", "")
+
+    def get_use_encryption(self) -> bool:
+        """Использовать ли шифрование"""
+        # Сначала ищем в секции api_keys
+        api_keys = self.full_config.get("api_keys", {})
+        if "telegram_use_encryption" in api_keys:
+            return api_keys.get("telegram_use_encryption", True)
+            
+        return self.settings.get("use_encryption", True)
 
 
 def classify_component_with_ai(
