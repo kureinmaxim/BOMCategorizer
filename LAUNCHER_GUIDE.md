@@ -141,6 +141,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # 4. Установите зависимости
+# python -m pip install -r requirements.txt # old
 pip install -r requirements.txt
 ```
 
