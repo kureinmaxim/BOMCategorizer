@@ -37,7 +37,7 @@
 ```
 🔐 API для BOMCategorizer
 
-📍 URL: http://138.124.19.67:8000/ai_query
+📍 URL: http://YOUR_SERVER_IP:8000/ai_query
 🔑 API Key: 754c7afb2b146882...
 
 📋 Как использовать:

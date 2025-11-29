@@ -137,7 +137,7 @@ Edition: Modern Edition
 >>> api
 🔐 Настройки Telegram API:
 ==================================================
-URL: http://138.124.19.67:8000/ai_query
+URL: http://YOUR_SERVER_IP:8000/ai_query
 Key: 754c7afb2b146882...
 Длина ключа: 64 символов
 
@@ -146,7 +146,7 @@ Key: 754c7afb2b146882...
 ✅ API ключ синхронизирован!
 
 >>> apitest
-🔄 Проверка http://138.124.19.67:8000/health...
+🔄 Проверка http://YOUR_SERVER_IP:8000/health...
 ✅ API доступен!
 Статус: 200
 
@@ -157,7 +157,7 @@ Key: 754c7afb2b146882...
 📍 Текущий провайдер: TELEGRAM
 
 🔹 Telegram Bot API:
-   URL: http://138.124.19.67:8000/ai_query
+   URL: http://YOUR_SERVER_IP:8000/ai_query
    Key: 754c7afb2b14... (64 симв.)
    Статус: ✅ Настроен
 
@@ -213,7 +213,7 @@ Key: 754c7afb2b146882...
 📍 Текущий провайдер: TELEGRAM
 
 🔹 Telegram Bot API:
-   URL: http://138.124.19.67:8000/ai_query
+   URL: http://YOUR_SERVER_IP:8000/ai_query
    Key: 754c7afb2b14... (64 симв.)
    Статус: ✅ Настроен
 
@@ -716,11 +716,11 @@ python tools/sync_telegram_api.py --show
 📋 Текущие настройки API
 
 📁 Проект: /path/to/BOMCategorizer/config_qt.json
-   URL: http://138.124.19.67:8000/ai_query
+   URL: http://YOUR_SERVER_IP:8000/ai_query
    Key: 754c7afb2b14...
 
 📁 Установленное приложение: ~/Library/.../config_qt.json
-   URL: http://138.124.19.67:8000/ai_query
+   URL: http://YOUR_SERVER_IP:8000/ai_query
    Key: 754c7afb2b14...
 ```
 
@@ -750,9 +750,9 @@ python tools/sync_telegram_api.py --test
 ### Конфигурация сервера
 
 ```
-SERVER_SSH = "root@138.124.19.67"
+SERVER_SSH = "root@YOUR_SERVER_IP"
 SERVER_PORT = "22542"
-API_URL = "http://138.124.19.67:8000/ai_query"
+API_URL = "http://YOUR_SERVER_IP:8000/ai_query"
 ```
 
 ### Альтернативный способ

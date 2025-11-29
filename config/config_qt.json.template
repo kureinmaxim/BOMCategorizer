@@ -1,7 +1,7 @@
 {
   "_comment": "MAIN CONFIGURATION FILE for Modern GUI Edition (v4+). Use this for AI, Telegram, and Port settings.",
   "app_info": {
-    "version": "5.2.1",
+    "version": "5.2.3",
     "edition": "Modern Edition",
     "release_date": "29.11.2025",
     "developer": "Куреин М.Н.",
@@ -58,7 +58,7 @@
     "anthropic": "",
     "openai": "",
     "ollama_url": "http://localhost:11434",
-    "telegram_url": "http://138.124.19.67:8000/ai_query",
+    "telegram_url": "http://YOUR_SERVER_IP:8000/ai_query",
     "telegram_key": "",
     "telegram_enc_key": "",
     "telegram_use_encryption": true,

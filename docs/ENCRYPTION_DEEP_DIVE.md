@@ -80,7 +80,7 @@ json_body = {"data": b64_payload}
 **Заголовки:**
 ```http
 POST /ai_query/secure HTTP/1.1
-Host: 138.124.19.67:8000
+Host: YOUR_SERVER_IP:8000
 Content-Type: application/json
 User-Agent: Mozilla/5.0 ...
 ```
@@ -94,7 +94,7 @@ User-Agent: Mozilla/5.0 ...
 ### ✅ Видимая часть (Открытым текстом)
 Эти данные **НЕ** зашифрованы (на уровне HTTP, если нет HTTPS):
 
-1.  **IP адреса и порты**: `Src: 192.168.1.5`, `Dst: 138.124.19.67:8000`
+1.  **IP адреса и порты**: `Src: 192.168.1.5`, `Dst: YOUR_SERVER_IP:8000`
 2.  **HTTP Заголовки**:
     *   `POST /ai_query/secure` (Виден endpoint)
     *   `Host: ...`

@@ -18,7 +18,7 @@ def test_production_server():
     """Тест подключения к реальному серверу"""
     
     # Конфигурация РЕАЛЬНОГО сервера
-    API_URL = "http://138.124.19.67:8000"
+    API_URL = "http://YOUR_SERVER_IP:8000"
     API_KEY = "13ab4a4f0c5d57ecf93727ad684f1ac46f35971a65511bc962740b8eb8bb79a2"
     ENCRYPTION_KEY = "13ab4a4f0c5d57ecf93727ad684f1ac46f35971a65511bc962740b8eb8bb79a2"
     APP_ID = "bomcategorizer-v4"
@@ -120,7 +120,7 @@ def test_production_server():
         
     except requests.exceptions.ConnectionError:
         print("\n❌ Не удалось подключиться к серверу!")
-        print("   Проверьте доступность http://138.124.19.67:8000")
+        print("   Проверьте доступность http://YOUR_SERVER_IP:8000")
         return False
     except Exception as e:
         print(f"\n❌ Ошибка: {e}")

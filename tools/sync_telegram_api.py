@@ -17,10 +17,10 @@ import subprocess
 from pathlib import Path
 
 # Конфигурация
-SERVER_SSH = "root@138.124.19.67"
+SERVER_SSH = "root@YOUR_SERVER_IP"
 SERVER_PORT = "22542"
 SERVER_PATH = "/opt/TelegramHelper/.env"
-API_URL = "http://138.124.19.67:8000/ai_query"
+API_URL = "http://YOUR_SERVER_IP:8000/ai_query"
 
 def get_project_root() -> Path:
     """Получить корень проекта BOMCategorizer."""

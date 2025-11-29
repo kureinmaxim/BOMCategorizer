@@ -132,7 +132,7 @@ python tools/sync_telegram_api.py --fetch
 
 **Шаг 1:** Получить ключ на сервере
 ```bash
-ssh -p 22542 root@138.124.19.67
+ssh -p 22542 root@YOUR_SERVER_IP
 grep API_SECRET_KEY /opt/TelegramHelper/.env
 ```
 
@@ -142,7 +142,7 @@ grep API_SECRET_KEY /opt/TelegramHelper/.env
 ```json
 {
   "api_keys": {
-    "telegram_url": "http://138.124.19.67:8000/ai_query",
+    "telegram_url": "http://YOUR_SERVER_IP:8000/ai_query",
     "telegram_key": "ваш_ключ_здесь"
   }
 }
@@ -163,10 +163,10 @@ grep API_SECRET_KEY /opt/TelegramHelper/.env
 
 ```bash
 # curl (macOS/Linux)
-curl http://138.124.19.67:8000/health
+curl http://YOUR_SERVER_IP:8000/health
 
 # PowerShell (Windows)
-Invoke-WebRequest -Uri "http://138.124.19.67:8000/health"
+Invoke-WebRequest -Uri "http://YOUR_SERVER_IP:8000/health"
 ```
 
 Ожидаемый ответ:
@@ -216,7 +216,7 @@ python tools/sync_telegram_api.py --test
     "anthropic": "",
     "openai": "",
     "ollama_url": "http://localhost:11434",
-    "telegram_url": "http://138.124.19.67:8000/ai_query",
+    "telegram_url": "http://YOUR_SERVER_IP:8000/ai_query",
     "telegram_key": "754c7afb2b146882181bac0af01f21607158e3ffba8d5853628364b61101464c",
     "telegram_hmac_secret": ""
   },
@@ -301,8 +301,8 @@ python tools/sync_telegram_api.py --fetch
 **Причина:** Сервер недоступен или медленный
 
 **Решение:**
-1. Проверить доступность: `ping 138.124.19.67`
-2. Проверить порт: `curl http://138.124.19.67:8000/health`
+1. Проверить доступность: `ping YOUR_SERVER_IP`
+2. Проверить порт: `curl http://YOUR_SERVER_IP:8000/health`
 3. Проверить firewall на сервере
 
 ### ❌ SSH не подключается
@@ -312,7 +312,7 @@ python tools/sync_telegram_api.py --fetch
 **Решение:**
 ```bash
 # Проверить подключение
-ssh -p 22542 root@138.124.19.67 "echo OK"
+ssh -p 22542 root@YOUR_SERVER_IP "echo OK"
 ```
 
 ### ❌ Ключ не синхронизируется в установленное приложение

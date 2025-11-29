@@ -80,7 +80,7 @@ graph LR
 3.  Найдите секцию `api_keys`:
     ```json
     "api_keys": {
-      "telegram_url": "http://138.124.19.67:9090/ai_query",
+      "telegram_url": "http://YOUR_SERVER_IP:9090/ai_query",
       "telegram_key": "..."
     }
     ```
@@ -144,7 +144,7 @@ iptables -I INPUT -p tcp --dport 9090 -j ACCEPT
 С вашего локального компьютера (Mac) можно проверить доступность порта на сервере через `nc` (netcat):
 
 ```bash
-nc -zv 138.124.19.67 9090
+nc -zv YOUR_SERVER_IP 9090
 ```
 *   `Connection to ... succeeded!` — Порт открыт и доступен.
 *   `Connection refused` — Порт закрыт (никто не слушает) или заблокирован.
