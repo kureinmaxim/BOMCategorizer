@@ -1925,7 +1925,7 @@ class UnifiedSettingsDialog(QDialog):
         self.use_encryption_cb = QCheckBox("Шифрование")
         self.use_encryption_cb.setToolTip("Если выключено, используется обычный HTTP без шифрования (небезопасно)")
         self.use_encryption_cb.setChecked(True) # Default to True
-        self.use_encryption_cb.stateChanged.connect(self._on_encryption_toggled)
+        self.use_encryption_cb.toggled.connect(self._on_encryption_toggled)
         
         telegram_key_label = QLabel("Bot API Key:")
         self.telegram_key_input = QLineEdit()
@@ -1939,7 +1939,7 @@ class UnifiedSettingsDialog(QDialog):
             )
         )
 
-        telegram_enc_label = QLabel("Encryption Key:")
+        self.telegram_enc_label = QLabel("Encryption Key:")
         self.telegram_enc_input = QLineEdit()
         self.telegram_enc_input.setEchoMode(QLineEdit.Password)
         self.telegram_enc_input.setPlaceholderText("32-byte hex key")
@@ -1961,7 +1961,7 @@ class UnifiedSettingsDialog(QDialog):
         telegram_layout.addWidget(self.telegram_key_input, 1, 1, 1, 3) # Span across columns
         telegram_layout.addWidget(show_telegram_btn, 1, 4)
 
-        telegram_layout.addWidget(telegram_enc_label, 2, 0)
+        telegram_layout.addWidget(self.telegram_enc_label, 2, 0)
         telegram_layout.addWidget(self.telegram_enc_input, 2, 1, 1, 3) # Span across columns
         telegram_layout.addWidget(show_enc_btn, 2, 4)
         
@@ -2091,11 +2091,12 @@ class UnifiedSettingsDialog(QDialog):
         finally:
             self.telegram_url_input.blockSignals(False)
 
-    def _on_encryption_toggled(self, state):
+    def _on_encryption_toggled(self, checked):
         """Обработчик переключения шифрования"""
-        from PySide6.QtCore import Qt
-        is_checked = (state == Qt.Checked)
-        self.telegram_enc_input.setEnabled(is_checked)
+        # Сигнал toggled передает булево значение напрямую, что более надежно
+        # Активируем/деактивируем поле ввода и метку вместе
+        self.telegram_enc_input.setEnabled(checked)
+        self.telegram_enc_label.setEnabled(checked)
         # Можно добавить логику изменения URL (secure/plain), но это может быть сложно,
         # так как пользователь может редактировать URL вручную.
         # Лучше оставить URL как есть, а логику выбора endpoint оставить в ai_classifier.py
@@ -2251,8 +2252,13 @@ class UnifiedSettingsDialog(QDialog):
         
         # Load use_encryption setting (default True)
         use_encryption = api_keys.get("telegram_use_encryption", True)
+        # Временно отключаем сигнал, чтобы избежать конфликта при загрузке
+        self.use_encryption_cb.blockSignals(True)
         self.use_encryption_cb.setChecked(use_encryption)
+        self.use_encryption_cb.blockSignals(False)
+        # Устанавливаем состояние поля вручную после загрузки
         self.telegram_enc_input.setEnabled(use_encryption)
+        self.telegram_enc_label.setEnabled(use_encryption)
         
         # Try to extract port from URL
         url = api_keys.get("telegram_url", "") or ""
