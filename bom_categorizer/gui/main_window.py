@@ -448,9 +448,14 @@ class BOMCategorizerMainWindow(QMainWindow):
         ]
 
         self.view_mode_actions.clear()
-        for key, label in mode_definitions:
+        # На macOS "Ctrl" в Qt это Command, а "Meta" это Control.
+        # Пользователь просил именно Control, так как Command занят.
+        shortcuts = ["Meta+1", "Meta+2", "Meta+3"]
+        for i, (key, label) in enumerate(mode_definitions):
             action = QAction(label, self)
             action.setCheckable(True)
+            if i < len(shortcuts):
+                action.setShortcut(shortcuts[i])
             action.triggered.connect(lambda checked, m=key: self.set_view_mode(m))
             self.mode_menu.addAction(action)
             mode_group.addAction(action)
@@ -593,6 +598,30 @@ class BOMCategorizerMainWindow(QMainWindow):
         search_action = QWidgetAction(self)
         search_action.setDefaultWidget(search_widget)
         self.global_search_menu.addAction(search_action)
+        
+        self.global_search_menu.addSeparator()
+        
+        # Горячие клавиши для поиска
+        # На macOS Ctrl = Command, Meta = Control
+        # Пользователь хочет Command+F/P/A
+        
+        # Cmd+F - Фокус на поиск
+        focus_search_action = QAction("Найти (Focus)", self)
+        focus_search_action.setShortcut("Ctrl+F")
+        focus_search_action.triggered.connect(self.focus_global_search)
+        self.global_search_menu.addAction(focus_search_action)
+        
+        # Cmd+P - PDF Search
+        pdf_search_action = QAction("Поиск в PDF", self)
+        pdf_search_action.setShortcut("Ctrl+P")
+        pdf_search_action.triggered.connect(lambda: self.open_pdf_search_dialog(0))
+        self.global_search_menu.addAction(pdf_search_action)
+        
+        # Cmd+A - AI Search
+        ai_search_action = QAction("AI Поиск", self)
+        ai_search_action.setShortcut("Ctrl+A")
+        ai_search_action.triggered.connect(lambda: self.open_pdf_search_dialog(1))
+        self.global_search_menu.addAction(ai_search_action)
         
         # Подключаем сигналы
         search_button.clicked.connect(self.on_global_search_triggered)
@@ -2177,8 +2206,13 @@ class BOMCategorizerMainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось импортировать компоненты:\n{str(e)}")
             import traceback
-            traceback.print_exc()
-
+            self.update_filter()
+    
+    def focus_global_search(self):
+        """Устанавливает фокус на глобальный поиск и выделяет текст"""
+        self.global_search_input.setFocus()
+        self.global_search_input.selectAll()
+    
     def on_global_search_triggered(self):
         """Запускает глобальный поиск по базе данных и файлам."""
         if not self.global_search_input:

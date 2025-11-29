@@ -15,9 +15,9 @@ from PySide6.QtWidgets import (
     QLineEdit, QTextEdit, QGroupBox, QComboBox, QListWidget,
     QListWidgetItem, QFileDialog, QMessageBox, QTabWidget,
     QWidget, QGridLayout, QTextBrowser, QCheckBox, QFormLayout, QDialogButtonBox,
-    QSpinBox, QToolTip
+    QSpinBox, QToolTip, QApplication
 )
-from PySide6.QtCore import Qt, Signal, QThread, QUrl
+from PySide6.QtCore import Qt, Signal, QThread, QUrl, QTimer
 from PySide6.QtGui import QFont, QTextCursor, QColor, QDesktopServices
 
 
@@ -216,6 +216,7 @@ class PDFSearchDialog(QDialog):
         
         self.ai_provider_combo = QComboBox()
         self.ai_provider_combo.addItems(["Anthropic Claude", "OpenAI GPT-4o", "Telegram Bot"])
+        self.ai_provider_combo.setCurrentIndex(2)  # По умолчанию Telegram Bot
         self.ai_provider_combo.setFixedWidth(200)
         
         provider_layout.addWidget(provider_label)
@@ -718,7 +719,7 @@ class PDFSearchDialog(QDialog):
 - Не выдумывай аналоги — только реально существующие компоненты
 - Проверяй статус каждого аналога (obsolete не предлагать как основной вариант)
 - Если pin-to-pin аналогов не существует — так и напиши
-- При неуверенности в совместимости — отмечай "требует проверки по datasheet\"""",
+- При неуверенности в совместимости — отмечай "требует проверки по datasheet" """,
 
             4: f"""Роль: Инженер-аналитик, выполняющий сравнительный обзор компонентной базы для выбора оптимального решения.
 
@@ -916,13 +917,16 @@ class PDFSearchDialog(QDialog):
         if index == 5:  # Свой промпт
             custom = self.custom_prompt_edit.toPlainText().strip()
             if custom:
+                # Заменяем {component} только если он есть в тексте
                 base_prompt = custom.replace("{component}", component_name)
+                # Добавляем ограничение по длине
+                return base_prompt + "\n\nОБЯЗАТЕЛЬНО: Ответ должен быть ограничен 1000 символами."
             else:
                 base_prompt = prompts[0]  # Fallback на стандартный
         else:
             base_prompt = prompts.get(index, prompts[0])
         
-        # Добавляем уточняющую подсказку, если она есть
+        # Добавляем уточняющую подсказку, если она есть (только для стандартных промптов)
         if hint:
             hint_instruction = f"""
 
@@ -957,11 +961,23 @@ class PDFSearchDialog(QDialog):
     def on_search(self):
         """Запускает поиск"""
         query = self.search_input.text().strip()
-        if not query:
+        current_tab = self.tabs.currentIndex()
+        
+        # Проверка для локального поиска или стандартных AI промптов
+        is_custom_ai = False
+        if current_tab == 1 and self.prompt_combo.currentIndex() == 5:
+            is_custom_ai = True
+            
+        if not query and not is_custom_ai:
             QMessageBox.warning(self, "Предупреждение", "Введите название компонента")
             return
-        
-        current_tab = self.tabs.currentIndex()
+            
+        if is_custom_ai:
+            # Для своего промпта проверяем, что он не пустой
+            custom_text = self.custom_prompt_edit.toPlainText().strip()
+            if not custom_text:
+                QMessageBox.warning(self, "Предупреждение", "Введите текст вашего промпта")
+                return
         
         if current_tab == 0:  # Локальный поиск
             self.run_local_search(query)
@@ -1670,6 +1686,10 @@ class PDFSearchDialog(QDialog):
             # Сохраняем в родительском окне
             if hasattr(self.parent_window, 'save_pdf_search_config'):
                 self.parent_window.save_pdf_search_config(self.config)
+        
+        # Force hide any lingering tooltips after dialog closes
+        QToolTip.hideText()
+        QTimer.singleShot(100, QToolTip.hideText)
 
 
 class UnifiedSettingsDialog(QDialog):
@@ -2038,7 +2058,7 @@ class UnifiedSettingsDialog(QDialog):
         self.telegram_url_input.blockSignals(True)
         try:
             from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(current_url)
+            parsed = urlparse(text)
             # Reconstruct with new port
             netloc_parts = parsed.netloc.split(':')
             host = netloc_parts[0]
@@ -2055,7 +2075,7 @@ class UnifiedSettingsDialog(QDialog):
 
     def _on_encryption_toggled(self, state):
         """Обработчик переключения шифрования"""
-        from PyQt5.QtCore import Qt
+        from PySide6.QtCore import Qt
         is_checked = (state == Qt.Checked)
         self.telegram_enc_input.setEnabled(is_checked)
         # Можно добавить логику изменения URL (secure/plain), но это может быть сложно,
@@ -2192,15 +2212,24 @@ class UnifiedSettingsDialog(QDialog):
                 self.parent_window.update_ai_status()
             
             # Скрываем подсказки перед закрытием
-            QToolTip.hideText()
+            focus_widget = QApplication.focusWidget()
+            if focus_widget:
+                focus_widget.clearFocus()
+            
+            # Используем таймер для отложенного скрытия, чтобы гарантировать очистку после закрытия окна
+            QToolTip.hideText() # Скрываем сразу
+            QTimer.singleShot(100, QToolTip.hideText) # Скрываем через 100мс
+            QTimer.singleShot(500, QToolTip.hideText) # Второй контрольный выстрел
+            
             self.accept()
         except Exception as e:
             QMessageBox.warning(self, "Ошибка", f"Не удалось сохранить настройки: {e}")
 
     def closeEvent(self, event):
         """Обработчик закрытия окна"""
-        # Скрываем любые активные подсказки, которые могли "застрять"
+        # Скрываем любые активные подсказки с задержкой
         QToolTip.hideText()
+        QTimer.singleShot(100, QToolTip.hideText)
         event.accept()
 
     def get_config(self) -> dict:
