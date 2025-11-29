@@ -12,6 +12,6 @@ BOM Categorizer - модульная система категоризации B
 - main: главная функция CLI
 """
 
-__version__ = "5.1.3"
+__version__ = "5.2.3"
 __author__ = "Куреин М.Н."
 __author_en__ = "Kurein M.N."
