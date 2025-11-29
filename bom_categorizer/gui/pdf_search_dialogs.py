@@ -1961,6 +1961,7 @@ class UnifiedSettingsDialog(QDialog):
         telegram_layout.addWidget(self.telegram_key_input, 1, 1, 1, 3) # Span across columns
         telegram_layout.addWidget(show_telegram_btn, 1, 4)
 
+        telegram_layout.addWidget(telegram_enc_label, 2, 0)
         telegram_layout.addWidget(self.telegram_enc_input, 2, 1, 1, 3) # Span across columns
         telegram_layout.addWidget(show_enc_btn, 2, 4)
         
