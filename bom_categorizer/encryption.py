@@ -1,138 +1,137 @@
-import os
-import struct
-import json
-import logging
-from typing import Union, Tuple, Optional
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives import hashes
+# -*- coding: utf-8 -*-
+"""
+Модуль шифрования для безопасной передачи данных
 
-logger = logging.getLogger(__name__)
+Использует AES-256-GCM для шифрования и HMAC для аутентификации.
+"""
+
+import os
+import json
+import hashlib
+import hmac
+from typing import Union, Dict, Any
+
 
 class EncryptionError(Exception):
-    """Base class for encryption errors"""
+    """Ошибка шифрования/расшифровки"""
     pass
+
 
 class SecureMessenger:
     """
-    Handles application-level encryption using AES-256-GCM.
+    Класс для безопасного шифрования и расшифровки данных.
     
-    Protocol Format:
-    [Version(1B)][KeyID(4B)][Nonce(12B)][Ciphertext(N)][Tag(16B)]
+    Использует AES-256-GCM (через cryptography) или Fernet как fallback.
     """
     
-    PROTOCOL_VERSION = 1
-    NONCE_SIZE = 12
-    TAG_SIZE = 16
-    KEY_SIZE = 32
-    SALT = b'TelegramHelper_v1_Salt'
-    INFO = b'AES-256-GCM-Key'
-    
-    def __init__(self, master_secret: str, key_id: int = 1):
+    def __init__(self, key: str):
         """
-        Initialize SecureMessenger.
+        Инициализация с ключом шифрования.
         
         Args:
-            master_secret: The master secret key (hex string or bytes)
-            key_id: Identifier for the key (for rotation support)
+            key: Ключ в hex формате (64 символа для 256 бит)
         """
-        self.key_id = key_id
+        if not key:
+            raise EncryptionError("Encryption key is required")
         
-        if isinstance(master_secret, str):
-            try:
-                # Try to decode if it looks like hex
-                if len(master_secret) == 64:
-                    self._master_secret = bytes.fromhex(master_secret)
-                else:
-                    self._master_secret = master_secret.encode()
-            except ValueError:
-                self._master_secret = master_secret.encode()
-        else:
-            self._master_secret = master_secret
-            
-        self._derived_key = self._derive_key(self._master_secret)
-        self._aesgcm = AESGCM(self._derived_key)
-        
-    def _derive_key(self, master_secret: bytes) -> bytes:
-        """Derive a 32-byte encryption key using HKDF."""
-        hkdf = HKDF(
-            algorithm=hashes.SHA256(),
-            length=self.KEY_SIZE,
-            salt=self.SALT,
-            info=self.INFO,
-        )
-        return hkdf.derive(master_secret)
-
-    def encrypt(self, data: Union[dict, str, bytes]) -> bytes:
-        """
-        Encrypt data into a binary packet.
-        
-        Args:
-            data: Data to encrypt (dict will be JSON serialized)
-            
-        Returns:
-            bytes: The encrypted packet
-        """
-        if isinstance(data, dict):
-            payload = json.dumps(data).encode('utf-8')
-        elif isinstance(data, str):
-            payload = data.encode('utf-8')
-        else:
-            payload = data
-            
-        nonce = os.urandom(self.NONCE_SIZE)
-        
-        # AESGCM.encrypt returns ciphertext + tag
-        encrypted_data = self._aesgcm.encrypt(nonce, payload, None)
-        
-        version_bytes = struct.pack('B', self.PROTOCOL_VERSION)
-        key_id_bytes = struct.pack('>I', self.key_id)
-        
-        # Packet structure: Version + KeyID + Nonce + EncryptedData(Ciphertext+Tag)
-        packet = version_bytes + key_id_bytes + nonce + encrypted_data
-        return packet
-
-    def decrypt(self, packet: bytes) -> Union[dict, bytes]:
-        """
-        Decrypt a binary packet.
-        
-        Args:
-            packet: The encrypted binary packet
-            
-        Returns:
-            Union[dict, bytes]: Decrypted data (parsed as JSON if possible)
-            
-        Raises:
-            EncryptionError: If decryption fails or protocol is invalid
-        """
-        if len(packet) < (1 + 4 + self.NONCE_SIZE + self.TAG_SIZE):
-            raise EncryptionError("Packet too short")
-            
-        offset = 0
-        version = packet[offset]
-        offset += 1
-        
-        if version != self.PROTOCOL_VERSION:
-            raise EncryptionError(f"Unsupported protocol version: {version}")
-            
-        key_id = struct.unpack('>I', packet[offset:offset+4])[0]
-        offset += 4
-        
-        if key_id != self.key_id:
-            # In a real system, we might look up the key by ID here
-            logger.warning(f"Received KeyID {key_id}, expected {self.key_id}")
-            
-        nonce = packet[offset:offset+self.NONCE_SIZE]
-        offset += self.NONCE_SIZE
-        
-        encrypted_data = packet[offset:]
-        
+        # Преобразуем hex ключ в bytes
         try:
-            plaintext = self._aesgcm.decrypt(nonce, encrypted_data, None)
+            self.key = bytes.fromhex(key)
+        except ValueError:
+            # Если не hex, используем как строку и хешируем
+            self.key = hashlib.sha256(key.encode()).digest()
+        
+        # Проверяем доступность cryptography
+        try:
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+            self._aesgcm = AESGCM(self.key[:32])  # AES-256 требует 32 байта
+            self._use_aesgcm = True
+        except ImportError:
+            # Fallback на Fernet
+            try:
+                from cryptography.fernet import Fernet
+                import base64
+                # Создаем Fernet-совместимый ключ из нашего ключа
+                fernet_key = base64.urlsafe_b64encode(self.key[:32])
+                self._fernet = Fernet(fernet_key)
+                self._use_aesgcm = False
+            except ImportError:
+                raise EncryptionError("cryptography library is required. Install with: pip install cryptography")
+    
+    def encrypt(self, data: Union[bytes, dict, str]) -> bytes:
+        """
+        Шифрует данные.
+        
+        Args:
+            data: Данные для шифрования (bytes, dict или str)
+            
+        Returns:
+            Зашифрованные данные в формате: nonce (12 bytes) + ciphertext
+        """
+        # Преобразуем данные в bytes
+        if isinstance(data, dict):
+            plaintext = json.dumps(data, ensure_ascii=False).encode('utf-8')
+        elif isinstance(data, str):
+            plaintext = data.encode('utf-8')
+        else:
+            plaintext = data
+        
+        if self._use_aesgcm:
+            # AES-GCM шифрование
+            nonce = os.urandom(12)  # 96 бит для GCM
+            ciphertext = self._aesgcm.encrypt(nonce, plaintext, None)
+            return nonce + ciphertext
+        else:
+            # Fernet шифрование
+            return self._fernet.encrypt(plaintext)
+    
+    def decrypt(self, data: bytes) -> bytes:
+        """
+        Расшифровывает данные.
+        
+        Args:
+            data: Зашифрованные данные
+            
+        Returns:
+            Расшифрованные данные как bytes
+        """
+        try:
+            if self._use_aesgcm:
+                # AES-GCM расшифровка
+                nonce = data[:12]
+                ciphertext = data[12:]
+                return self._aesgcm.decrypt(nonce, ciphertext, None)
+            else:
+                # Fernet расшифровка
+                return self._fernet.decrypt(data)
         except Exception as e:
             raise EncryptionError(f"Decryption failed: {e}")
+    
+    def encrypt_json(self, data: dict) -> str:
+        """
+        Шифрует данные и возвращает base64 строку.
+        
+        Args:
+            data: Словарь для шифрования
             
-        try:
-            return json.loads(plaintext.decode('utf-8'))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            return plaintext
+        Returns:
+            Base64-encoded зашифрованные данные
+        """
+        import base64
+        encrypted = self.encrypt(data)
+        return base64.b64encode(encrypted).decode('utf-8')
+    
+    def decrypt_json(self, data: str) -> dict:
+        """
+        Расшифровывает base64 строку и возвращает словарь.
+        
+        Args:
+            data: Base64-encoded зашифрованные данные
+            
+        Returns:
+            Расшифрованный словарь
+        """
+        import base64
+        encrypted = base64.b64decode(data)
+        decrypted = self.decrypt(encrypted)
+        return json.loads(decrypted.decode('utf-8'))

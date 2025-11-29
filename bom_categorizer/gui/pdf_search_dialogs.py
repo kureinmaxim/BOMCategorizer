@@ -1058,6 +1058,8 @@ class PDFSearchDialog(QDialog):
         provider = self.ai_provider_combo.currentText()
         api_key = None
         api_url = None
+        use_encryption = False
+        encryption_key = None
         
         if "Anthropic" in provider:
             api_key = api_keys.get("anthropic")
@@ -1066,6 +1068,9 @@ class PDFSearchDialog(QDialog):
             api_key = api_keys.get("telegram_key")
             api_url = api_keys.get("telegram_url")
             provider_name = "telegram_bot"
+            # Получаем настройки шифрования для Telegram Bot
+            use_encryption = api_keys.get("telegram_use_encryption", False)
+            encryption_key = api_keys.get("telegram_enc_key")
         else:
             api_key = api_keys.get("openai")
             provider_name = "openai"
@@ -1089,17 +1094,21 @@ class PDFSearchDialog(QDialog):
             hint = self.hint_edit.toPlainText().strip()
         
         # Показываем индикатор загрузки с информацией о типе запроса
+        encryption_info = " 🔒" if use_encryption else ""
         hint_info = f"<p style='color: #a6e3a1;'>💡 Подсказка: {hint[:50]}{'...' if len(hint) > 50 else ''}</p>" if hint else ""
         self.ai_results_browser.setHtml(
-            f"<h3>⏳ Поиск...</h3>"
+            f"<h3>⏳ Поиск...{encryption_info}</h3>"
             f"<p>Запрашиваем информацию у AI...</p>"
             f"<p style='color: #6c7086;'>Тип запроса: {prompt_type}</p>"
             f"<p style='color: #6c7086;'>Компонент: {query}</p>"
             f"{hint_info}"
         )
         
-        # Запускаем поиск в отдельном потоке с кастомным промптом
-        self.ai_worker = AISearchWorker(provider_name, api_key, query, api_url, custom_prompt)
+        # Запускаем поиск в отдельном потоке с кастомным промптом и шифрованием
+        self.ai_worker = AISearchWorker(
+            provider_name, api_key, query, api_url, custom_prompt,
+            use_encryption=use_encryption, encryption_key=encryption_key
+        )
         self.ai_worker.finished.connect(self.display_ai_results)
         self.ai_worker.start()
     
@@ -2262,19 +2271,28 @@ class AISearchWorker(QThread):
     """Worker для AI поиска в отдельном потоке"""
     finished = Signal(dict)
     
-    def __init__(self, provider: str, api_key: str, query: str, api_url: str = None, custom_prompt: str = None):
+    def __init__(self, provider: str, api_key: str, query: str, api_url: str = None, 
+                 custom_prompt: str = None, use_encryption: bool = False, encryption_key: str = None):
         super().__init__()
         self.provider = provider
         self.api_key = api_key
         self.query = query
         self.api_url = api_url
         self.custom_prompt = custom_prompt
+        self.use_encryption = use_encryption
+        self.encryption_key = encryption_key
     
     def run(self):
         """Выполняет AI поиск"""
         from .pdf_search import AIPDFSearcher
         
-        searcher = AIPDFSearcher(self.provider, self.api_key, self.api_url)
+        searcher = AIPDFSearcher(
+            self.provider, 
+            self.api_key, 
+            self.api_url,
+            use_encryption=self.use_encryption,
+            encryption_key=self.encryption_key
+        )
         
         # Используем кастомный промпт если передан
         if self.custom_prompt:

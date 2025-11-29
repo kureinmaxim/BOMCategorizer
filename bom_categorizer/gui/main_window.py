@@ -448,9 +448,12 @@ class BOMCategorizerMainWindow(QMainWindow):
         ]
 
         self.view_mode_actions.clear()
-        # На macOS "Ctrl" в Qt это Command, а "Meta" это Control.
-        # Пользователь просил именно Control, так как Command занят.
-        shortcuts = ["Meta+1", "Meta+2", "Meta+3"]
+        # На Windows используем Ctrl+1/2/3, на macOS — Meta (Control)
+        # Meta на macOS это физическая клавиша Control, Ctrl — это Command
+        if platform.system() == 'Windows':
+            shortcuts = ["Ctrl+1", "Ctrl+2", "Ctrl+3"]
+        else:
+            shortcuts = ["Meta+1", "Meta+2", "Meta+3"]
         for i, (key, label) in enumerate(mode_definitions):
             action = QAction(label, self)
             action.setCheckable(True)
