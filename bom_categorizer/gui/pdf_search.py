@@ -14,9 +14,22 @@ import hmac
 import hashlib
 import time
 import uuid
+import base64
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 import json
+
+# Импорт SecureMessenger для шифрования
+try:
+    from ..encryption import SecureMessenger
+    ENCRYPTION_AVAILABLE = True
+except ImportError:
+    try:
+        from bom_categorizer.encryption import SecureMessenger
+        ENCRYPTION_AVAILABLE = True
+    except ImportError:
+        SecureMessenger = None
+        ENCRYPTION_AVAILABLE = False
 
 
 def create_signed_headers(
@@ -186,7 +199,9 @@ class LocalPDFSearcher:
 class AIPDFSearcher:
     """Класс для AI-поиска информации о компонентах"""
     
-    def __init__(self, api_provider: str = "anthropic", api_key: Optional[str] = None, api_url: Optional[str] = None):
+    def __init__(self, api_provider: str = "anthropic", api_key: Optional[str] = None, 
+                 api_url: Optional[str] = None, use_encryption: bool = False, 
+                 encryption_key: Optional[str] = None):
         """
         Инициализация AI поисковика
         
@@ -194,10 +209,14 @@ class AIPDFSearcher:
             api_provider: Провайдер API ("anthropic", "openai" или "telegram_bot")
             api_key: API ключ
             api_url: URL API (для Telegram Bot)
+            use_encryption: Использовать ли шифрование для Telegram Bot
+            encryption_key: Ключ шифрования (hex string)
         """
         self.api_provider = api_provider.lower()
         self.api_key = api_key
         self.api_url = api_url
+        self.use_encryption = use_encryption
+        self.encryption_key = encryption_key
         
     def search(self, component_name: str) -> Optional[Dict[str, any]]:
         """
@@ -348,11 +367,11 @@ class AIPDFSearcher:
             }
     
     def _search_with_custom_prompt_telegram(self, component_name: str, custom_prompt: str) -> Dict[str, any]:
-        """Поиск через Telegram Bot API с кастомным промптом и подписью"""
+        """Поиск через Telegram Bot API с кастомным промптом, подписью и опциональным шифрованием"""
         try:
             import requests
             
-            url = self.api_url or "http://localhost:8000/ai_query"
+            base_url = self.api_url or "http://localhost:8000/ai_query"
             
             payload = {
                 "prompt": custom_prompt,
@@ -360,18 +379,40 @@ class AIPDFSearcher:
                 "max_tokens": 4096
             }
             
-            # Создаём подписанные заголовки для безопасной передачи
-            if self.api_key:
-                headers = create_signed_headers(
-                    payload=payload,
-                    api_key=self.api_key,
-                    hmac_secret=self.api_key,  # Используем api_key как hmac_secret
-                    app_id="bomcategorizer-v4"
-                )
+            # Проверяем, нужно ли шифрование
+            if self.use_encryption and self.encryption_key and ENCRYPTION_AVAILABLE:
+                # Шифруем запрос
+                messenger = SecureMessenger(self.encryption_key)
+                request_data = json.dumps(payload).encode('utf-8')
+                encrypted_bytes = messenger.encrypt(request_data)
+                b64_payload = base64.b64encode(encrypted_bytes).decode('utf-8')
+                
+                # Определяем endpoint для шифрованных запросов
+                url = base_url.rstrip('/')
+                if url.endswith('/ai_query'):
+                    url = url.replace('/ai_query', '/ai_query/secure')
+                elif not url.endswith('/ai_query/secure'):
+                    url = f"{url}/ai_query/secure"
+                
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+                response = requests.post(url, json={"data": b64_payload}, headers=headers, timeout=120)
             else:
-                headers = {"Content-Type": "application/json"}
-            
-            response = requests.post(url, json=payload, headers=headers, timeout=120)
+                # Обычный запрос без шифрования
+                url = base_url
+                if self.api_key:
+                    headers = create_signed_headers(
+                        payload=payload,
+                        api_key=self.api_key,
+                        hmac_secret=self.api_key,
+                        app_id="bomcategorizer-v4"
+                    )
+                else:
+                    headers = {"Content-Type": "application/json"}
+                
+                response = requests.post(url, json=payload, headers=headers, timeout=120)
             
             if response.status_code != 200:
                 return {
@@ -380,13 +421,35 @@ class AIPDFSearcher:
                     'error': f"Ошибка сервера: {response.status_code} - {response.text}"
                 }
             
-            data = response.json()
+            # Обработка ответа
+            response_json = response.json()
+            
+            # Если шифрование включено, расшифровываем ответ
+            if self.use_encryption and self.encryption_key and ENCRYPTION_AVAILABLE and "data" in response_json:
+                try:
+                    messenger = SecureMessenger(self.encryption_key)
+                    encrypted_response = base64.b64decode(response_json["data"])
+                    decrypted_response = messenger.decrypt(encrypted_response)
+                    if isinstance(decrypted_response, bytes):
+                        data = json.loads(decrypted_response.decode('utf-8'))
+                    else:
+                        data = decrypted_response
+                except Exception as decrypt_err:
+                    return {
+                        'component': component_name,
+                        'provider': 'Telegram Bot',
+                        'error': f"Ошибка расшифровки ответа: {decrypt_err}"
+                    }
+            else:
+                data = response_json
+            
             response_text = data.get("response", "")
             model_used = data.get("model", "unknown")
             api_provider = data.get("provider", "anthropic")
             
             # Формируем строку провайдера с моделью
-            provider_str = f"Telegram Bot ({api_provider}: {model_used})"
+            encryption_tag = " 🔒" if self.use_encryption else ""
+            provider_str = f"Telegram Bot ({api_provider}: {model_used}){encryption_tag}"
             
             # Пытаемся извлечь JSON из ответа
             json_match = re.search(r'\{[\s\S]*\}', response_text)
@@ -542,11 +605,11 @@ class AIPDFSearcher:
             }
 
     def _search_telegram_bot(self, component_name: str) -> Dict[str, any]:
-        """Поиск через Telegram Bot API с подписью запроса"""
+        """Поиск через Telegram Bot API с подписью запроса и опциональным шифрованием"""
         try:
             import requests
             
-            url = self.api_url or "http://localhost:8000/ai_query"
+            base_url = self.api_url or "http://localhost:8000/ai_query"
             
             prompt = f"""Найди информацию об электронном компоненте: {component_name}
 
@@ -581,18 +644,40 @@ class AIPDFSearcher:
                 "max_tokens": 2048
             }
             
-            # Создаём подписанные заголовки для безопасной передачи
-            if self.api_key:
-                headers = create_signed_headers(
-                    payload=payload,
-                    api_key=self.api_key,
-                    hmac_secret=self.api_key,
-                    app_id="bomcategorizer-v4"
-                )
+            # Проверяем, нужно ли шифрование
+            if self.use_encryption and self.encryption_key and ENCRYPTION_AVAILABLE:
+                # Шифруем запрос
+                messenger = SecureMessenger(self.encryption_key)
+                request_data = json.dumps(payload).encode('utf-8')
+                encrypted_bytes = messenger.encrypt(request_data)
+                b64_payload = base64.b64encode(encrypted_bytes).decode('utf-8')
+                
+                # Определяем endpoint для шифрованных запросов
+                url = base_url.rstrip('/')
+                if url.endswith('/ai_query'):
+                    url = url.replace('/ai_query', '/ai_query/secure')
+                elif not url.endswith('/ai_query/secure'):
+                    url = f"{url}/ai_query/secure"
+                
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                }
+                response = requests.post(url, json={"data": b64_payload}, headers=headers, timeout=60)
             else:
-                headers = {"Content-Type": "application/json"}
-            
-            response = requests.post(url, json=payload, headers=headers, timeout=60)
+                # Обычный запрос без шифрования
+                url = base_url
+                if self.api_key:
+                    headers = create_signed_headers(
+                        payload=payload,
+                        api_key=self.api_key,
+                        hmac_secret=self.api_key,
+                        app_id="bomcategorizer-v4"
+                    )
+                else:
+                    headers = {"Content-Type": "application/json"}
+                
+                response = requests.post(url, json=payload, headers=headers, timeout=60)
             
             if response.status_code != 200:
                 return {
@@ -601,13 +686,35 @@ class AIPDFSearcher:
                     'error': f"Ошибка сервера: {response.status_code} - {response.text}"
                 }
             
-            data = response.json()
+            # Обработка ответа
+            response_json = response.json()
+            
+            # Если шифрование включено, расшифровываем ответ
+            if self.use_encryption and self.encryption_key and ENCRYPTION_AVAILABLE and "data" in response_json:
+                try:
+                    messenger = SecureMessenger(self.encryption_key)
+                    encrypted_response = base64.b64decode(response_json["data"])
+                    decrypted_response = messenger.decrypt(encrypted_response)
+                    if isinstance(decrypted_response, bytes):
+                        data = json.loads(decrypted_response.decode('utf-8'))
+                    else:
+                        data = decrypted_response
+                except Exception as decrypt_err:
+                    return {
+                        'component': component_name,
+                        'provider': 'Telegram Bot',
+                        'error': f"Ошибка расшифровки ответа: {decrypt_err}"
+                    }
+            else:
+                data = response_json
+            
             response_text = data.get("response", "")
             model_used = data.get("model", "unknown")
             api_provider = data.get("provider", "anthropic")
             
             # Формируем строку провайдера с моделью
-            provider_str = f"Telegram Bot ({api_provider}: {model_used})"
+            encryption_tag = " 🔒" if self.use_encryption else ""
+            provider_str = f"Telegram Bot ({api_provider}: {model_used}){encryption_tag}"
             
             # Пытаемся извлечь JSON из ответа
             json_match = re.search(r'\{[\s\S]*\}', response_text)
