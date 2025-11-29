@@ -201,7 +201,7 @@ class AIPDFSearcher:
     
     def __init__(self, api_provider: str = "anthropic", api_key: Optional[str] = None, 
                  api_url: Optional[str] = None, use_encryption: bool = False, 
-                 encryption_key: Optional[str] = None):
+                 encryption_key: Optional[str] = None, app_id: str = "bomcategorizer-v5"):
         """
         Инициализация AI поисковика
         
@@ -211,12 +211,14 @@ class AIPDFSearcher:
             api_url: URL API (для Telegram Bot)
             use_encryption: Использовать ли шифрование для Telegram Bot
             encryption_key: Ключ шифрования (hex string)
+            app_id: Идентификатор приложения для Telegram API
         """
         self.api_provider = api_provider.lower()
         self.api_key = api_key
         self.api_url = api_url
         self.use_encryption = use_encryption
         self.encryption_key = encryption_key
+        self.app_id = app_id
         
     def search(self, component_name: str) -> Optional[Dict[str, any]]:
         """
@@ -396,7 +398,9 @@ class AIPDFSearcher:
                 
                 headers = {
                     "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "X-API-KEY": self.api_key,
+                    "X-APP-ID": self.app_id
                 }
                 response = requests.post(url, json={"data": b64_payload}, headers=headers, timeout=120)
             else:
@@ -407,7 +411,7 @@ class AIPDFSearcher:
                         payload=payload,
                         api_key=self.api_key,
                         hmac_secret=self.api_key,
-                        app_id="bomcategorizer-v4"
+                        app_id=self.app_id
                     )
                 else:
                     headers = {"Content-Type": "application/json"}
@@ -661,7 +665,9 @@ class AIPDFSearcher:
                 
                 headers = {
                     "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                    "X-API-KEY": self.api_key,
+                    "X-APP-ID": self.app_id
                 }
                 response = requests.post(url, json={"data": b64_payload}, headers=headers, timeout=60)
             else:
@@ -672,7 +678,7 @@ class AIPDFSearcher:
                         payload=payload,
                         api_key=self.api_key,
                         hmac_secret=self.api_key,
-                        app_id="bomcategorizer-v4"
+                        app_id=self.app_id
                     )
                 else:
                     headers = {"Content-Type": "application/json"}

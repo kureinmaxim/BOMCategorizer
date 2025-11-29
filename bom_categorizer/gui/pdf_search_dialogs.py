@@ -1055,11 +1055,13 @@ class PDFSearchDialog(QDialog):
         
         # Получаем API ключ из нового централизованного конфига
         api_keys = self.config.get("api_keys", {})
+        telegram_security = self.config.get("telegram_security", {})
         provider = self.ai_provider_combo.currentText()
         api_key = None
         api_url = None
         use_encryption = False
         encryption_key = None
+        app_id = telegram_security.get("app_id", "bomcategorizer-v5")
         
         if "Anthropic" in provider:
             api_key = api_keys.get("anthropic")
@@ -1107,7 +1109,8 @@ class PDFSearchDialog(QDialog):
         # Запускаем поиск в отдельном потоке с кастомным промптом и шифрованием
         self.ai_worker = AISearchWorker(
             provider_name, api_key, query, api_url, custom_prompt,
-            use_encryption=use_encryption, encryption_key=encryption_key
+            use_encryption=use_encryption, encryption_key=encryption_key,
+            app_id=app_id
         )
         self.ai_worker.finished.connect(self.display_ai_results)
         self.ai_worker.start()
@@ -1958,9 +1961,14 @@ class UnifiedSettingsDialog(QDialog):
         telegram_layout.addWidget(self.telegram_key_input, 1, 1, 1, 3) # Span across columns
         telegram_layout.addWidget(show_telegram_btn, 1, 4)
 
-        telegram_layout.addWidget(telegram_enc_label, 2, 0)
         telegram_layout.addWidget(self.telegram_enc_input, 2, 1, 1, 3) # Span across columns
         telegram_layout.addWidget(show_enc_btn, 2, 4)
+        
+        # Test Connection Button
+        test_conn_btn = QPushButton("🔄 Проверить соединение")
+        test_conn_btn.setToolTip("Отправить тестовый запрос для проверки связи и шифрования")
+        test_conn_btn.clicked.connect(self._test_connection)
+        telegram_layout.addWidget(test_conn_btn, 3, 0, 1, 5) # Span full width
 
         telegram_group.setLayout(telegram_layout)
         layout.addWidget(telegram_group)
@@ -2090,6 +2098,109 @@ class UnifiedSettingsDialog(QDialog):
         # Можно добавить логику изменения URL (secure/plain), но это может быть сложно,
         # так как пользователь может редактировать URL вручную.
         # Лучше оставить URL как есть, а логику выбора endpoint оставить в ai_classifier.py
+    
+    def _test_connection(self):
+        """Проверяет соединение с TelegramHelper API"""
+        url = self.telegram_url_input.text().strip()
+        api_key = self.telegram_key_input.text().strip()
+        enc_key = self.telegram_enc_input.text().strip()
+        use_encryption = self.use_encryption_cb.isChecked()
+        
+        if not url:
+            QMessageBox.warning(self, "Ошибка", "URL не может быть пустым")
+            return
+            
+        # Визуальная индикация
+        sender = self.sender()
+        original_text = sender.text()
+        sender.setText("⏳ Проверка...")
+        sender.setEnabled(False)
+        QApplication.processEvents()
+        
+        try:
+            import requests
+            import json
+            import base64
+            
+            # Тестовые данные
+            test_payload = {
+                "prompt": "Test connection",
+                "provider": "anthropic", # Используем легкий запрос
+                "max_tokens": 10
+            }
+            
+            headers = {
+                "Content-Type": "application/json",
+                "X-API-KEY": api_key,
+                "X-APP-ID": "bomcategorizer-v5"
+            }
+            
+            # Подготовка данных (шифрование если нужно)
+            if use_encryption:
+                if not enc_key:
+                    raise ValueError("Ключ шифрования обязателен при включенном шифровании")
+                
+                try:
+                    # Импортируем SecureMessenger из локального модуля
+                    # Предполагаем что он доступен в bom_categorizer.encryption
+                    from ..encryption import SecureMessenger
+                    messenger = SecureMessenger(enc_key)
+                    
+                    encrypted_bytes = messenger.encrypt(test_payload)
+                    b64_data = base64.b64encode(encrypted_bytes).decode('utf-8')
+                    
+                    json_data = {"data": b64_data}
+                except Exception as e:
+                    raise Exception(f"Ошибка шифрования: {e}")
+            else:
+                json_data = test_payload
+            
+            # Отправка запроса
+            try:
+                response = requests.post(url, json=json_data, headers=headers, timeout=10)
+                response.raise_for_status()
+                result = response.json()
+                
+                # Проверка ответа
+                success_msg = "✅ Соединение успешно установлено!\n\n"
+                
+                if use_encryption:
+                    if result.get("mode") != "encrypted":
+                        success_msg += "⚠️ Внимание: Сервер ответил без шифрования!\n"
+                    
+                    if "data" in result:
+                        try:
+                            # Пробуем расшифровать ответ
+                            encrypted_response = base64.b64decode(result["data"])
+                            decrypted = messenger.decrypt(encrypted_response)
+                            decrypted_json = json.loads(decrypted.decode('utf-8'))
+                            success_msg += "🔐 Шифрование работает корректно (запрос и ответ).\n"
+                            success_msg += f"Ответ сервера: {decrypted_json.get('status', 'OK')}"
+                        except Exception as e:
+                            success_msg += f"❌ Ошибка расшифровки ответа: {e}"
+                    else:
+                        success_msg += "❌ Ответ сервера не содержит зашифрованных данных"
+                else:
+                    success_msg += "📡 Обычное соединение (без шифрования) работает."
+                
+                QMessageBox.information(self, "Успех", success_msg)
+                
+            except requests.exceptions.HTTPError as e:
+                status_code = e.response.status_code if e.response else "N/A"
+                detail = e.response.text if e.response else str(e)
+                QMessageBox.critical(self, "Ошибка API", f"Сервер вернул ошибку {status_code}:\n{detail}")
+            except requests.exceptions.ConnectionError:
+                QMessageBox.critical(self, "Ошибка сети", f"Не удалось подключиться к серверу.\nПроверьте URL и доступность сервера.")
+            except requests.exceptions.Timeout:
+                QMessageBox.critical(self, "Тайм-аут", f"Сервер не ответил вовремя (10 сек).")
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка запроса", f"Произошла ошибка при отправке:\n{e}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось выполнить проверку:\n{e}")
+        finally:
+            sender.setText(original_text)
+            sender.setEnabled(True)
     
     def _load_settings(self):
         """Загружает настройки из config_qt.json"""
@@ -2272,7 +2383,8 @@ class AISearchWorker(QThread):
     finished = Signal(dict)
     
     def __init__(self, provider: str, api_key: str, query: str, api_url: str = None, 
-                 custom_prompt: str = None, use_encryption: bool = False, encryption_key: str = None):
+                 custom_prompt: str = None, use_encryption: bool = False, encryption_key: str = None,
+                 app_id: str = "bomcategorizer-v5"):
         super().__init__()
         self.provider = provider
         self.api_key = api_key
@@ -2281,6 +2393,7 @@ class AISearchWorker(QThread):
         self.custom_prompt = custom_prompt
         self.use_encryption = use_encryption
         self.encryption_key = encryption_key
+        self.app_id = app_id
     
     def run(self):
         """Выполняет AI поиск"""
@@ -2291,7 +2404,8 @@ class AISearchWorker(QThread):
             self.api_key, 
             self.api_url,
             use_encryption=self.use_encryption,
-            encryption_key=self.encryption_key
+            encryption_key=self.encryption_key,
+            app_id=self.app_id
         )
         
         # Используем кастомный промпт если передан

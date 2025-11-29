@@ -26,7 +26,7 @@ class AIClassifierWorker(QThread):
     progress_update = Signal(str)
     
     def __init__(self, component_name: str, provider: str, api_key: str, model: str = None, 
-                 telegram_url: str = None, encryption_key: str = None, use_encryption: bool = True):
+                 telegram_url: str = None, encryption_key: str = None, use_encryption: bool = True, app_id: str = "bomcategorizer-v5"):
         super().__init__()
         self.component_name = component_name
         self.provider = provider.lower()
@@ -35,6 +35,7 @@ class AIClassifierWorker(QThread):
         self.telegram_url = telegram_url
         self.encryption_key = encryption_key
         self.use_encryption = use_encryption
+        self.app_id = app_id
         
     def _get_default_model(self) -> str:
         """Получить модель по умолчанию для провайдера"""
@@ -130,7 +131,9 @@ class AIClassifierWorker(QThread):
                 json={"data": b64_payload},
                 headers={
                     "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36" # Fake UA
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", # Fake UA
+                    "X-API-KEY": self.api_key, # Исправлено: используем api_key, а не encryption_key
+                    "X-APP-ID": self.app_id
                 },
                 timeout=60
             )
@@ -206,7 +209,11 @@ class AIClassifierWorker(QThread):
             response = requests.post(
                 endpoint,
                 json=request_data,
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-API-KEY": self.api_key,
+                    "X-APP-ID": self.app_id
+                },
                 timeout=60
             )
             
@@ -509,6 +516,27 @@ class AIClassifierSettings:
             
         return self.settings.get("use_encryption", True)
 
+    def get_app_id(self) -> str:
+        """Получить APP_ID для запросов"""
+        # Сначала ищем в секции telegram_security (новое место)
+        telegram_security = self.full_config.get("telegram_security", {})
+        app_id = telegram_security.get("app_id")
+        
+        if app_id:
+            return app_id
+        
+        # Потом ищем в секции api_keys (альтернативное место)
+        api_keys = self.full_config.get("api_keys", {})
+        app_id = api_keys.get("app_id")
+        
+        if app_id:
+            return app_id
+            
+        # Fallback на значение по умолчанию
+        return "bomcategorizer-v5"
+
+
+
 
 def classify_component_with_ai(
     component_name: str,
@@ -517,7 +545,8 @@ def classify_component_with_ai(
     model: str = None,
     callback = None,
     telegram_url: str = None,
-    encryption_key: str = None
+    encryption_key: str = None,
+    app_id: str = "bomcategorizer-v5"
 ) -> Optional[tuple[str, str]]:
     """
     Синхронная функция для классификации компонента через AI
@@ -536,7 +565,7 @@ def classify_component_with_ai(
     """
     worker = AIClassifierWorker(
         component_name, provider, api_key, model, 
-        telegram_url=telegram_url, encryption_key=encryption_key
+        telegram_url=telegram_url, encryption_key=encryption_key, app_id=app_id
     )
     
     result = [None]  # Используем список для изменяемости в замыкании

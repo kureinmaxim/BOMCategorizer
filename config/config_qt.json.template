@@ -1,7 +1,7 @@
 {
   "_comment": "MAIN CONFIGURATION FILE for Modern GUI Edition (v4+). Use this for AI, Telegram, and Port settings.",
   "app_info": {
-    "version": "5.2.0",
+    "version": "5.2.1",
     "edition": "Modern Edition",
     "release_date": "29.11.2025",
     "developer": "Куреин М.Н.",
@@ -61,10 +61,12 @@
     "telegram_url": "http://YOUR_SERVER_IP:8000/ai_query",
     "telegram_key": "",
     "telegram_enc_key": "",
-    "telegram_hmac_secret": ""
+    "telegram_use_encryption": true,
+    "telegram_hmac_secret": "",
+    "app_id": "bomcategorizer-v5"
   },
   "telegram_security": {
-    "app_id": "bomcategorizer-v4",
+    "app_id": "bomcategorizer-v5",
     "enable_signature": true,
     "verify_ssl": false
   }

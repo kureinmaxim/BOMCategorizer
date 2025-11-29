@@ -232,10 +232,13 @@ cp config/config_qt.json.template config_qt.json
 
 ### Что синхронизируется
 
-| Файл | Как синхронизируется |
-|------|---------------------|
-| `config_qt.json` | `update_version.py sync` |
-| `installer_qt.iss` | `sync_installer_versions.py` |
+| Файл/Секция | Как синхронизируется |
+|-------------|---------------------|
+| `config_qt.json` (секция `app_info`) | `update_version.py sync` |
+| `config_qt.json` (APP_ID в `telegram_security` и `api_keys`) | `update_version.py sync` |
+| `bom_categorizer/gui_qt.py` (захардкоженная версия) | `update_version.py sync` |
+| `bom_categorizer/config_manager.py` (захардкоженная версия) | `update_version.py sync` |
+| `installer_qt.iss` | `sync_installer_versions.py` (вызывается из `sync`) |
 | `build_macos.sh` | Читает из шаблона автоматически |
 
 ### Команда синхронизации
@@ -245,9 +248,11 @@ python tools/update_version.py sync
 ```
 
 **Что делает:**
-1. ✅ Синхронизирует локальные config с шаблонами (только `app_info`)
-2. ✅ Синхронизирует `.iss` файлы с шаблонами
-3. ✅ **Сохраняет** личные настройки (scale_factor, window size)
+1. ✅ Синхронизирует секцию `app_info` в локальных config с шаблонами (версия, дата релиза, разработчик)
+2. ✅ Синхронизирует `APP_ID` в секциях `telegram_security` и `api_keys` между шаблоном и локальным config
+3. ✅ Синхронизирует захардкоженные версии в Python файлах (`gui_qt.py`, `config_manager.py`)
+4. ✅ Синхронизирует `.iss` файлы с шаблонами
+5. ✅ **Сохраняет** личные настройки (scale_factor, window size, theme, api_keys и т.д.)
 
 ---
 
@@ -285,6 +290,81 @@ python deployment/build_installer.py
 ```bash
 python scripts/bump_version.py --bump patch --edition standard
 ```
+
+### Синхронизация APP_ID с TelegramHelper
+
+При обновлении MAJOR версии (например, с v5 на v6) необходимо обновить `APP_ID` в шаблоне и синхронизировать его с сервером TelegramHelper.
+
+> [!NOTE]
+> Команда `update_version.py sync` автоматически синхронизирует `APP_ID` из шаблона в локальный config. Но если вы изменили `APP_ID` в шаблоне (например, с `bomcategorizer-v5` на `bomcategorizer-v6`), необходимо также обновить его на сервере TelegramHelper.
+
+#### Шаг 1: Обновить APP_ID в BOMCategorizer
+
+```bash
+# Вручную отредактировать config/config_qt.json.template
+# Изменить в секции "telegram_security":
+"app_id": "bomcategorizer-v6"
+
+# Или в секции "api_keys" (для совместимости):
+"app_id": "bomcategorizer-v6"
+
+# Проверить синхронизацию
+python3 tools/update_version.py status
+
+# Синхронизировать локальный config с шаблоном (APP_ID будет синхронизирован автоматически)
+python3 tools/update_version.py sync
+```
+
+> [!NOTE]
+> Команда `sync` автоматически синхронизирует `APP_ID` из шаблона в локальный config в обеих секциях (`telegram_security` и `api_keys`).
+
+> [!NOTE]
+> Команда `update_version.py status` автоматически проверяет APP_ID и предупреждает о расхождениях между шаблоном и локальным config. Команда `sync` автоматически синхронизирует APP_ID в обеих секциях (`telegram_security` и `api_keys`) для совместимости.
+
+
+#### Шаг 2: Добавить APP_ID в whitelist на сервере
+
+Подключитесь к серверу и отредактируйте `security.py`:
+
+```bash
+ssh -p 22542 root@<server-ip>
+cd /opt/TelegramHelper
+nano security.py
+```
+
+Добавьте новый APP_ID в словарь `ALLOWED_APPS`:
+
+```python
+ALLOWED_APPS: Dict[str, dict] = {
+    "bomcategorizer-v6": {
+        "name": "BOM Categorizer Modern Edition v6",
+        "version": "6.x",
+        "allowed_endpoints": ["/ai_query", "/prompt_templates", "/prompt_categories"],
+        "rate_limit_per_minute": 60,
+        "rate_limit_per_day": 1000
+    },
+    # ... остальные версии
+}
+```
+
+Сохраните файл (`Ctrl+O`, `Enter`, `Ctrl+X`).
+
+#### Шаг 3: Пересобрать сервер
+
+```bash
+./scripts/change_token.sh
+```
+
+Выберите опцию `r` (перезапуск без смены токена).
+
+#### Чек-лист синхронизации версий
+
+- [ ] Обновлена версия в `config/config_qt.json.template`
+- [ ] Обновлен `app_id` в том же файле
+- [ ] Новый `app_id` добавлен в `TelegramHelper/security.py` на сервере
+- [ ] Сервер TelegramHelper перезапущен
+- [ ] Проверена работа кнопки "Проверить соединение"
+
 
 ---
 
@@ -353,7 +433,11 @@ python tools/update_version.py sync
 
 ### ❓ Команда sync затронет мои настройки UI?
 
-**Нет!** Синхронизируется только секция `app_info`. Ваши `scale_factor`, размер окна и тема останутся без изменений.
+**Нет!** Синхронизируется только:
+- Секция `app_info` (версия, дата релиза, разработчик)
+- `APP_ID` в секциях `telegram_security` и `api_keys`
+
+Ваши личные настройки (`scale_factor`, размер окна, тема, API ключи и т.д.) останутся без изменений.
 
 ### ❓ Почему config.json в .gitignore?
 
@@ -396,5 +480,6 @@ BOMCategorizer/
 
 ---
 
-**Последнее обновление:** 28.11.2025  
+**Последнее обновление:** 29.11.2025  
 **Автор:** Куреин М.Н.
+
