@@ -6,127 +6,196 @@
 
 ## 📋 Общий процесс (Workflow)
 
-1.  **Сборка:** Собрать `.exe` или `.dmg` файл.
-2.  **Git Tag:** Создать и отправить тег версии.
-3.  **Релиз:** Запустить скрипт создания релиза и загрузки файлов.
+1. **Обновить версию:** Изменить `__version__` в `bom_categorizer/__init__.py`
+2. **Коммит изменений:** Закоммитить и запушить все изменения
+3. **Сборка:** Собрать `.exe` или `.dmg` файл
+4. **Релиз:** Создать релиз и загрузить файлы через GitHub CLI
 
 ---
 
-## 🏷️ ШАГ 1: Создание Git Тега (ОБЯЗАТЕЛЬНО)
+## 🔢 ШАГ 1: Обновление Версии
 
-GitHub создает релизы **только** на основе тегов. Без тега скрипты работать не будут или создадут "черновик" без привязки к версии.
+### 1. Обновить версию в коде
 
-### 1. Проверка текущих тегов
-```bash
-git tag
-# Вывод: v4.4.0, v4.4.1...
+Версия приложения хранится в файле `bom_categorizer/__init__.py`:
+
+```python
+__version__ = "5.1.3"  # Измените на нужную версию
 ```
 
-### 2. Создание нового тега
-Используйте семантическое версионирование (например, `v4.5.0`).
+### 2. Закоммитить изменения
 
 ```bash
-# Создать локальный тег с описанием
-git tag -a v4.5.0 -m "Release 4.5.0: Fix parser bugs and update UI"
+# Добавить все изменения
+git add .
 
-# ОТПРАВИТЬ тег на сервер (Критически важно!)
-git push origin v4.5.0
+# Коммит с описанием
+git commit -m "feat: Enhanced UI/UX with hotkeys, custom prompts, and improved settings dialog
+
+### New Features
+- Added keyboard shortcuts (Cmd+1/2/3, Cmd+F/P/A)
+- Enhanced Custom Prompt functionality
+- Set Telegram Bot as default AI provider
+
+### Bug Fixes
+- Fixed persistent stuck tooltip issue
+- Fixed port saving bug
+- Fixed Cmd+F hotkey
+
+Version: 5.1.3"
+
+# Отправить на GitHub
+git push origin feature/custom-encryption  # или main/master
 ```
 
-> **Примечание:** Если вы ошиблись, удалите тег:
-> `git tag -d v4.5.0` и `git push --delete origin v4.5.0`
+### 3. Создать и отправить тег версии
+
+```bash
+# Создать тег
+git tag -a v5.1.3 -m "Release 5.1.3"
+
+# Отправить тег на сервер
+git push origin v5.1.3
+```
+
+> **Важно:** Номер тега должен совпадать с версией в `__init__.py`!
 
 ---
 
 ## 📦 ШАГ 2: Сборка Инсталлятора
 
-Перед загрузкой убедитесь, что у вас есть свежий файл инсталлятора.
+### 🍎 macOS
 
-**Windows:**
 ```bash
+cd deployment
+bash build_macos.sh
+```
+
+Скрипт предложит выбрать версию для сборки:
+- `[1]` Standard (Tkinter)
+- `[2]` Modern Edition (PySide6) ← **Выбирайте это для современной версии**
+
+*Ожидаемый файл:* `BOMCategorizer-5.1.3-macOS-Modern.dmg` (в корне проекта)
+
+### 🪟 Windows
+
+```powershell
 python deployment/build_installer.py
 ```
-*Ожидаемый файл:* `BOMCategorizerModernSetup.exe` (в корне проекта).
+
+*Ожидаемый файл:* `BOMCategorizerModernSetup.exe`
 
 ---
 
 ## 🚀 ШАГ 3: Создание Релиза и Загрузка Файлов
 
-### 🪟 Для Windows (PowerShell)
+### 🍎 Для macOS (Рекомендуется: GitHub CLI)
 
-У нас есть два скрипта:
-1.  `create_release.ps1` — создает новый релиз и загружает файл.
-2.  `upload_to_existing_release.ps1` — только загружает файл в уже созданный релиз.
-
-#### Вариант А: Создать новый релиз (Полный цикл)
-
-```powershell
-# 1. Задайте токен (чтобы не вводить каждый раз)
-$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
-
-# 2. Запустите скрипт
-# Укажите версию БЕЗ 'v', если скрипт добавляет её сам, или как в теге.
-# Скрипт ожидает, что тег v4.5.0 уже существует на GitHub.
-.\deployment\create_release.ps1 -Token $Token -Version "4.5.0"
+#### Установка GitHub CLI (если еще не установлен)
+```bash
+brew install gh
 ```
 
-#### Вариант Б: Обновить существующий релиз (Если релиз уже создан)
-
-Если вы исправили баг и пересобрали `.exe`, но версия осталась той же:
-
-```powershell
-$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
-
-# Скрипт сам найдет последний релиз и загрузит в него BOMCategorizerModernSetup.exe
-.\deployment\upload_to_existing_release.ps1 -Token $Token
+#### Авторизация (один раз)
+```bash
+gh auth login
 ```
 
-#### Если есть ошибка "Execution of scripts is disabled on this system"
+#### Создание релиза и загрузка файла
 
-Запускайте с флагом обхода политики:
+```bash
+# Убедитесь что вы в корне проекта
+cd /Users/olgazaharova/Project/ProjectPython/BOMCategorizer
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\deployment\create_release.ps1 -Token "ghp_..." -Version "4.5.0"
+# Создать релиз и загрузить DMG
+gh release create v5.1.3 \
+    BOMCategorizer-5.1.3-macOS-Modern.dmg \
+    --title "BOM Categorizer Modern Edition 5.1.3" \
+    --notes "См. список изменений в CHANGELOG или release notes"
+```
+
+#### Загрузка файла в существующий релиз
+
+Если релиз уже создан и нужно только обновить файл:
+
+```bash
+gh release upload v5.1.3 BOMCategorizer-5.1.3-macOS-Modern.dmg --clobber
+```
+
+Флаг `--clobber` заменит существующий файл.
+
+#### Открыть релиз в браузере
+
+```bash
+gh release view v5.1.3 --web
 ```
 
 ---
 
-### 🍎 Для macOS (Terminal)
+### Альтернатива: Bash скрипты (если GitHub CLI недоступен)
 
-#### Вариант А: Использование GitHub CLI (Рекомендуется)
-Это самый надежный способ. Требует `brew install gh`.
+#### Получение GitHub Token
 
-```bash
-# 1. Авторизация (один раз)
-gh auth login
+1. Зайдите на GitHub: [Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
+2. Нажмите **Generate new token (classic)**
+3. Выберите scope: ✅ **repo**
+4. Скопируйте токен (начинается на `ghp_`)
 
-# 2. Создание релиза и загрузка файла
-gh release create v4.5.0 \
-    BOMCategorizer-4.5.0-macOS-Modern.dmg \
-    --title "v4.5.0" \
-    --notes "Список изменений..."
-```
-
-#### Вариант Б: Bash скрипты
-Если `gh` не установлен.
+#### Создание релиза
 
 ```bash
-# Создание
-./deployment/create_release.sh -t "ghp_TOKEN" -v "4.5.0"
-
-# Обновление (только загрузка файла)
-./deployment/upload_to_existing_release.sh -t "ghp_TOKEN"
+cd /Users/olgazaharova/Project/ProjectPython/BOMCategorizer
+bash deployment/create_release.sh -t "ghp_YOUR_TOKEN" -v "5.1.3"
 ```
+
+**Важно:** Скрипт должен запускаться из корня проекта, где находится DMG файл!
+
+---
+
+### 🪟 Для Windows (PowerShell)
+
+#### Вариант А: Создать новый релиз
+
+```powershell
+$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
+
+.\deployment\create_release.ps1 -Token $Token -Version "5.1.3"
+```
+
+#### Вариант Б: Обновить существующий релиз
+
+```powershell
+$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
+
+.\deployment\upload_to_existing_release.ps1 -Token $Token
+```
+
+#### Если есть ошибка выполнения скриптов
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\deployment\create_release.ps1 -Token "ghp_..." -Version "5.1.3"
+```
+
+---
+
+## ✅ Проверка Релиза
+
+После создания релиза проверьте:
+
+1. ✅ Релиз виден на https://github.com/kureinmaxim/BOMCategorizer/releases
+2. ✅ DMG/EXE файл прикреплен и доступен для скачивания
+3. ✅ Версия в релизе совпадает с версией в `__init__.py`
+4. ✅ Тег версии создан и виден в GitHub
 
 ---
 
 ## 🛠 Где взять токен (PAT)?
 
-1.  Зайдите на GitHub: [Settings -> Developer settings -> Personal access tokens -> Tokens (classic)](https://github.com/settings/tokens).
-2.  Нажмите **Generate new token (classic)**.
-3.  Выберите scopes (права):
-    *   ✅ **repo** (Full control of private repositories) — этого достаточно.
-4.  Скопируйте токен (он начинается на `ghp_`).
+1. Зайдите на GitHub: [Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
+2. Нажмите **Generate new token (classic)**
+3. Выберите scopes (права):
+   * ✅ **repo** (Full control of repositories)
+4. Скопируйте токен (начинается на `ghp_`)
 
 ---
 
@@ -134,7 +203,42 @@ gh release create v4.5.0 \
 
 | Ошибка | Решение |
 |--------|---------|
-| `Tag not found` | Вы забыли сделать `git push origin v4.5.0`. Скрипт не может создать релиз для несуществующего тега. |
-| `Release already exists` | Релиз для этого тега уже создан. Используйте скрипт `upload_to_existing...` или удалите релиз вручную на сайте. |
-| `Asset already exists` | Файл с таким именем уже есть в релизе. Скрипты обычно пытаются его заменить, но иногда нужно удалить старый файл вручную через браузер. |
-| `File not found` | Скрипт не видит `.exe` файл. Убедитесь, что вы запустили `build_installer.py` и файл лежит в корне проекта. |
+| `Tag not found` | Забыли `git push origin v5.1.3`. Отправьте тег на GitHub. |
+| `Release already exists` | Релиз уже создан. Используйте `gh release upload ... --clobber` для обновления файла. |
+| `File not found` | DMG/EXE файл не в корне проекта. Проверьте путь или запустите скрипт из корня. |
+| `curl: option : blank argument` | Ошибка в bash скрипте. Используйте GitHub CLI (`gh`) вместо bash скрипта. |
+| Версия не обновилась | Забыли изменить `__version__` в `bom_categorizer/__init__.py` и закоммитить. |
+
+---
+
+## 📝 Пример полного цикла релиза v5.1.3
+
+```bash
+# 1. Обновить версию
+vim bom_categorizer/__init__.py  # Изменить на "5.1.3"
+
+# 2. Коммит
+git add .
+git commit -m "chore: bump version to 5.1.3"
+git push origin feature/custom-encryption
+
+# 3. Тег
+git tag -a v5.1.3 -m "Release 5.1.3"
+git push origin v5.1.3
+
+# 4. Сборка (было сделано ранее вручную)
+cd deployment && bash build_macos.sh
+# Выбрать [2] Modern Edition
+
+# 5. Релиз через GitHub CLI
+cd ..
+gh release create v5.1.3 \
+    BOMCategorizer-5.1.3-macOS-Modern.dmg \
+    --title "BOM Categorizer Modern Edition 5.1.3" \
+    --notes "Release notes here"
+
+# 6. Проверка
+gh release view v5.1.3 --web
+```
+
+**Готово!** 🎉
