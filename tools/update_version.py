@@ -207,9 +207,13 @@ def show_status():
     if template_config:
         template_version = template_config['app_info']['version']
         template_date = template_config['app_info'].get('release_date', 'N/A')
+        # Проверяем app_id в разных секциях
+        template_app_id = template_config.get('telegram_security', {}).get('app_id') or \
+                          template_config.get('api_keys', {}).get('app_id') or 'N/A'
         safe_print(f"  {Colors.BOLD}Шаблон:{Colors.NC}")
         safe_print(f"    Версия:      {Colors.GREEN}{template_version}{Colors.NC}")
         safe_print(f"    Дата релиза: {template_date}")
+        safe_print(f"    APP_ID:      {template_app_id}")
         safe_print(f"    Файл:        config/config_qt.json.template")
     
     # Локальный config
@@ -217,15 +221,23 @@ def show_status():
     if local_config:
         local_version = local_config['app_info']['version']
         local_date = local_config['app_info'].get('release_date', 'N/A')
+        local_app_id = local_config.get('telegram_security', {}).get('app_id') or \
+                       local_config.get('api_keys', {}).get('app_id') or 'N/A'
         safe_print(f"  {Colors.BOLD}Локальный:{Colors.NC}")
         safe_print(f"    Версия:      {Colors.GREEN}{local_version}{Colors.NC}")
         safe_print(f"    Дата релиза: {local_date}")
+        safe_print(f"    APP_ID:      {local_app_id}")
         safe_print(f"    Файл:        config_qt.json")
         
         # Сравнение версий
         if template_config and template_version != local_version:
             versions_differ = True
             safe_print(f"    {Colors.RED}{Emoji.WARN} ⚠️ Версии отличаются!{Colors.NC}")
+        
+        # Сравнение app_id
+        if template_config and template_app_id != local_app_id:
+            versions_differ = True
+            safe_print(f"    {Colors.RED}{Emoji.WARN} ⚠️ APP_ID отличается! (Шаблон: {template_app_id}, Локальный: {local_app_id}){Colors.NC}")
     else:
         safe_print(f"  {Colors.YELLOW}Локальный: config_qt.json не найден{Colors.NC}")
     
@@ -456,12 +468,27 @@ def sync_all():
         template_edition = template_config['app_info'].get('edition', 'Modern Edition')
         template_release_date = template_config['app_info'].get('release_date')
         template_last_updated = template_config['app_info'].get('last_updated')
+        template_app_id = template_config.get('telegram_security', {}).get('app_id') or \
+                          template_config.get('api_keys', {}).get('app_id')
         
         local_config = read_config_file('../config_qt.json')
         if local_config:
             local_version = local_config['app_info']['version']
+            local_app_id = local_config.get('telegram_security', {}).get('app_id') or \
+                           local_config.get('api_keys', {}).get('app_id')
+            
+            needs_update = False
+            
             if template_version != local_version:
-                safe_print(f"  {Colors.YELLOW}config_qt.json: {local_version} → {template_version}{Colors.NC}")
+                safe_print(f"  {Colors.YELLOW}config_qt.json: версия {local_version} → {template_version}{Colors.NC}")
+                needs_update = True
+            
+            if template_app_id and local_app_id != template_app_id:
+                safe_print(f"  {Colors.YELLOW}config_qt.json: app_id {local_app_id} → {template_app_id}{Colors.NC}")
+                needs_update = True
+            
+            if needs_update:
+                # Обновляем app_info
                 update_local_config(
                     '../config_qt.json',
                     template_version,
@@ -469,8 +496,31 @@ def sync_all():
                     release_date=template_release_date,
                     last_updated=template_last_updated
                 )
+                
+                # Обновляем app_id в соответствующих секциях
+                if template_app_id:
+                    try:
+                        with open('../config_qt.json', 'r', encoding='utf-8') as f:
+                            config = json.load(f)
+                        
+                        # Обновляем в обеих секциях для совместимости
+                        if 'telegram_security' not in config:
+                            config['telegram_security'] = {}
+                        config['telegram_security']['app_id'] = template_app_id
+                        
+                        if 'api_keys' not in config:
+                            config['api_keys'] = {}
+                        config['api_keys']['app_id'] = template_app_id
+                        
+                        with open('../config_qt.json', 'w', encoding='utf-8') as f:
+                            json.dump(config, f, indent=2, ensure_ascii=False)
+                            f.write('\n')
+                        
+                        safe_print(f"{Colors.GREEN}   {Emoji.ARROW} APP_ID обновлен → {template_app_id}{Colors.NC}")
+                    except Exception as e:
+                        safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка обновления APP_ID: {e}{Colors.NC}")
             else:
-                safe_print(f"  {Colors.GREEN}{Emoji.CHECK} config_qt.json уже синхронизирован (v{local_version}){Colors.NC}")
+                safe_print(f"  {Colors.GREEN}{Emoji.CHECK} config_qt.json уже синхронизирован (v{local_version}, app_id: {local_app_id}){Colors.NC}")
         else:
             safe_print(f"  {Colors.YELLOW}config_qt.json не найден (будет создан при первом запуске){Colors.NC}")
         
