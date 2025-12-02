@@ -1076,15 +1076,6 @@ def process_file_for_comparison(file_path: str, no_interactive: bool = True) -> 
             print(f"[INFO] Перенос {unclassified_count} нераспределенных элементов в категорию 'Другие'")
             df.loc[unclassified_mask, "category"] = "others"
     
-    # Удалить все элементы с "АМФИ" из выходного файла
-    if desc_col in df.columns:
-        initial_count = len(df)
-        df = df[~df[desc_col].astype(str).str.upper().str.contains('АМФИ', na=False)]
-        df = df.reset_index(drop=True)
-        removed_count = initial_count - len(df)
-        if removed_count > 0:
-            print(f"[ФИЛЬТР] Удалено {removed_count} элементов с 'АМФИ'")
-    
     # Создать outputs словарь
     outputs = create_outputs_dict(df)
     
@@ -1749,15 +1740,6 @@ def main():
     
     if args.interactive or auto_interactive:
         df = interactive_classification(df, desc_col, value_col, part_col, args.assign_json, auto_prompted=auto_interactive)
-    
-    # Удалить все элементы с "АМФИ" из выходного файла
-    if desc_col in df.columns:
-        initial_count = len(df)
-        df = df[~df[desc_col].astype(str).str.upper().str.contains('АМФИ', na=False)]
-        df = df.reset_index(drop=True)
-        removed_count = initial_count - len(df)
-        if removed_count > 0:
-            print(f"[ФИЛЬТР] Удалено {removed_count} элементов с 'АМФИ' из выходного файла")
     
     # Create outputs dictionary
     outputs = create_outputs_dict(df)
