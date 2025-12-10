@@ -2124,10 +2124,10 @@ class UnifiedSettingsDialog(QDialog):
             import json
             import base64
             
-            # Тестовые данные
+            # Тестовые данные (формат как в pdf_search.py)
             test_payload = {
-                "prompt": "Test connection",
-                "provider": "anthropic", # Используем легкий запрос
+                "prompt": "Test connection. Reply with one word: OK",
+                "provider": "anthropic",
                 "max_tokens": 10
             }
             
@@ -2144,11 +2144,17 @@ class UnifiedSettingsDialog(QDialog):
                 
                 try:
                     # Импортируем SecureMessenger из локального модуля
-                    # Предполагаем что он доступен в bom_categorizer.encryption
                     from ..encryption import SecureMessenger
                     messenger = SecureMessenger(enc_key)
                     
-                    encrypted_bytes = messenger.encrypt(test_payload)
+                    # ВАЖНО: API ключ и app_id должны быть ВНУТРИ зашифрованных данных!
+                    secure_payload = {
+                        **test_payload,
+                        "api_key": api_key,  # Сервер ожидает ключ внутри payload
+                        "app_id": "bomcategorizer-v5"  # И app_id тоже
+                    }
+                    
+                    encrypted_bytes = messenger.encrypt(secure_payload)
                     b64_data = base64.b64encode(encrypted_bytes).decode('utf-8')
                     
                     json_data = {"data": b64_data}
@@ -2157,9 +2163,24 @@ class UnifiedSettingsDialog(QDialog):
             else:
                 json_data = test_payload
             
+            # Определяем правильный endpoint в зависимости от режима шифрования
+            request_url = url.rstrip('/')
+            if use_encryption:
+                # При шифровании нужен endpoint /ai_query/secure
+                if request_url.endswith('/ai_query'):
+                    request_url = request_url.replace('/ai_query', '/ai_query/secure')
+                elif not request_url.endswith('/ai_query/secure'):
+                    request_url = f"{request_url}/ai_query/secure"
+            else:
+                # Без шифрования - обычный /ai_query
+                if request_url.endswith('/ai_query/secure'):
+                    request_url = request_url.replace('/ai_query/secure', '/ai_query')
+                elif not request_url.endswith('/ai_query'):
+                    request_url = f"{request_url}/ai_query"
+            
             # Отправка запроса
             try:
-                response = requests.post(url, json=json_data, headers=headers, timeout=10)
+                response = requests.post(request_url, json=json_data, headers=headers, timeout=10)
                 response.raise_for_status()
                 result = response.json()
                 
