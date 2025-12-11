@@ -360,9 +360,25 @@ def extract_podbor_elements(df: pd.DataFrame, _start_time=None, _max_seconds=Non
             extracted_items = replacement_items
             tag = '(замена)'
         else:
-            # Обрабатываем ПОДБОРЫ (номиналы)
-            extracted_items = _extract_podbors(note, row)
-            tag = '(подбор)'
+            # ВАЖНО: Не вызываем _extract_podbors если нет реальных признаков подбора!
+            # Признаки подбора:
+            # 1. Разделители (запятая, точка с запятой) - несколько значений
+            # 2. Номиналы с единицами измерения (Ом, кОм, мкФ и т.д.)
+            # Без этих признаков - это просто маркировка/обозначение, не подбор!
+            has_real_separators = ',' in note or ';' in note
+            has_nominals_in_note = bool(re.search(
+                r'\d+(?:[,.]\d+)?\s*(?:МОм|мом|кОм|ком|Ом|ом|мкФ|мкф|нФ|нф|пФ|пф|мГн|мгн|мкГн|мкгн|нГн|нгн|Гн|гн)',
+                note, re.IGNORECASE
+            ))
+            
+            if has_real_separators or has_nominals_in_note:
+                # Обрабатываем ПОДБОРЫ (номиналы)
+                extracted_items = _extract_podbors(note, row)
+                tag = '(подбор)'
+            else:
+                # Нет признаков подбора - пропускаем
+                extracted_items = []
+                tag = ''
         
         # Добавляем найденные элементы
         if extracted_items:
