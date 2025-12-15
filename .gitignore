@@ -105,3 +105,4 @@ icon.iconset/
 !icon.icns
 
 build_output.txt
+.venv-wsl/
