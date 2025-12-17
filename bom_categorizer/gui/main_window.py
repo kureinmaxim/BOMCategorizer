@@ -17,6 +17,8 @@ import re
 from datetime import datetime
 from typing import Dict, Optional, List
 
+from .tru_rkm_processor import process_tru_rkm_files
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QGridLayout, QGroupBox, QPushButton, QLabel, QLineEdit,
@@ -202,6 +204,7 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Переменные состояния
         self.input_files: Dict[str, int] = {}  # {путь_к_файлу: количество}
+        self.tru_rkm_files: List[str] = []  # Файлы ТРУ и РКМ (только .xls)
         self.output_xlsx = "categorized.xlsx"
         self.txt_dir = ""
         self.combine = True
@@ -798,6 +801,58 @@ class BOMCategorizerMainWindow(QMainWindow):
                         self.files_list.setCurrentItem(list_item)
                         break
 
+    def on_add_tru_rkm_files(self):
+        """Добавление файлов ТРУ и РКМ (только .xls)"""
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Выберите файлы ТРУ и РКМ",
+            "",
+            "Файлы Excel 97-2003 (*.xls);;Все файлы (*)"
+        )
+
+        if files:
+            for file_path in files:
+                # Проверяем расширение
+                if not file_path.lower().endswith('.xls'):
+                    QMessageBox.warning(
+                        self,
+                        "Неверный формат",
+                        f"Файл {os.path.basename(file_path)} не является .xls файлом.\nДобавляются только .xls файлы."
+                    )
+                    continue
+                
+                # Проверяем наличие файла (без учета регистра)
+                exists = False
+                for existing_path in self.tru_rkm_files:
+                    if existing_path.lower() == file_path.lower():
+                        exists = True
+                        break
+                
+                if not exists:
+                    self.tru_rkm_files.append(file_path)
+
+            self.update_tru_rkm_listbox()
+            self.update_output_filename()  # Обновляем имя выходного файла
+
+    def on_clear_tru_rkm_files(self):
+        """Очистка списка файлов ТРУ и РКМ"""
+        self.tru_rkm_files.clear()
+        self.update_tru_rkm_listbox()
+        # Обновляем имя выходного файла или сбрасываем если нет BOM файлов
+        if self.input_files:
+            self.update_output_filename()
+        else:
+            self.output_xlsx = "categorized.xlsx"
+            self.output_entry.setText(self.output_xlsx)
+
+    def update_tru_rkm_listbox(self):
+        """Обновление списка ТРУ/РКМ файлов"""
+        self.tru_rkm_files_list.clear()
+        for file_path in self.tru_rkm_files:
+            item = QListWidgetItem(file_path)
+            item.setData(Qt.UserRole, file_path)  # Сохраняем полный путь
+            self.tru_rkm_files_list.addItem(item)
+
     def update_listbox(self):
         """Обновление списка файлов"""
         self.files_list.clear()
@@ -807,20 +862,44 @@ class BOMCategorizerMainWindow(QMainWindow):
 
     def update_output_filename(self):
         """Автоматическое обновление имени выходного файла"""
-        if not self.input_files:
+        # Определяем какие файлы присутствуют
+        has_bom_files = bool(self.input_files)
+        has_tru_rkm_files = bool(self.tru_rkm_files)
+        
+        # Если нет никаких файлов - ничего не делаем
+        if not has_bom_files and not has_tru_rkm_files:
             return
         
-        # Получаем путь к папке первого файла
-        first_file_path = list(self.input_files.keys())[0]
-        folder_path = os.path.dirname(first_file_path)
-        
-        if len(self.input_files) == 1:
-            # Для одного файла: {имя_файла}_categorized.xlsx
-            base_name = os.path.splitext(os.path.basename(first_file_path))[0]
-            output_name = f"{base_name}_categorized.xlsx"
+        # Определяем папку для выходного файла
+        if has_bom_files:
+            # Если есть BOM файлы - используем папку первого BOM файла
+            first_file_path = list(self.input_files.keys())[0]
+            folder_path = os.path.dirname(first_file_path)
+        elif has_tru_rkm_files:
+            # Если есть только ТРУ/РКМ файлы - используем папку первого ТРУ/РКМ файла
+            first_file_path = self.tru_rkm_files[0]
+            folder_path = os.path.dirname(first_file_path)
         else:
-            # Для нескольких файлов: categorized.xlsx
-            output_name = "categorized.xlsx"
+            return
+        
+        # Определяем имя выходного файла в зависимости от типа файлов
+        if has_tru_rkm_files and not has_bom_files:
+            # Только ТРУ/РКМ файлы
+            if len(self.tru_rkm_files) == 1:
+                base_name = os.path.splitext(os.path.basename(self.tru_rkm_files[0]))[0]
+                output_name = f"{base_name}_tru_rkm.xlsx"
+            else:
+                output_name = "tru_rkm.xlsx"
+        elif has_bom_files and not has_tru_rkm_files:
+            # Только BOM файлы (как раньше)
+            if len(self.input_files) == 1:
+                base_name = os.path.splitext(os.path.basename(first_file_path))[0]
+                output_name = f"{base_name}_categorized.xlsx"
+            else:
+                output_name = "categorized.xlsx"
+        else:
+            # Есть и BOM и ТРУ/РКМ файлы - смешанный режим
+            output_name = "categorized_combined.xlsx"
         
         # Полный путь к выходному файлу
         output_path = os.path.join(folder_path, output_name)
@@ -1378,13 +1457,66 @@ class BOMCategorizerMainWindow(QMainWindow):
 
     def on_run(self):
         """Запуск обработки"""
-        if not self.input_files:
+        # Проверка наличия файлов
+        has_bom = bool(self.input_files)
+        has_tru_rkm = hasattr(self, 'tru_rkm_files') and bool(self.tru_rkm_files)
+        
+        if not has_bom and not has_tru_rkm:
             QMessageBox.critical(
                 self,
                 "Ошибка",
-                "Добавьте хотя бы один входной файл (XLSX/DOCX/DOC/TXT)"
+                "Добавьте хотя бы один входной файл (BOM или ТРУ/РКМ)"
             )
             return
+
+        # Обработка ТРУ/РКМ файлов
+        if has_tru_rkm:
+            self.log_text.append(f"\n{'='*60}\n")
+            self.log_text.append(f"🚀 ЗАПУСК ОБРАБОТКИ ТРУ/РКМ ФАЙЛОВ\n")
+            self.log_text.append(f"{'='*60}\n")
+            self.log_text.append(f"📋 Файлов для обработки: {len(self.tru_rkm_files)}\n")
+            
+            # Диалог прогресса для ТРУ/РКМ
+            tru_progress = QProgressDialog("Обработка ТРУ/РКМ файлов...", None, 0, len(self.tru_rkm_files), self)
+            tru_progress.setWindowTitle("Обработка ТРУ/РКМ")
+            tru_progress.setWindowModality(Qt.WindowModal)
+            tru_progress.setMinimumDuration(0)
+            tru_progress.setValue(0)
+            tru_progress.setAutoClose(True)
+            tru_progress.show()
+            
+            def update_progress(current, total, filename, success):
+                tru_progress.setValue(current)
+                tru_progress.setLabelText(f"Обработка: {filename}")
+                status = "✅" if success else "❌"
+                self.log_text.append(f"   {status} {filename}")
+                QApplication.processEvents()
+
+            # Запуск обработки
+            results = process_tru_rkm_files(self.tru_rkm_files, update_progress)
+            
+            # Статистика
+            success_count = sum(1 for r in results.values() if r['success'])
+            self.log_text.append(f"\n🏁 Итог ТРУ/РКМ: Успешно {success_count} из {len(self.tru_rkm_files)}")
+            
+            # Показываем сообщения об ошибках если были
+            errors = [f"{os.path.basename(p)}: {r['message']}" for p, r in results.items() if not r['success']]
+            if errors:
+                self.log_text.append("\n❌ Ошибки:")
+                for err in errors:
+                    self.log_text.append(f"   • {err}")
+            
+            # Если нет BOM файлов, показываем диалог завершения и выходим
+            if not has_bom:
+                QMessageBox.information(
+                    self,
+                    "Обработка завершена",
+                    f"Обработка ТРУ/РКМ файлов выполнена.\n\nУспешно: {success_count}\nОшибок: {len(errors)}"
+                )
+                return
+
+        # Если есть только ТРУ/РКМ файлы, мы уже вышли выше.
+        # Если есть BOM файлы, продолжаем выполнение.
         
         # Проверяем и конвертируем .doc файлы
         conversion_result = self.check_and_convert_doc_files()
@@ -2517,9 +2649,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         # Размеры по умолчанию для каждого режима
         default_sizes = {
-            "simple": {"width": 730, "height": 560},
-            "advanced": {"width": 730, "height": 790},
-            "expert": {"width": 730, "height": 1160}
+            "simple": {"width": 800, "height": 560},
+            "advanced": {"width": 800, "height": 790},
+            "expert": {"width": 800, "height": 1160}
         }
         
         # Если используется старый формат конфигурации (width/height на верхнем уровне)

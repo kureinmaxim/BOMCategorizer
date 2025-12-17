@@ -30,16 +30,16 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     group = QGroupBox("Основные настройки")
     layout = QVBoxLayout()
 
-    # Кнопки управления файлами
+    # Кнопки управления файлами - теперь две отдельные кнопки
     buttons_layout = QHBoxLayout()
     buttons_layout.setSpacing(8)
 
-    add_btn = QPushButton("➕ Добавить файлы")
-    add_btn.setToolTip("Добавить BOM файлы для обработки (F1 - справка)")
-    add_btn.setMinimumHeight(32)
-    add_btn.clicked.connect(window.on_add_files)
-    window.lockable_widgets.append(add_btn)
-    buttons_layout.addWidget(add_btn, 1)
+    add_bom_btn = QPushButton("➕ Добавить BOM файлы")
+    add_bom_btn.setToolTip("Добавить BOM файлы для обработки (F1 - справка)")
+    add_bom_btn.setMinimumHeight(32)
+    add_bom_btn.clicked.connect(window.on_add_files)
+    window.lockable_widgets.append(add_bom_btn)
+    buttons_layout.addWidget(add_bom_btn, 1)
 
     clear_btn = QPushButton("🗑️ Очистить")
     clear_btn.setProperty("class", "danger")
@@ -48,7 +48,7 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     window.lockable_widgets.append(clear_btn)
     buttons_layout.addWidget(clear_btn, 1)
     
-    # Кнопка CLI - в той же строке, тёмно-синий фон
+    # Кнопка CLI - в середине между BOM и ТРУ/РКМ
     open_cli_button = QPushButton("💻 CLI")
     open_cli_button.setObjectName("openCliButton")
     open_cli_button.setToolTip(
@@ -76,19 +76,72 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     """)
     open_cli_button.clicked.connect(window.open_interactive_cli)
     buttons_layout.addWidget(open_cli_button, 1)
+    
+    # Кнопки для ТРУ/РКМ файлов
+    add_tru_btn = QPushButton("➕ Добавить ТРУ/РКМ")
+    add_tru_btn.setToolTip("Добавить файлы ТРУ и РКМ (только .xls)")
+    add_tru_btn.setMinimumHeight(32)
+    add_tru_btn.clicked.connect(window.on_add_tru_rkm_files)
+    window.lockable_widgets.append(add_tru_btn)
+    buttons_layout.addWidget(add_tru_btn, 1)
+
+    clear_tru_btn = QPushButton("🗑️ Очистить")
+    clear_tru_btn.setProperty("class", "danger")
+    clear_tru_btn.setMinimumHeight(32)
+    clear_tru_btn.clicked.connect(window.on_clear_tru_rkm_files)
+    window.lockable_widgets.append(clear_tru_btn)
+    buttons_layout.addWidget(clear_tru_btn, 1)
 
     layout.addLayout(buttons_layout)
 
-    # Список файлов
+    # Два списка файлов рядом - разделены пополам
+    files_row_layout = QHBoxLayout()
+    files_row_layout.setSpacing(10)
+    
+    # Левая половина - входные BOM файлы
+    left_files_widget = QWidget()
+    left_files_widget.setMinimumHeight(130)  # Фиксированная высота для всего блока
+    left_files_widget.setMaximumHeight(130)
+    left_files_layout = QVBoxLayout(left_files_widget)
+    left_files_layout.setContentsMargins(0, 0, 0, 0)
+    left_files_layout.setSpacing(5)
+    
     files_label = QLabel("Входные файлы:")
     files_label.setProperty("class", "bold")
-    layout.addWidget(files_label)
+    files_label.setFixedHeight(20)  # Фиксированная высота для label
+    left_files_layout.addWidget(files_label)
 
     window.files_list = QListWidget()
+    window.files_list.setMinimumHeight(100)
     window.files_list.setMaximumHeight(100)
     window.files_list.itemSelectionChanged.connect(window.on_file_selected)
     window.lockable_widgets.append(window.files_list)
-    layout.addWidget(window.files_list)
+    left_files_layout.addWidget(window.files_list)
+    
+    files_row_layout.addWidget(left_files_widget, 1)
+    
+    # Правая половина - файлы ТРУ и РКМ (идентичные размеры)
+    right_files_widget = QWidget()
+    right_files_widget.setMinimumHeight(130)  # Такая же высота как у левой
+    right_files_widget.setMaximumHeight(130)
+    right_files_layout = QVBoxLayout(right_files_widget)
+    right_files_layout.setContentsMargins(0, 0, 0, 0)
+    right_files_layout.setSpacing(5)
+    
+    tru_rkm_label = QLabel("Файлы ТРУ и РКМ:")
+    tru_rkm_label.setProperty("class", "bold")
+    tru_rkm_label.setFixedHeight(20)  # Такая же высота как у label слева
+    right_files_layout.addWidget(tru_rkm_label)
+
+    window.tru_rkm_files_list = QListWidget()
+    window.tru_rkm_files_list.setMinimumHeight(100)
+    window.tru_rkm_files_list.setMaximumHeight(100)
+    window.lockable_widgets.append(window.tru_rkm_files_list)
+    right_files_layout.addWidget(window.tru_rkm_files_list)
+    
+    files_row_layout.addWidget(right_files_widget, 1)
+    
+    layout.addLayout(files_row_layout)
 
     # Grid layout для выровненных полей
     grid = QGridLayout()
@@ -163,15 +216,24 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     grid.addWidget(mult_widget, row, 1)
     row += 1
 
-    # Листы Excel
+    # Листы Excel - уменьшенная ширина
     label = QLabel("Листы (через запятую):")
     label.setMinimumWidth(180)
     grid.addWidget(label, row, 0, Qt.AlignLeft)
 
+    # Создаем виджет для поля ввода с ограниченной шириной
+    sheet_widget = QWidget()
+    sheet_layout = QHBoxLayout(sheet_widget)
+    sheet_layout.setContentsMargins(0, 0, 0, 0)
+    
     window.sheet_entry = QLineEdit()
     window.sheet_entry.setPlaceholderText("Оставьте пустым для всех листов")
+    window.sheet_entry.setMaximumWidth(450)  # Ограничиваем ширину
     window.lockable_widgets.append(window.sheet_entry)
-    grid.addWidget(window.sheet_entry, row, 1)
+    sheet_layout.addWidget(window.sheet_entry)
+    sheet_layout.addStretch()  # Растягиваемое пространство справа
+    
+    grid.addWidget(sheet_widget, row, 1)
     row += 1
 
     # Выходной файл XLSX

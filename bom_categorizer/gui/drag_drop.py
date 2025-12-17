@@ -26,10 +26,12 @@ class DragDropListWidget(QListWidget):
     items_reordered = Signal()  # Порядок изменен
     items_moved_to = Signal(str, list)  # (target_list_id, items)
     
-    def __init__(self, list_id: str = "", parent=None):
+    def __init__(self, list_id: str = "", allowed_extensions: List[str] = None, parent=None):
         super().__init__(parent)
         self.list_id = list_id
         self.drag_start_position = QPoint()
+        # Разрешенные расширения файлов (если None - разрешены все)
+        self.allowed_extensions = allowed_extensions if allowed_extensions else ['.xlsx', '.docx', '.doc', '.txt', '.xls']
         
         # Настройки Drag & Drop
         self.setDragEnabled(True)
@@ -74,9 +76,8 @@ class DragDropListWidget(QListWidget):
         if mime_data.hasUrls():
             # Проверяем расширения файлов
             urls = mime_data.urls()
-            supported_extensions = ['.xlsx', '.docx', '.doc', '.txt']
             has_supported = any(
-                url.toLocalFile().lower().endswith(tuple(supported_extensions))
+                url.toLocalFile().lower().endswith(tuple(self.allowed_extensions))
                 for url in urls if url.isLocalFile()
             )
             
@@ -110,13 +111,12 @@ class DragDropListWidget(QListWidget):
         # Файлы из проводника
         if mime_data.hasUrls():
             urls = mime_data.urls()
-            supported_extensions = ['.xlsx', '.docx', '.doc', '.txt']
             
             files = []
             for url in urls:
                 if url.isLocalFile():
                     file_path = url.toLocalFile()
-                    if any(file_path.lower().endswith(ext) for ext in supported_extensions):
+                    if any(file_path.lower().endswith(ext) for ext in self.allowed_extensions):
                         files.append(file_path)
             
             if files:
