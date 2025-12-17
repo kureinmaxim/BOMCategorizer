@@ -216,6 +216,7 @@ class BOMCategorizerMainWindow(QMainWindow):
         self.selected_file_index: Optional[int] = None
         self.processing_dialog_ref = None  # Ссылка на диалог обработки (для плавного перехода)
         self.last_input_file = None  # Последний добавленный входной файл (для истории БД)
+        self.last_generated_output = None  # Последний сгенерированный файл (для экспорта в PDF)
 
         # Сравнение файлов
         self.compare_file1 = ""
@@ -1538,6 +1539,14 @@ class BOMCategorizerMainWindow(QMainWindow):
                 
                 # Статистика
                 success_count = sum(1 for r in results.values() if r['success'])
+                
+                # Сохраняем путь к последнему успешному файлу для экспорта
+                for res in results.values():
+                    if res['success'] and res.get('output_path'):
+                        self.last_generated_output = res['output_path']
+                        # Берем первый успешный файл (обычно он один для ТРУ)
+                        break
+                        
                 self.log_text.append(f"\n🏁 Итог ТРУ/РКМ: Успешно {success_count} из {len(self.tru_rkm_files)}")
                 
                 # Показываем сообщения об ошибках если были
@@ -1630,6 +1639,10 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         # Показываем результат
         if success:
+            # Сохраняем путь для экспорта
+            if output_file:
+                self.last_generated_output = output_file
+                
             QMessageBox.information(
                 self,
                 "Готово",
@@ -4542,8 +4555,13 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
     
     def export_last_result_to_pdf(self):
         """Экспортирует последний выходной файл в PDF"""
-        # Проверяем, есть ли выходной файл
-        output_file = self.output_entry.text().strip() if hasattr(self, 'output_entry') else ""
+        # Проверяем, есть ли последний сгенерированный файл
+        output_file = ""
+        if hasattr(self, 'last_generated_output') and self.last_generated_output and os.path.exists(self.last_generated_output):
+            output_file = self.last_generated_output
+        else:
+            # Иначе берем из поля ввода
+            output_file = self.output_entry.text().strip() if hasattr(self, 'output_entry') else ""
         
         if not output_file or not os.path.exists(output_file):
             # Если выходного файла нет, предлагаем экспортировать входные файлы напрямую в PDF

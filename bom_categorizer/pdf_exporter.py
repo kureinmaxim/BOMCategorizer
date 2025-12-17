@@ -487,8 +487,31 @@ class PDFExporter:
         # Читаем данные
         for idx, row in enumerate(sheet.iter_rows(min_row=1, max_row=max_row, max_col=max_col)):
             row_data = []
-            for cell in row:
+            for idx_cell, cell in enumerate(row):
                 value = cell.value
+                
+                # Специальная обработка для ТРУ файлов (6 колонок)
+                # Если колонка "Стоимость" (индекс 4) пустая (из-за формул), считаем сами
+                if max_col == 6 and idx > 0 and idx_cell == 4 and (value is None or str(value).strip() == ""):
+                    try:
+                        # Получаем Количество (индекс 2) и Цену (индекс 3)
+                        qty_val = row[2].value
+                        price_val = row[3].value
+                        
+                        if qty_val is not None and price_val is not None:
+                            # Парсим количество
+                            qty = float(str(qty_val).replace(',', '.').replace(' ', ''))
+                            # Парсим цену
+                            price = float(str(price_val).replace(',', '.').replace(' ', ''))
+                            
+                            # Считаем стоимость
+                            cost = qty * price
+                            
+                            # Форматируем как строку с 2 знаками
+                            value = f"{cost:.2f}"
+                    except:
+                        pass
+                
                 if value is None:
                     value = ""
                 else:
@@ -498,8 +521,6 @@ class PDFExporter:
                 if idx == 0:
                     if value == '№ п/п':
                         value = '№'
-                    elif value == 'Стоимость':
-                        value = 'Цена'
                 
                 # Оборачиваем в Paragraph для автоматического переноса
                 # Заголовки (первая строка) - жирным шрифтом
@@ -583,6 +604,16 @@ class PDFExporter:
                 20*mm,   # шт.
                 55*mm,   # Примечание
                 25*mm    # № ТРУ (минимальная)
+            ]
+        elif num_cols == 6:
+            # ТРУ/РКМ формат: Артикул, Наименование, Количество, Цена, Стоимость, Ответственные
+            col_widths = [
+                22*mm,   # 1. Артикул
+                90*mm,   # 2. Наименование (широкая)
+                15*mm,   # 3. Количество
+                25*mm,   # 4. Цена
+                25*mm,   # 5. Стоимость
+                100*mm   # 6. Ответственные (очень широкая)
             ]
         else:
             # Для других количеств колонок - равномерное распределение
