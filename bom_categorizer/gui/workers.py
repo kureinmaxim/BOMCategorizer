@@ -190,3 +190,26 @@ class ComparisonWorker(QThread):
             error_msg = f"❌ Ошибка при сравнении:\n{str(e)}\n\n{traceback.format_exc()}"
             self.finished.emit(error_msg, False)
 
+
+from ..tru_rkm_processor import process_tru_rkm_files
+
+class TruRkmWorker(QThread):
+    """
+    Фоновый воркер для обработки ТРУ/РКМ файлов
+    """
+    progress = Signal(int, int, str, bool) # current, total, filename, success
+    finished = Signal(dict) # results dict
+
+    def __init__(self, file_paths):
+        super().__init__()
+        self.file_paths = file_paths
+
+    def run(self):
+        # Используем callback для отправки сигналов прогресса
+        def progress_callback(current, total, filename, success):
+            self.progress.emit(current, total, filename, success)
+            
+        results = process_tru_rkm_files(self.file_paths, progress_callback)
+        self.finished.emit(results)
+
+

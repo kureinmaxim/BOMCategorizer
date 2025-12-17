@@ -17,7 +17,7 @@ import re
 from datetime import datetime
 from typing import Dict, Optional, List
 
-from .tru_rkm_processor import process_tru_rkm_files
+from bom_categorizer.tru_rkm_processor import process_tru_rkm_files
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -60,7 +60,7 @@ from .dialogs import (
 from ..styles import DARK_THEME, LIGHT_THEME
 
 # Импорты из новых модулей
-from .workers import ProcessingWorker, ComparisonWorker
+from .workers import ProcessingWorker, ComparisonWorker, TruRkmWorker
 from .search import GlobalSearchDialog
 from . import sections
 from . import search_methods
@@ -180,6 +180,8 @@ def get_system_font() -> str:
         return 'Segoe UI'
     else:  # Linux и другие
         return 'DejaVu Sans'
+
+
 
 
 class BOMCategorizerMainWindow(QMainWindow):
@@ -320,6 +322,14 @@ class BOMCategorizerMainWindow(QMainWindow):
         # Применяем блокировку интерфейса при необходимости
         if self.require_pin:
             self.lock_interface()
+
+    def _apply_window_size_for_mode(self, mode: str):
+        """Устанавливает размер окна в зависимости от режима"""
+        if mode == "simple":
+            self.resize(600, 400)
+        else:
+            # Advanced и Expert режимы
+            self.resize(800, 560)
 
     def _setup_styles(self):
         """Настраивает стили приложения с поддержкой темной и светлой темы"""
@@ -1454,7 +1464,33 @@ class BOMCategorizerMainWindow(QMainWindow):
             close_btn.setEnabled(True)
             progress_dialog.exec()
             return False
+    
+    def open_interactive_cli(self):
+        """Открывает интерактивную командную строку"""
+        from PySide6.QtWidgets import QDialog, QVBoxLayout
+        from ..cli_interactive import InteractiveCLI
+        
+        # Создаем диалог
+        dialog = QDialog(self)
+        dialog.setWindowTitle("💻 Интерактивная командная строка")
+        dialog.resize(900, 600)
+        
+        # Создаем layout
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(10, 10, 10, 10)
+        
+        # Добавляем CLI виджет
+        cli_widget = InteractiveCLI(self, dialog)
+        layout.addWidget(cli_widget)
+        
+        # Показываем диалог
+        dialog.exec()
+        
+        # Логируем
+        if self.log_text:
+            self.log_text.append("💻 Интерактивная командная строка закрыта")
 
+    
     def on_run(self):
         """Запуск обработки"""
         # Проверка наличия файлов
@@ -1477,47 +1513,62 @@ class BOMCategorizerMainWindow(QMainWindow):
             self.log_text.append(f"📋 Файлов для обработки: {len(self.tru_rkm_files)}\n")
             
             # Диалог прогресса для ТРУ/РКМ
-            tru_progress = QProgressDialog("Обработка ТРУ/РКМ файлов...", None, 0, len(self.tru_rkm_files), self)
+            tru_progress = QProgressDialog("Обработка ТРУ/РКМ файлов...", "Отмена", 0, len(self.tru_rkm_files) + 1, self)
             tru_progress.setWindowTitle("Обработка ТРУ/РКМ")
             tru_progress.setWindowModality(Qt.WindowModal)
             tru_progress.setMinimumDuration(0)
             tru_progress.setValue(0)
-            tru_progress.setAutoClose(True)
+            tru_progress.setAutoClose(False) # Не закрывать авто, закроем сами
             tru_progress.show()
             
-            def update_progress(current, total, filename, success):
+            # Создаем и запускаем воркер
+            self.tru_worker = TruRkmWorker(self.tru_rkm_files)
+            
+            def on_progress(current, total, filename, success):
+                if tru_progress.wasCanceled():
+                    # TODO: Implement cancellation support in processor
+                    pass
                 tru_progress.setValue(current)
                 tru_progress.setLabelText(f"Обработка: {filename}")
                 status = "✅" if success else "❌"
                 self.log_text.append(f"   {status} {filename}")
-                QApplication.processEvents()
+                
+            def on_finished(results):
+                tru_progress.close()
+                
+                # Статистика
+                success_count = sum(1 for r in results.values() if r['success'])
+                self.log_text.append(f"\n🏁 Итог ТРУ/РКМ: Успешно {success_count} из {len(self.tru_rkm_files)}")
+                
+                # Показываем сообщения об ошибках если были
+                errors = [f"{os.path.basename(p)}: {r['message']}" for p, r in results.items() if not r['success']]
+                if errors:
+                    self.log_text.append("\n❌ Ошибки:")
+                    for err in errors:
+                        self.log_text.append(f"   • {err}")
+                
+                # Если нет BOM файлов, показываем диалог завершения и выходим
+                if not has_bom:
+                    QMessageBox.information(
+                        self,
+                        "Обработка завершена",
+                        f"Обработка ТРУ/РКМ файлов выполнена.\n\nУспешно: {success_count}\nОшибок: {len(errors)}"
+                    )
+                else:
+                    # Если есть BOM файлы, запускаем их обработку
+                    self.start_bom_processing()
 
-            # Запуск обработки
-            results = process_tru_rkm_files(self.tru_rkm_files, update_progress)
+            self.tru_worker.progress.connect(on_progress)
+            self.tru_worker.finished.connect(on_finished)
+            self.tru_worker.start()
             
-            # Статистика
-            success_count = sum(1 for r in results.values() if r['success'])
-            self.log_text.append(f"\n🏁 Итог ТРУ/РКМ: Успешно {success_count} из {len(self.tru_rkm_files)}")
-            
-            # Показываем сообщения об ошибках если были
-            errors = [f"{os.path.basename(p)}: {r['message']}" for p, r in results.items() if not r['success']]
-            if errors:
-                self.log_text.append("\n❌ Ошибки:")
-                for err in errors:
-                    self.log_text.append(f"   • {err}")
-            
-            # Если нет BOM файлов, показываем диалог завершения и выходим
-            if not has_bom:
-                QMessageBox.information(
-                    self,
-                    "Обработка завершена",
-                    f"Обработка ТРУ/РКМ файлов выполнена.\n\nУспешно: {success_count}\nОшибок: {len(errors)}"
-                )
-                return
+            return
 
-        # Если есть только ТРУ/РКМ файлы, мы уже вышли выше.
-        # Если есть BOM файлы, продолжаем выполнение.
-        
+        # Если есть только BOM файлы, запускаем сразу
+        self.start_bom_processing()
+
+    def start_bom_processing(self):
+        """Запуск обработки BOM файлов (вынесено в отдельный метод)"""
         # Проверяем и конвертируем .doc файлы
         conversion_result = self.check_and_convert_doc_files()
         
@@ -4466,7 +4517,7 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
     
     def open_interactive_cli(self):
         """Открывает интерактивную командную строку"""
-        from PySide6.QtWidgets import QDialog
+        from PySide6.QtWidgets import QDialog, QVBoxLayout
         from ..cli_interactive import InteractiveCLI
         
         # Создаем диалог
@@ -4475,7 +4526,6 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
         dialog.resize(900, 600)
         
         # Создаем layout
-        from PySide6.QtWidgets import QVBoxLayout
         layout = QVBoxLayout(dialog)
         layout.setContentsMargins(10, 10, 10, 10)
         
@@ -5080,8 +5130,6 @@ Copyright © 2025 Куреин М.Н. / Kurein M.N.<br><br>
             return True
         except Exception as e:
             print(f"⚠️ Не удалось открыть проводник: {e}")
-            return False
-
 
 def main():
     """Точка входа для PySide6 приложения"""

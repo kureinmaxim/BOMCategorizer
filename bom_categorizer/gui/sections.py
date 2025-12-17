@@ -111,10 +111,17 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     files_label.setFixedHeight(20)  # Фиксированная высота для label
     left_files_layout.addWidget(files_label)
 
-    window.files_list = QListWidget()
+    from .drag_drop import DragDropListWidget, FileListManager
+    
+    # Инициализация менеджера D&D если еще нет
+    if not hasattr(window, 'file_list_manager'):
+        window.file_list_manager = FileListManager(window)
+
+    window.files_list = DragDropListWidget("input_files", ['.xlsx', '.xls', '.docx', '.doc', '.txt'])
     window.files_list.setMinimumHeight(100)
     window.files_list.setMaximumHeight(100)
     window.files_list.itemSelectionChanged.connect(window.on_file_selected)
+    window.file_list_manager.register_list("input_files", window.files_list)
     window.lockable_widgets.append(window.files_list)
     left_files_layout.addWidget(window.files_list)
     
@@ -133,9 +140,10 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
     tru_rkm_label.setFixedHeight(20)  # Такая же высота как у label слева
     right_files_layout.addWidget(tru_rkm_label)
 
-    window.tru_rkm_files_list = QListWidget()
+    window.tru_rkm_files_list = DragDropListWidget("tru_rkm_files", ['.xls', '.xlsx'])
     window.tru_rkm_files_list.setMinimumHeight(100)
     window.tru_rkm_files_list.setMaximumHeight(100)
+    window.file_list_manager.register_list("tru_rkm_files", window.tru_rkm_files_list)
     window.lockable_widgets.append(window.tru_rkm_files_list)
     right_files_layout.addWidget(window.tru_rkm_files_list)
     

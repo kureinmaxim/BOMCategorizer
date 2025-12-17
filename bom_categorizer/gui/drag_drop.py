@@ -336,6 +336,20 @@ class FileListManager:
             self.parent_window.update_listbox()
             self.parent_window.update_output_filename()
             
+        elif list_id == "tru_rkm_files":
+            # Добавляем в ТРУ/РКМ файлы
+            new_files = []
+            if not hasattr(self.parent_window, 'tru_rkm_files'):
+                self.parent_window.tru_rkm_files = []
+                
+            for file_path in files:
+                if file_path not in self.parent_window.tru_rkm_files:
+                    self.parent_window.tru_rkm_files.append(file_path)
+                    new_files.append(file_path)
+            
+            if new_files:
+                self.parent_window.update_tru_rkm_listbox()
+                
         elif list_id in ["compare_file1", "compare_file2"]:
             # Для файлов сравнения берем только первый файл
             if files:
@@ -360,6 +374,18 @@ class FileListManager:
                     new_order[file_path] = self.parent_window.input_files[file_path]
             
             self.parent_window.input_files = new_order
+            
+        elif list_id == "tru_rkm_files":
+            # Обновляем порядок в списке (простой список строк)
+            widget = self.lists[list_id]
+            new_list = []
+            
+            for i in range(widget.count()):
+                item = widget.item(i)
+                file_path = item.text()
+                new_list.append(file_path)
+            
+            self.parent_window.tru_rkm_files = new_list
     
     def on_items_moved(self, target_list_id: str, items_data: List[dict]):
         """Обработка перемещения элементов между списками"""

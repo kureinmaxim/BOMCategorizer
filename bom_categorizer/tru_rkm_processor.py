@@ -90,16 +90,9 @@ def generate_output_filename(input_path: str, file_type: str) -> str:
     return output_path
 
 
-def process_tru_file(input_path: str, output_path: str) -> Tuple[bool, str]:
+def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
     """
-    Обрабатывает ТРУ файл
-    
-    Args:
-        input_path: Путь к входному .xls файлу
-        output_path: Путь к выходному .xlsx файлу
-        
-    Returns:
-        (success, message): Успешность и сообщение
+    Читает один ТРУ файл и возвращает сырой DataFrame с нужными колонками
     """
     try:
         # Используем xlrd напрямую для указания кодировки
@@ -117,19 +110,8 @@ def process_tru_file(input_path: str, output_path: str) -> Tuple[bool, str]:
         
         # Проверяем что файл не пустой и есть хотя бы 2 строки
         if len(df) < 2:
-            return False, "Файл слишком мал или пуст"
-        
-        # Строка 1 содержит заголовки столбцов
-        # Данные начинаются со строки 2
-        # Берем нужные столбцы по индексам:
-        # 0: Артикул
-        # 1: Наименование
-        # 4: Количество заявлено в БЕИ
-        # 8: Цена в руб
-        # 9: Сумма в ДВ
-        # 14: Группа ответственных
-        # 16: Код группы ответственных
-        
+            return None
+            
         # Извлекаем данные начиная со строки 2 (индекс 2)
         data_df = df.iloc[2:].copy()
         
@@ -139,14 +121,38 @@ def process_tru_file(input_path: str, output_path: str) -> Tuple[bool, str]:
         result_df['Наименование'] = data_df.iloc[:, 1]
         result_df['Количество'] = data_df.iloc[:, 4]
         result_df['Цена'] = data_df.iloc[:, 8]
-        result_df['Стоимость'] = data_df.iloc[:, 9]
+        result_df['Стоимость'] = data_df.iloc[:, 9] # Будет пересчитано, но берем для структуры
         
-        # Объединяем "Группа ответственных" и "Код группы ответственных"
-        # Порядок: Код + Название группы
-        group_resp = data_df.iloc[:, 14].fillna('')
-        code_resp = data_df.iloc[:, 16].fillna('')
+        # Данные для колонки Ответственные
+        result_df['_group_resp'] = data_df.iloc[:, 14].fillna('')
+        result_df['_code_resp'] = data_df.iloc[:, 16].fillna('')
         
-        # Конвертируем коды в int где возможно, чтобы убрать .0
+        return result_df
+        
+    except Exception as e:
+        print(f"Ошибка чтения {input_path}: {e}")
+        return None
+
+def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[bool, str]:
+    """
+    Обрабатывает несколько ТРУ файлов и сохраняет в один
+    """
+    try:
+        all_dfs = []
+        
+        for path in input_paths:
+            df = _read_tru_file(path)
+            if df is not None:
+                all_dfs.append(df)
+        
+        if not all_dfs:
+            return False, "Не удалось прочитать ни одного файла"
+            
+        # Объединяем все DataFrame
+        result_df = pd.concat(all_dfs, ignore_index=True)
+        
+        # Обработка колонки "Ответственные"
+        # Конвертируем коды в int где возможно
         def format_code(val):
             try:
                 if pd.isna(val): return ""
@@ -154,19 +160,45 @@ def process_tru_file(input_path: str, output_path: str) -> Tuple[bool, str]:
             except:
                 return str(val)
         
-        code_resp_formatted = code_resp.apply(format_code)
+        code_resp_formatted = result_df['_code_resp'].apply(format_code)
         
         # Объединяем: Код + пробел + Группа
-        result_df['Ответственные'] = (code_resp_formatted + ' ' + group_resp.astype(str)).str.strip()
+        result_df['Ответственные'] = (code_resp_formatted + ' ' + result_df['_group_resp'].astype(str)).str.strip()
         
-        # Удаляем пустые строки (где все значения NaN)
+        # Очистка и сортировка
+        # Очистка цен и количеств
+        def parse_price(val):
+            try:
+                if isinstance(val, (int, float)):
+                    return float(val)
+                val_str = str(val).replace(',', '.').replace(' ', '')
+                return float(val_str)
+            except:
+                return 0.0
+                
+        result_df['Количество'] = result_df['Количество'].apply(parse_price)
+        result_df['Цена'] = result_df['Цена'].apply(parse_price)
+        
+        # Рассчитываем стоимость для сортировки (по формуле)
+        result_df['Стоимость'] = result_df['Количество'] * result_df['Цена']
+        
+        # Сортировка
+        # 1. По коду (числовому)
+        result_df['_sort_key_code'] = pd.to_numeric(result_df['_code_resp'], errors='coerce').fillna(float('inf'))
+        
+        # Сортируем: Код, затем Цена
+        result_df = result_df.sort_values(by=['_sort_key_code', 'Цена'], ascending=[True, True])
+        
+        # Удаляем временные колонки
+        result_df = result_df.drop(columns=['_group_resp', '_code_resp', '_sort_key_code'])
+        
+        # Удаляем пустые строки
         result_df = result_df.dropna(how='all')
         
-        # Сохраняем в Excel с форматированием
+        # Сохраняем (логика с openpyxl такая же как раньше)
         with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
             result_df.to_excel(writer, index=False, sheet_name='ТРУ')
             
-            # Получаем worksheet для форматирования
             worksheet = writer.sheets['ТРУ']
             
             # Стили
@@ -177,110 +209,110 @@ def process_tru_file(input_path: str, output_path: str) -> Tuple[bool, str]:
             center_align = Alignment(horizontal='center', vertical='center')
             left_align = Alignment(horizontal='left', vertical='center')
             
-            # Форматируем заголовки
             for cell in worksheet[1]:
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = header_alignment
             
-            # Форматируем данные
             for row in worksheet.iter_rows(min_row=2):
-                # Артикул (A) - по центру (или слева если длинный)
-                row[0].alignment = left_align
-                # Наименование (B) - слева
-                row[1].alignment = left_align
-                # Количество (C) - по центру
-                row[2].alignment = center_align
-                # Цена (D) - по центру
+                row[0].alignment = left_align # Артикул
+                row[1].alignment = left_align # Наименование
+                row[2].alignment = center_align # Количество
+                
+                # Цена
                 row[3].alignment = center_align
-                # Стоимость (E) - по центру
-                row[4].alignment = center_align
-                # Ответственные (F) - слева
-                row[5].alignment = left_align
+                row[3].number_format = '#,##0.00'
+                
+                # Стоимость (Формула)
+                row_idx = row[0].row
+                cell = row[4]
+                cell.value = f"=C{row_idx}*D{row_idx}"
+                cell.alignment = center_align
+                cell.number_format = '#,##0.00'
+                
+                row[5].alignment = left_align # Ответственные
 
-            # Автоматическая ширина столбцов с запасом
-            column_widths = {
-                'A': 15, # Артикул
-                'B': 50, # Наименование
-                'C': 12, # Количество
-                'D': 15, # Цена
-                'E': 15, # Стоимость
-                'F': 40  # Ответственные
-            }
-            
+            column_widths = {'A': 15, 'B': 50, 'C': 12, 'D': 15, 'E': 15, 'F': 40}
             for col_letter, width in column_widths.items():
                 worksheet.column_dimensions[col_letter].width = width
-        
-        rows_processed = len(result_df)
-        return True, f"Успешно обработано {rows_processed} строк"
+            
+            # ИТОГО
+            last_row = len(result_df) + 1
+            total_row = last_row + 2
+            
+            total_label_cell = worksheet.cell(row=total_row, column=4, value="ИТОГО:")
+            total_label_cell.font = Font(bold=True, size=12)
+            total_label_cell.alignment = Alignment(horizontal='right', vertical='center')
+            
+            total_value_cell = worksheet.cell(row=total_row, column=5, value=f"=SUM(E2:E{last_row})")
+            total_value_cell.font = Font(bold=True, size=12)
+            total_value_cell.alignment = Alignment(horizontal='center', vertical='center')
+            total_value_cell.number_format = '#,##0.00'
+            
+            top_border = Border(top=Side(border_style="double", color="000000"))
+            total_label_cell.border = top_border
+            total_value_cell.border = top_border
+            
+            total_fill = PatternFill(start_color='E0E0E0', end_color='E0E0E0', fill_type='solid')
+            total_label_cell.fill = total_fill
+            total_value_cell.fill = total_fill
+            
+        # Пересохранение через COM
+        try:
+            import platform
+            if platform.system() == 'Windows':
+                _resave_with_excel_com(output_path)
+        except:
+            pass
+            
+        return True, f"Объединено и обработано {len(all_dfs)} файлов, {len(result_df)} строк"
         
     except Exception as e:
-        return False, f"Ошибка обработки: {str(e)}"
-
-
-def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
-    """
-    Обрабатывает РКМ файл
-    
-    TODO: Реализовать когда будет известна структура
-    
-    Args:
-        input_path: Путь к входному .xls файлу
-        output_path: Путь к выходному .xlsx файлу
-        
-    Returns:
-        (success, message): Успешность и сообщение
-    """
-    return False, "Обработка РКМ файлов пока не реализована"
-
+        return False, f"Ошибка пакетной обработки: {str(e)}"
 
 def process_tru_rkm_files(file_paths: List[str], progress_callback=None) -> Dict[str, Dict[str, any]]:
     """
     Обрабатывает список ТРУ/РКМ файлов
-    
-    Args:
-        file_paths: Список путей к файлам
-        progress_callback: Функция для отчета о прогрессе (optional)
-        
-    Returns:
-        Словарь {input_path: {'success': bool, 'output_path': str, 'message': str}}
+    ТРУ файлы объединяются в один.
     """
     results = {}
     
-    for i, input_path in enumerate(file_paths):
-        filename = os.path.basename(input_path)
-        
-        # Определяем тип файла
-        file_type = detect_file_type(filename)
-        
-        if file_type is None:
-            results[input_path] = {
-                'success': False,
-                'output_path': None,
-                'message': 'Не удалось определить тип файла (ТРУ или РКМ)'
-            }
-            continue
-        
-        # Генерируем имя выходного файла
-        output_path = generate_output_filename(input_path, file_type)
-        
-        # Обрабатываем файл
-        if file_type == 'tpy':
-            success, message = process_tru_file(input_path, output_path)
-        elif file_type == 'rkm':
-            success, message = process_rkm_file(input_path, output_path)
-        else:
-            success = False
-            message = f"Неизвестный тип файла: {file_type}"
-        
-        results[input_path] = {
-            'success': success,
-            'output_path': output_path if success else None,
-            'message': message
-        }
-        
-        # Отчет о прогрессе
-        if progress_callback:
-            progress_callback(i + 1, len(file_paths), filename, success)
+    # Разделяем файлы по типам
+    tru_files = []
+    rkm_files = []
     
+    for i, path in enumerate(file_paths):
+        ft = detect_file_type(os.path.basename(path))
+        if ft == 'tpy':
+            tru_files.append(path)
+        elif ft == 'rkm':
+            rkm_files.append(path)
+        else:
+            results[path] = {'success': False, 'message': 'Unknown file type'}
+            if progress_callback: progress_callback(i+1, len(file_paths), os.path.basename(path), False)
+            
+    # Обработка ТРУ файлов (объединение)
+    if tru_files:
+        # Имя выходного файла берем из первого файла
+        output_path = generate_output_filename(tru_files[0], 'tpy')
+        
+        if progress_callback:
+             progress_callback(1, len(file_paths), "Объединение ТРУ файлов...", True)
+             
+        success, msg = process_tru_files_batch(tru_files, output_path)
+        
+        # Записываем результат для всех входных файлов
+        for path in tru_files:
+            results[path] = {
+                'success': success,
+                'output_path': output_path if success else None,
+                'message': msg
+            }
+            
+    # Обработка РКМ (пока поштучно, т.к. не реализовано)
+    for path in rkm_files:
+         output_path = generate_output_filename(path, 'rkm')
+         success, msg = process_rkm_file(path, output_path)
+         results[path] = {'success': success, 'output_path': output_path, 'message': msg}
+         
     return results
