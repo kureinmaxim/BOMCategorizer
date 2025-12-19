@@ -92,21 +92,32 @@ def generate_output_filename(input_path: str, file_type: str) -> str:
 
 def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
     """
-    Читает один ТРУ файл и возвращает сырой DataFrame с нужными колонками
+    Читает один ТРУ файл и возвращает сырой DataFrame с нужными колонками.
+    Поддерживает форматы .xls и .xlsx
     """
     try:
-        # Используем xlrd напрямую для указания кодировки
-        import xlrd
-        workbook = xlrd.open_workbook(input_path, encoding_override='cp1251')
-        sheet = workbook.sheet_by_index(0)
+        ext = os.path.splitext(input_path)[1].lower()
         
-        # Конвертируем данные в список списков
-        data = []
-        for row_idx in range(sheet.nrows):
-            data.append([sheet.cell_value(row_idx, col_idx) for col_idx in range(sheet.ncols)])
+        if ext == '.xls':
+            # Старый формат Excel — используем xlrd
+            import xlrd
+            workbook = xlrd.open_workbook(input_path, encoding_override='cp1251')
+            sheet = workbook.sheet_by_index(0)
             
-        # Создаем DataFrame
-        df = pd.DataFrame(data)
+            # Конвертируем данные в список списков
+            data = []
+            for row_idx in range(sheet.nrows):
+                data.append([sheet.cell_value(row_idx, col_idx) for col_idx in range(sheet.ncols)])
+                
+            df = pd.DataFrame(data)
+            
+        elif ext == '.xlsx':
+            # Новый формат Excel — используем openpyxl через pandas
+            df = pd.read_excel(input_path, sheet_name=0, header=None, engine='openpyxl')
+            
+        else:
+            print(f"Неподдерживаемый формат файла: {ext}")
+            return None
         
         # Проверяем что файл не пустой и есть хотя бы 2 строки
         if len(df) < 2:
@@ -115,22 +126,29 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
         # Извлекаем данные начиная со строки 2 (индекс 2)
         data_df = df.iloc[2:].copy()
         
+        # Проверяем достаточно ли колонок
+        if data_df.shape[1] < 10:
+            print(f"Недостаточно колонок в файле {input_path}: {data_df.shape[1]}")
+            return None
+        
         # Выбираем нужные столбцы
         result_df = pd.DataFrame()
         result_df['Артикул'] = data_df.iloc[:, 0]
         result_df['Наименование'] = data_df.iloc[:, 1]
-        result_df['Количество'] = data_df.iloc[:, 4]
-        result_df['Цена'] = data_df.iloc[:, 8]
-        result_df['Стоимость'] = data_df.iloc[:, 9] # Будет пересчитано, но берем для структуры
+        result_df['Количество'] = data_df.iloc[:, 4] if data_df.shape[1] > 4 else ''
+        result_df['Цена'] = data_df.iloc[:, 8] if data_df.shape[1] > 8 else ''
+        result_df['Стоимость'] = data_df.iloc[:, 9] if data_df.shape[1] > 9 else ''
         
-        # Данные для колонки Ответственные
-        result_df['_group_resp'] = data_df.iloc[:, 14].fillna('')
-        result_df['_code_resp'] = data_df.iloc[:, 16].fillna('')
+        # Данные для колонки Ответственные (если есть)
+        result_df['_group_resp'] = data_df.iloc[:, 14].fillna('') if data_df.shape[1] > 14 else ''
+        result_df['_code_resp'] = data_df.iloc[:, 16].fillna('') if data_df.shape[1] > 16 else ''
         
         return result_df
         
     except Exception as e:
         print(f"Ошибка чтения {input_path}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
 def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[bool, str]:

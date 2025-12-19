@@ -1,5 +1,6 @@
 pandas
 openpyxl
+xlrd
 python-docx
 pytest
 pytest-html

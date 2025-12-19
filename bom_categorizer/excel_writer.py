@@ -258,13 +258,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                 result_df = result_df.rename(columns={candidate: 'шт.'})
             break
     
-    # Переименовать "Код МР" в стандартное написание
-    kod_mr_candidates = ['код мр', 'код_мр', 'kodmr', 'Код мр', 'КОД МР']
-    for candidate in kod_mr_candidates:
-        if candidate in result_df.columns:
-            if candidate != 'Код МР':
-                result_df = result_df.rename(columns={candidate: 'Код МР'})
-            break
+    # Колонка "Код МР" заменена на "КОД ERP(МР)" - старая колонка будет удалена
     
     if 'наименование ивп' in result_df.columns:
         result_df = result_df.rename(columns={'наименование ивп': 'Наименование ИВП'})
@@ -285,13 +279,15 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     if not desc_col_name:
         return result_df
     
-    # Проверяем, есть ли уже колонки ТУ и Примечание (файл уже обработан)
-    has_tu_column = 'ТУ' in result_df.columns or 'ту' in result_df.columns
+    # Проверяем, есть ли уже колонки ТУ/Производитель и Примечание (файл уже обработан)
+    has_tu_column = 'ТУ/Производитель' in result_df.columns or 'ТУ' in result_df.columns or 'ту' in result_df.columns
     has_primechanie_column = 'Примечание' in result_df.columns or 'примечание' in result_df.columns
     
     # Если force_reprocess=True, удаляем старые колонки для повторной обработки
     if force_reprocess and (has_tu_column or has_primechanie_column):
         cols_to_drop = []
+        if 'ТУ/Производитель' in result_df.columns:
+            cols_to_drop.append('ТУ/Производитель')
         if 'ТУ' in result_df.columns:
             cols_to_drop.append('ТУ')
         if 'ту' in result_df.columns:
@@ -309,7 +305,9 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     if has_tu_column and has_primechanie_column:
         # Файл уже обработан, просто нормализуем имена колонок
         if 'ту' in result_df.columns:
-            result_df = result_df.rename(columns={'ту': 'ТУ'})
+            result_df = result_df.rename(columns={'ту': 'ТУ/Производитель'})
+        if 'ТУ' in result_df.columns and 'ТУ/Производитель' not in result_df.columns:
+            result_df = result_df.rename(columns={'ТУ': 'ТУ/Производитель'})
         if 'примечание' in result_df.columns:
             result_df = result_df.rename(columns={'примечание': 'Примечание'})
         cleaned_data = []  # Пустой список, чтобы не нарушить дальнейшую логику
@@ -397,7 +395,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     if not has_tu_column and cleaned_data:
         tu_data = [item[1] for item in cleaned_data]
         desc_idx = list(result_df.columns).index(desc_col_name)
-        result_df.insert(desc_idx + 1, 'ТУ', tu_data)
+        result_df.insert(desc_idx + 1, 'ТУ/Производитель', tu_data)
     
     if not has_primechanie_column:
         # Для модулей питания используем reference в качестве Примечания
@@ -431,9 +429,9 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         
         # Вставить колонку Примечание, если есть данные
         if primechanie:
-            # Найти позицию после ТУ
-            if 'ТУ' in result_df.columns:
-                tu_idx = list(result_df.columns).index('ТУ')
+            # Найти позицию после ТУ/Производитель
+            if 'ТУ/Производитель' in result_df.columns:
+                tu_idx = list(result_df.columns).index('ТУ/Производитель')
                 result_df.insert(tu_idx + 1, 'Примечание', primechanie)
             else:
                 desc_idx = list(result_df.columns).index(desc_col_name)
@@ -443,7 +441,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     # (название + ТУ должны совпадать полностью, включая артикулы)
     if desc_col_name in result_df.columns:
         # Определяем колонки для группировки
-        group_cols = [desc_col_name, 'ТУ']
+        group_cols = [desc_col_name, 'ТУ/Производитель']
         
         # Находим колонку с quantity и примечанием
         qty_col = find_column(['шт.', 'qty', 'quantity', '_merged_qty_'], result_df.columns)
@@ -589,7 +587,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             # Если колонки "Примечание" нет - создаем её из reference
             result_df['Примечание'] = result_df['reference'].fillna('')
     
-    # Удалить ненужные колонки (НЕ удаляем Код МР!)
+    # Удалить ненужные колонки (включая старую Код МР, замененную на КОД ERP(МР))
     cols_to_remove = ['ед. изм. ктд', '_merged_qty_', 
                       'ед. изм. КТД',
                       'первоначальная цена, тыс.руб.', 'первоначальная стоимость, тыс.руб.',
@@ -605,7 +603,8 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                       'original_note',  # оригинальное примечание (использовано для подборов)
                       'has_explicit_qty',  # техническая колонка для определения явного количества
                       '_extracted_tu_',  # техническая колонка для извлечения ТУ (не показываем пользователю)
-                      '_normalized_desc_']  # техническая колонка для агрегации дубликатов
+                      '_normalized_desc_',  # техническая колонка для агрегации дубликатов
+                      'Код МР', 'код мр', 'код_мр', 'КОД МР']  # старая колонка, заменена на КОД ERP(МР)
     
     # Добавить все колонки № п/п и № п\п для удаления (исходные, не новую)
     pp_columns = [col for col in result_df.columns if str(col).startswith('№ п')]
@@ -647,10 +646,27 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
         # Колонки нет - создаем пустую
         result_df['Стоимость'] = ''
     
-    # Упорядочить колонки в правильном порядке
-    # Код МР после ТУ, Примечание в конце
-    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ', 'Код МР', 'Источник', 'шт.']
+    # Переименовываем ТУ → ТУ/Производитель (если старая колонка существует)
+    if 'ТУ' in result_df.columns and 'ТУ/Производитель' not in result_df.columns:
+        result_df = result_df.rename(columns={'ТУ': 'ТУ/Производитель'})
+    elif 'ту' in cols_lower and 'ту/производитель' not in cols_lower:
+        existing_col = cols_lower['ту']
+        result_df = result_df.rename(columns={existing_col: 'ТУ/Производитель'})
     
+    # Упорядочить колонки в правильном порядке
+    # Новый порядок: № п/п, Наименование ИВП, ТУ/Производитель, шт., КОД ERP(МР), Источник, Примечание, № ТРУ, Стоимость
+    desired_order = ['№ п/п', 'Наименование ИВП', 'ТУ/Производитель', 'шт.', 'КОД ERP(МР)', 'Источник']
+    
+    # ВАЖНО: Сначала создаём недостающие колонки, затем формируем списки
+    # Добавляем пустую колонку ТУ/Производитель если её нет
+    if 'ТУ/Производитель' not in result_df.columns:
+        result_df['ТУ/Производитель'] = ''
+    
+    # Добавляем пустую колонку КОД ERP(МР) если её нет
+    if 'КОД ERP(МР)' not in result_df.columns:
+        result_df['КОД ERP(МР)'] = ''
+    
+    # Теперь формируем списки колонок для упорядочивания
     ordered_cols = [col for col in desired_order if col in result_df.columns]
     remaining_cols = [col for col in result_df.columns 
                       if col not in ordered_cols and col not in cols_to_remove and col != 'Примечание' 
@@ -693,30 +709,33 @@ def apply_excel_styles(writer: pd.ExcelWriter):
     for sheet_name in writer.book.sheetnames:
         ws = writer.book[sheet_name]
         
-        # Найти индексы столбцов "Наименование ИВП", "ТУ", "Код МР", "Примечание" и "Источник"
+        # Найти индексы столбцов "Наименование ИВП", "ТУ/Производитель", "КОД ERP(МР)", "Примечание", "Источник" и "№ ТРУ"
         desc_col_idx = None
         tu_col_idx = None
-        kod_mr_col_idx = None
+        kod_erp_col_idx = None
         note_col_idx = None
         source_col_idx = None
+        tru_col_idx = None
         for idx, cell in enumerate(ws[1], start=1):
             cell_val = str(cell.value).lower() if cell.value else ''
             if 'наименование ивп' in cell_val or 'наименование' in cell_val:
                 desc_col_idx = idx
-            elif cell_val == 'ту':
+            elif 'ту/производитель' in cell_val or cell_val == 'ту':
                 tu_col_idx = idx
-            elif 'код мр' in cell_val:
-                kod_mr_col_idx = idx
+            elif 'код erp' in cell_val:
+                kod_erp_col_idx = idx
             elif 'примечание' in cell_val:
                 note_col_idx = idx
             elif 'источник' in cell_val or cell_val == 'source_file':
                 source_col_idx = idx
+            elif '№ тру' in cell_val:
+                tru_col_idx = idx
         
-        # Установить текстовый формат для колонки "Код МР" (чтобы избежать научной нотации)
-        if kod_mr_col_idx:
-            column_letter = ws.cell(row=1, column=kod_mr_col_idx).column_letter
+        # Установить текстовый формат для колонки "КОД ERP(МР)" (чтобы избежать научной нотации)
+        if kod_erp_col_idx:
+            column_letter = ws.cell(row=1, column=kod_erp_col_idx).column_letter
             for row_idx in range(1, ws.max_row + 1):
-                cell = ws.cell(row=row_idx, column=kod_mr_col_idx)
+                cell = ws.cell(row=row_idx, column=kod_erp_col_idx)
                 cell.number_format = '@'  # Текстовый формат
         
         # Создать стиль границ (тонкие черные линии со всех сторон)
@@ -753,6 +772,25 @@ def apply_excel_styles(writer: pd.ExcelWriter):
                     pass
             adjusted_width = min(max_length + 2, 100)
             ws.column_dimensions[column_letter].width = adjusted_width
+        
+        # Корректировка ширины отдельных колонок
+        # Примечание: уменьшить на 15%
+        if note_col_idx:
+            note_column_letter = ws.cell(row=1, column=note_col_idx).column_letter
+            current_width = ws.column_dimensions[note_column_letter].width or 15
+            ws.column_dimensions[note_column_letter].width = current_width * 0.85
+        
+        # № ТРУ: увеличить на 40% (было 100%, уменьшено на 30%)
+        if tru_col_idx:
+            tru_column_letter = ws.cell(row=1, column=tru_col_idx).column_letter
+            current_width = ws.column_dimensions[tru_column_letter].width or 10
+            ws.column_dimensions[tru_column_letter].width = max(current_width * 1.4, 20)
+        
+        # Источник: уменьшить на 10%
+        if source_col_idx:
+            source_column_letter = ws.cell(row=1, column=source_col_idx).column_letter
+            current_width = ws.column_dimensions[source_column_letter].width or 15
+            ws.column_dimensions[source_column_letter].width = current_width * 0.90
 
 
 def write_categorized_excel(

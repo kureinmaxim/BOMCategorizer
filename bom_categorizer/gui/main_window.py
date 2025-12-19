@@ -813,22 +813,23 @@ class BOMCategorizerMainWindow(QMainWindow):
                         break
 
     def on_add_tru_rkm_files(self):
-        """Добавление файлов ТРУ и РКМ (только .xls)"""
+        """Добавление файлов ТРУ и РКМ (.xls и .xlsx)"""
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Выберите файлы ТРУ и РКМ",
             "",
-            "Файлы Excel 97-2003 (*.xls);;Все файлы (*)"
+            "Файлы Excel (*.xls *.xlsx);;Файлы Excel 97-2003 (*.xls);;Все файлы (*)"
         )
 
         if files:
             for file_path in files:
                 # Проверяем расширение
-                if not file_path.lower().endswith('.xls'):
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext not in ['.xls', '.xlsx']:
                     QMessageBox.warning(
                         self,
                         "Неверный формат",
-                        f"Файл {os.path.basename(file_path)} не является .xls файлом.\nДобавляются только .xls файлы."
+                        f"Файл {os.path.basename(file_path)} не является Excel файлом.\nДобавляются только .xls и .xlsx файлы."
                     )
                     continue
                 
@@ -1506,7 +1507,13 @@ class BOMCategorizerMainWindow(QMainWindow):
             )
             return
 
-        # Обработка ТРУ/РКМ файлов
+        # НОВЫЙ РЕЖИМ: Объединение BOM + ТРУ
+        # Когда есть и BOM файл(ы) и ТРУ файл(ы) — объединяем данные
+        if has_bom and has_tru_rkm:
+            self.start_bom_tru_merge()
+            return
+
+        # Обработка только ТРУ/РКМ файлов (без BOM)
         if has_tru_rkm:
             self.log_text.append(f"\n{'='*60}\n")
             self.log_text.append(f"🚀 ЗАПУСК ОБРАБОТКИ ТРУ/РКМ ФАЙЛОВ\n")
@@ -1556,16 +1563,12 @@ class BOMCategorizerMainWindow(QMainWindow):
                     for err in errors:
                         self.log_text.append(f"   • {err}")
                 
-                # Если нет BOM файлов, показываем диалог завершения и выходим
-                if not has_bom:
-                    QMessageBox.information(
-                        self,
-                        "Обработка завершена",
-                        f"Обработка ТРУ/РКМ файлов выполнена.\n\nУспешно: {success_count}\nОшибок: {len(errors)}"
-                    )
-                else:
-                    # Если есть BOM файлы, запускаем их обработку
-                    self.start_bom_processing()
+                # Показываем диалог завершения
+                QMessageBox.information(
+                    self,
+                    "Обработка завершена",
+                    f"Обработка ТРУ/РКМ файлов выполнена.\n\nУспешно: {success_count}\nОшибок: {len(errors)}"
+                )
 
             self.tru_worker.progress.connect(on_progress)
             self.tru_worker.finished.connect(on_finished)
@@ -1575,7 +1578,161 @@ class BOMCategorizerMainWindow(QMainWindow):
 
         # Если есть только BOM файлы, запускаем сразу
         self.start_bom_processing()
-
+    
+    def start_bom_tru_merge(self):
+        """
+        Объединение данных BOM и ТРУ файлов.
+        Переносит из ТРУ: Артикул → КОД ERP(МР), Стоимость, корректирует Количество.
+        """
+        import pandas as pd
+        from openpyxl import load_workbook
+        from openpyxl.styles import Font, PatternFill, Border, Side
+        from ..tru_merger import merge_tru_into_bom, apply_merge_styles
+        from ..tru_rkm_processor import _read_tru_file
+        
+        self.log_text.append(f"\n{'='*60}\n")
+        self.log_text.append(f"🔗 РЕЖИМ ОБЪЕДИНЕНИЯ BOM + ТРУ\n")
+        self.log_text.append(f"{'='*60}\n")
+        self.log_text.append(f"📋 BOM файлов: {len(self.input_files)}")
+        self.log_text.append(f"📋 ТРУ файлов: {len(self.tru_rkm_files)}\n")
+        
+        try:
+            # 1. Читаем ТРУ файлы
+            self.log_text.append("📖 Чтение ТРУ файлов...")
+            tru_dfs = []
+            for tru_path in self.tru_rkm_files:
+                tru_df = _read_tru_file(tru_path)
+                if tru_df is not None and not tru_df.empty:
+                    tru_dfs.append(tru_df)
+                    self.log_text.append(f"   ✅ {os.path.basename(tru_path)}: {len(tru_df)} строк")
+                else:
+                    self.log_text.append(f"   ⚠️ {os.path.basename(tru_path)}: не удалось прочитать")
+            
+            if not tru_dfs:
+                QMessageBox.warning(self, "Предупреждение", "Не удалось прочитать ни одного ТРУ файла")
+                return
+            
+            # 2. Читаем BOM файл(ы)
+            self.log_text.append("\n📖 Чтение BOM файлов...")
+            
+            for bom_path in list(self.input_files.keys()):
+                self.log_text.append(f"   📄 {os.path.basename(bom_path)}")
+                
+                # Определяем формат файла
+                ext = os.path.splitext(bom_path)[1].lower()
+                
+                if ext in ['.xlsx', '.xls']:
+                    # Читаем Excel файл
+                    try:
+                        all_sheets = pd.read_excel(bom_path, sheet_name=None, engine='openpyxl')
+                    except:
+                        all_sheets = pd.read_excel(bom_path, sheet_name=None)
+                    
+                    # Ищем колонку с наименованием
+                    bom_name_col = None
+                    bom_qty_col = None
+                    
+                    # Обрабатываем каждый лист
+                    total_merged = 0
+                    merged_sheets = {}
+                    merged_rows_per_sheet = {}
+                    
+                    for sheet_name, df in all_sheets.items():
+                        # Ищем колонки
+                        for col in df.columns:
+                            col_lower = str(col).lower()
+                            if 'наименование ивп' in col_lower or col_lower == 'наименование':
+                                bom_name_col = col
+                            elif col_lower in ['шт.', 'шт', 'qty', 'количество']:
+                                bom_qty_col = col
+                        
+                        if not bom_name_col:
+                            merged_sheets[sheet_name] = df
+                            continue
+                        
+                        # Объединяем данные
+                        merged_df, merged_indices = merge_tru_into_bom(
+                            bom_df=df,
+                            tru_dfs=tru_dfs,
+                            bom_name_col=bom_name_col,
+                            bom_qty_col=bom_qty_col if bom_qty_col else 'шт.'
+                        )
+                        
+                        merged_sheets[sheet_name] = merged_df
+                        merged_rows_per_sheet[sheet_name] = merged_indices
+                        total_merged += len(merged_indices)
+                        
+                        if merged_indices:
+                            self.log_text.append(f"      📊 {sheet_name}: совпадений — {len(merged_indices)}")
+                    
+                    # 3. Сохраняем результат
+                    # Формируем имя выходного файла
+                    base_name = os.path.splitext(os.path.basename(bom_path))[0]
+                    output_dir = os.path.dirname(bom_path) or "."
+                    output_path = os.path.join(output_dir, f"{base_name}_тру.xlsx")
+                    
+                    self.log_text.append(f"\n💾 Сохранение: {os.path.basename(output_path)}")
+                    
+                    # Записываем в Excel
+                    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+                        for sheet_name, df in merged_sheets.items():
+                            df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+                    # 4. Применяем стили к изменённым строкам
+                    wb = load_workbook(output_path)
+                    
+                    for sheet_name, merged_indices in merged_rows_per_sheet.items():
+                        if not merged_indices:
+                            continue
+                        
+                        ws = wb[sheet_name]
+                        
+                        # Находим индексы колонок
+                        name_col_idx = None
+                        qty_col_idx = None
+                        
+                        for col_idx, cell in enumerate(ws[1], start=1):
+                            cell_val = str(cell.value).lower() if cell.value else ''
+                            if 'наименование ивп' in cell_val or cell_val == 'наименование':
+                                name_col_idx = col_idx
+                            elif cell_val in ['шт.', 'шт', 'qty', 'количество']:
+                                qty_col_idx = col_idx
+                        
+                        # Применяем стили
+                        apply_merge_styles(
+                            worksheet=ws,
+                            merged_rows=merged_indices,
+                            name_col_idx=name_col_idx or 2,
+                            qty_col_idx=qty_col_idx or 4,
+                            header_row=1
+                        )
+                    
+                    wb.save(output_path)
+                    
+                    self.log_text.append(f"\n✅ Объединено элементов: {total_merged}")
+                    self.log_text.append(f"📄 Результат: {output_path}")
+                    
+                    # Сохраняем путь для экспорта
+                    self.last_generated_output = output_path
+                    
+                else:
+                    self.log_text.append(f"   ⚠️ Формат {ext} пока не поддерживается для объединения")
+            
+            # Показываем диалог завершения
+            QMessageBox.information(
+                self,
+                "Объединение завершено",
+                f"Данные из ТРУ успешно объединены с BOM.\n\n"
+                f"Объединено элементов: {total_merged}\n"
+                f"Результат: {output_path}"
+            )
+            
+        except Exception as e:
+            import traceback
+            error_msg = f"Ошибка при объединении: {str(e)}\n\n{traceback.format_exc()}"
+            self.log_text.append(f"\n❌ {error_msg}")
+            QMessageBox.critical(self, "Ошибка", error_msg)
+    
     def start_bom_processing(self):
         """Запуск обработки BOM файлов (вынесено в отдельный метод)"""
         # Проверяем и конвертируем .doc файлы
@@ -1973,9 +2130,8 @@ class BOMCategorizerMainWindow(QMainWindow):
                         # Создаем список индексов для удаления из "Не распределено"
                         indices_to_drop = []
                         
-                        for des, category in dialog.classifications.items():
-                            # Получаем имя компонента по обозначению
-                            comp_name = designation_to_name.get(des)
+                        for comp_name, category in dialog.classifications.items():
+                            # Теперь ключ = имя компонента (comp_name)
                             
                             if comp_name and category and category != 's':  # 's' - пропустить
                                 # 1. Сохраняем в базу данных
@@ -1983,11 +2139,10 @@ class BOMCategorizerMainWindow(QMainWindow):
                                 saved_count += 1
                                 
                                 # 2. Перемещаем в соответствующий лист
-                                # Находим строки с этим обозначением (и именем) в df_un
-                                # Используем маску для поиска
-                                mask = (df_un['Обозначение'].astype(str) == des)
-                                if des == "": # Если обозначение пустое, ищем по имени
-                                     mask = (df_un['Наименование ИВП'] == comp_name) | (df_un['Наименование'] == comp_name)
+                                # Находим строки с этим именем в df_un
+                                mask = (df_un['Наименование ИВП'].astype(str) == comp_name)
+                                if 'Наименование' in df_un.columns:
+                                    mask = mask | (df_un['Наименование'].astype(str) == comp_name)
                                 
                                 rows_to_move = df_un[mask]
                                 

@@ -11,10 +11,26 @@
 
 ### 🚀 Запуск
 
-**Windows:**
+**Windows (CMD):**
 ```cmd
 scripts\run_modern_debug.bat     # Modern Edition (рекомендуется)
 scripts\run_standard_debug.bat   # Standard Edition
+```
+
+**Windows (PowerShell):**
+```powershell
+.\.venv\Scripts\Activate.ps1
+python app_qt.py    # Modern Edition (рекомендуется)
+python app.py       # Standard Edition
+```
+
+**Windows (Git Bash / WSL):**
+```bash
+source .venv/Scripts/activate    # Git Bash
+# или
+source .venv/bin/activate        # WSL
+python app_qt.py    # Modern Edition (рекомендуется)
+python app.py       # Standard Edition
 ```
 
 **macOS / Linux:**
@@ -30,7 +46,7 @@ python3 app.py       # Standard Edition
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 **macOS / Linux:**

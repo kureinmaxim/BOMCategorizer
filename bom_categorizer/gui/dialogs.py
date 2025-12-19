@@ -401,8 +401,9 @@ class ClassificationDialog(QDialog):
                     break
             
             if real_category:
-                # Сохраняем классификацию
-                self.classifications[component[0]] = real_category
+                # Сохраняем классификацию по ИМЕНИ компонента (не по обозначению!)
+                # component[1] = имя, component[0] = обозначение (часто пустое)
+                self.classifications[component[1]] = real_category
 
         # Переходим к следующему компоненту
         self.current_index += 1
