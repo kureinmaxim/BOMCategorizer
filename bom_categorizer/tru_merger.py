@@ -130,17 +130,21 @@ def extract_pure_code(text: str) -> str:
         'микросхема', 'микродроссель', 'дроссель',
         'конденсатор', 'резистор', 'диод', 'транзистор',
         'стабилитрон', 'индикатор единичный', 'индикатор',
-        'трансформатор', 'модуль', 'плата', 'аттенюатор',
-        'чип', 'фильтр', 'реле', 'оптопара'
+        'трансформатор', 'модуль электропитания', 'модуль питания',
+        'модуль передачи данных', 'модуль фильтра',
+        'модуль', 'плата инструментальная', 'плата входа', 'плата', 'аттенюатор',
+        'чип', 'фильтр помехоподавляющий', 'фильтр', 'реле', 'оптопара', 'кабель',
+        'патч-корд', 'патч корд'
     ]
     
-    # Производители для удаления (в конце строки)
+    # Производители для удаления (в начале и в конце строки)
     manufacturers = [
         'coilcraft', 'mini-circuits', 'texas instruments', 'analog devices',
         'hittite', 'maxim integrated', 'stmicroelectronics', 'avnet', 'ebyte',
         'api technologies', 'weinschel', 'vishay', 'yageo', 'murata', 'tdk',
         'samsung', 'intel', 'amd', 'nxp', 'infineon', 'on semiconductor',
-        'microchip', 'renesas', 'broadcom', 'qualcomm', 'xilinx', 'altera'
+        'microchip', 'renesas', 'broadcom', 'qualcomm', 'xilinx', 'altera',
+        'hyperline', 'cablexpert'
     ]
     
     # Удаляем слова-категории (с начала)
@@ -183,6 +187,8 @@ def extract_pure_code(text: str) -> str:
     text = re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]', '-', text)  # Различные тире
     text = re.sub(r'\s+', '', text)  # Убираем все пробелы
     text = text.replace('_', '-')  # Подчёркивания → дефисы
+    text = text.replace(':', '-')  # Двоеточие → дефис
+    text = text.replace('.', '-')  # Точка → дефис
     
     # Убираем суффикс типа -LW, -AB в конце (если код > 9 символов)
     if len(text) > 9:
