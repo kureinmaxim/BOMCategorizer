@@ -93,7 +93,7 @@ def generate_output_filename(input_path: str, file_type: str) -> str:
 def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
     """
     Читает один ТРУ файл и возвращает сырой DataFrame с нужными колонками.
-    Поддерживает форматы .xls и .xlsx
+    Поддерживает форматы .xls и .xlsx, ищет колонки по названию.
     """
     try:
         ext = os.path.splitext(input_path)[1].lower()
@@ -111,37 +111,78 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
                 
             df = pd.DataFrame(data)
             
+            # Пробуем использовать первую строку как заголовок
+            if len(df) > 0:
+                df.columns = df.iloc[0]
+                df = df.iloc[1:].reset_index(drop=True)
+            
         elif ext == '.xlsx':
             # Новый формат Excel — используем openpyxl через pandas
-            df = pd.read_excel(input_path, sheet_name=0, header=None, engine='openpyxl')
+            # Сначала пробуем с заголовком
+            df = pd.read_excel(input_path, sheet_name=0, engine='openpyxl')
             
         else:
             print(f"Неподдерживаемый формат файла: {ext}")
             return None
         
-        # Проверяем что файл не пустой и есть хотя бы 2 строки
-        if len(df) < 2:
+        # Проверяем что файл не пустой
+        if len(df) < 1:
             return None
+        
+        # Нормализуем названия колонок для поиска
+        col_mapping = {}
+        for col in df.columns:
+            col_str = str(col).lower().strip()
+            if 'артикул' in col_str or col_str == 'код':
+                col_mapping['Артикул'] = col
+            elif 'наименование' in col_str and 'ивп' not in col_str:
+                col_mapping['Наименование'] = col
+            elif 'наименование ивп' in col_str:
+                col_mapping['Наименование'] = col
+            elif col_str in ['количество', 'кол-во', 'qty', 'шт', 'шт.']:
+                col_mapping['Количество'] = col
+            elif 'цена' in col_str or col_str == 'price':
+                col_mapping['Цена'] = col
+            elif 'стоимость' in col_str or col_str == 'сумма':
+                col_mapping['Стоимость'] = col
+        
+        
+        # Проверяем наличие минимальных колонок
+        if 'Наименование' not in col_mapping:
+            # Если нет колонки "Наименование", пробуем fallback на индексы
+            # (для старых ТРУ файлов без заголовков)
             
-        # Извлекаем данные начиная со строки 2 (индекс 2)
-        data_df = df.iloc[2:].copy()
+            
+            # Перечитываем без заголовков
+            if ext == '.xlsx':
+                df = pd.read_excel(input_path, sheet_name=0, header=None, engine='openpyxl')
+            
+            if df.shape[1] >= 2:
+                # Пропускаем первые 2 строки (заголовки)
+                data_df = df.iloc[2:].copy() if len(df) > 2 else df.copy()
+                
+                result_df = pd.DataFrame()
+                result_df['Артикул'] = data_df.iloc[:, 0] if data_df.shape[1] > 0 else ''
+                result_df['Наименование'] = data_df.iloc[:, 1] if data_df.shape[1] > 1 else ''
+                result_df['Количество'] = data_df.iloc[:, 4] if data_df.shape[1] > 4 else ''
+                result_df['Цена'] = data_df.iloc[:, 8] if data_df.shape[1] > 8 else ''
+                result_df['Стоимость'] = data_df.iloc[:, 9] if data_df.shape[1] > 9 else ''
+                result_df['_group_resp'] = data_df.iloc[:, 14].fillna('') if data_df.shape[1] > 14 else ''
+                result_df['_code_resp'] = data_df.iloc[:, 16].fillna('') if data_df.shape[1] > 16 else ''
+                
+                return result_df
+            else:
+                return None
         
-        # Проверяем достаточно ли колонок
-        if data_df.shape[1] < 10:
-            print(f"Недостаточно колонок в файле {input_path}: {data_df.shape[1]}")
-            return None
-        
-        # Выбираем нужные столбцы
+        # Создаём результирующий DataFrame
         result_df = pd.DataFrame()
-        result_df['Артикул'] = data_df.iloc[:, 0]
-        result_df['Наименование'] = data_df.iloc[:, 1]
-        result_df['Количество'] = data_df.iloc[:, 4] if data_df.shape[1] > 4 else ''
-        result_df['Цена'] = data_df.iloc[:, 8] if data_df.shape[1] > 8 else ''
-        result_df['Стоимость'] = data_df.iloc[:, 9] if data_df.shape[1] > 9 else ''
-        
-        # Данные для колонки Ответственные (если есть)
-        result_df['_group_resp'] = data_df.iloc[:, 14].fillna('') if data_df.shape[1] > 14 else ''
-        result_df['_code_resp'] = data_df.iloc[:, 16].fillna('') if data_df.shape[1] > 16 else ''
+        result_df['Артикул'] = df[col_mapping['Артикул']] if 'Артикул' in col_mapping else ''
+        result_df['Наименование'] = df[col_mapping['Наименование']]
+        result_df['Количество'] = df[col_mapping['Количество']] if 'Количество' in col_mapping else ''
+        result_df['Цена'] = df[col_mapping['Цена']] if 'Цена' in col_mapping else ''
+        result_df['Стоимость'] = df[col_mapping['Стоимость']] if 'Стоимость' in col_mapping else ''
+        result_df['_group_resp'] = ''
+        result_df['_code_resp'] = ''
         
         return result_df
         

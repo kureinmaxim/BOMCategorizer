@@ -1635,7 +1635,9 @@ class BOMCategorizerMainWindow(QMainWindow):
                     # Обрабатываем каждый лист
                     total_merged = 0
                     merged_sheets = {}
+                    merged_sheets = {}
                     merged_rows_per_sheet = {}
+                    all_used_tru_indices = set()
                     
                     for sheet_name, df in all_sheets.items():
                         # Ищем колонки
@@ -1651,12 +1653,15 @@ class BOMCategorizerMainWindow(QMainWindow):
                             continue
                         
                         # Объединяем данные
-                        merged_df, merged_indices = merge_tru_into_bom(
+                        merged_df, merged_indices, used_indices = merge_tru_into_bom(
                             bom_df=df,
                             tru_dfs=tru_dfs,
+                            tru_filenames=list(self.tru_rkm_files),
                             bom_name_col=bom_name_col,
                             bom_qty_col=bom_qty_col if bom_qty_col else 'шт.'
                         )
+                        
+                        all_used_tru_indices.update(used_indices)
                         
                         merged_sheets[sheet_name] = merged_df
                         merged_rows_per_sheet[sheet_name] = merged_indices
@@ -1664,6 +1669,30 @@ class BOMCategorizerMainWindow(QMainWindow):
                         
                         if merged_indices:
                             self.log_text.append(f"      📊 {sheet_name}: совпадений — {len(merged_indices)}")
+                    
+                    # 3. Генерируем отчет о несопоставленных ТРУ (один раз для всех листов)
+                    from ..tru_merger import generate_unmatched_report
+                    unmatched_tru = generate_unmatched_report(
+                        tru_dfs=tru_dfs,
+                        used_tru_indices=all_used_tru_indices
+                    )
+                    
+                    # Добавляем лист "Несопоставленные ТРУ"
+                    if not unmatched_tru.empty:
+                        # Фильтруем пустые строки на всякий случай
+                        if 'Наименование ИВП' in unmatched_tru.columns:
+                             unmatched_tru = unmatched_tru[unmatched_tru['Наименование ИВП'].notna() & (unmatched_tru['Наименование ИВП'] != '')]
+                        
+                        self.log_text.append(f"      ❗ Несопоставленных ТРУ элементов: {len(unmatched_tru)}")
+                        merged_sheets['Несопоставленные ТРУ'] = unmatched_tru
+                        
+                        # Перемещаем на позицию 1 (после Summary)
+                        keys = list(merged_sheets.keys())
+                        if 'Несопоставленные ТРУ' in keys:
+                            keys.remove('Несопоставленные ТРУ')
+                            summary_idx = keys.index('Summary') if 'Summary' in keys else -1
+                            keys.insert(summary_idx + 1, 'Несопоставленные ТРУ')
+                            merged_sheets = {k: merged_sheets[k] for k in keys}
                     
                     # 3. Сохраняем результат
                     # Формируем имя выходного файла
@@ -1707,9 +1736,34 @@ class BOMCategorizerMainWindow(QMainWindow):
                             header_row=1
                         )
                     
+                    # Стилизуем лист несопоставленных ТРУ
+                    if 'Несопоставленные ТРУ' in wb.sheetnames:
+                        ws_unmatched = wb['Несопоставленные ТРУ']
+                        apply_merge_styles(
+                            worksheet=ws_unmatched,
+                            merged_rows=set(),  # Пустой набор — просто применяем заголовки и границы
+                            name_col_idx=2,
+                            qty_col_idx=4,  # шт. на 4 позиции в формате BOM
+                            header_row=1
+                        )
+                        
+                        # Перемещаем лист после Summary (позиция 1)
+                        # Сначала нужно определить позицию Summary
+                        sheet_names = wb.sheetnames
+                        target_pos = 1  # После первого листа (обычно Summary)
+                        if 'Summary' in sheet_names:
+                            target_pos = sheet_names.index('Summary') + 1
+                        
+                        # Перемещаем лист
+                        current_pos = sheet_names.index('Несопоставленные ТРУ')
+                        wb.move_sheet(ws_unmatched, offset=target_pos - current_pos)
+                    
                     wb.save(output_path)
                     
+                    unmatched_count = len(unmatched_tru) if unmatched_tru is not None and not unmatched_tru.empty else 0
                     self.log_text.append(f"\n✅ Объединено элементов: {total_merged}")
+                    if unmatched_count > 0:
+                        self.log_text.append(f"⚠️ Несопоставленных: {unmatched_count} (см. лист 'Несопоставленные ТРУ')")
                     self.log_text.append(f"📄 Результат: {output_path}")
                     
                     # Сохраняем путь для экспорта
@@ -1719,11 +1773,15 @@ class BOMCategorizerMainWindow(QMainWindow):
                     self.log_text.append(f"   ⚠️ Формат {ext} пока не поддерживается для объединения")
             
             # Показываем диалог завершения
+            unmatched_msg = ""
+            if unmatched_count > 0:
+                unmatched_msg = f"\nНесопоставленных элементов: {unmatched_count}\n(см. лист 'Несопоставленные ТРУ')"
+            
             QMessageBox.information(
                 self,
                 "Объединение завершено",
                 f"Данные из ТРУ успешно объединены с BOM.\n\n"
-                f"Объединено элементов: {total_merged}\n"
+                f"Объединено элементов: {total_merged}{unmatched_msg}\n"
                 f"Результат: {output_path}"
             )
             
