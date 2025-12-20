@@ -895,9 +895,15 @@ def write_categorized_excel(
                     "шт.", "шт", "Кол-во", "qty", "quantity", "количество", "кол.", "кол-во"
                 ], list(df_sheet.columns))
                 
+                # Ищем колонку со стоимостью
+                cost_col = find_column([
+                    "стоимость", "cost", "сумма", "total"
+                ], list(df_sheet.columns))
+                
                 # Считаем количество позиций и общее количество
                 positions_count = len(df_sheet)
                 total_qty = 0
+                total_cost = 0
                 
                 if qty_col and qty_col in df_sheet.columns:
                     for val in df_sheet[qty_col]:
@@ -910,11 +916,21 @@ def write_categorized_excel(
                     # Если колонка не найдена, используем количество строк
                     total_qty = positions_count
                 
+                # Считаем стоимость
+                if cost_col and cost_col in df_sheet.columns:
+                    for val in df_sheet[cost_col]:
+                        try:
+                            if pd.notna(val) and str(val).strip():
+                                total_cost += int(float(str(val).replace(' ', '').replace(',', '.')))
+                        except (ValueError, TypeError):
+                            pass
+                
                 summary_rows.append({
                     '№ п/п': len(summary_rows) + 1,
                     'Категория': sheet_name,
                     'Кол-во позиций': positions_count,
-                    'Общее количество': total_qty
+                    'Общее количество': total_qty,
+                    'Стоимость': total_cost if total_cost > 0 else ''
                 })
             
             except Exception as e:
@@ -953,6 +969,28 @@ def write_categorized_excel(
                         cell.alignment = Alignment(horizontal='left', vertical='center')
                     else:
                         cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Добавляем строку ИТОГО
+            total_row_idx = len(summary_df) + 2  # +1 для заголовка, +1 для следующей строки
+            grand_total_positions = sum(row.get('Кол-во позиций', 0) for row in summary_rows)
+            grand_total_qty = sum(row.get('Общее количество', 0) for row in summary_rows)
+            grand_total_cost = sum(row.get('Стоимость', 0) for row in summary_rows if isinstance(row.get('Стоимость'), (int, float)))
+            
+            # Пустая строка перед ИТОГО
+            total_row_idx += 1
+            
+            # Записываем ИТОГО
+            bold_font = Font(bold=True)
+            ws.cell(row=total_row_idx, column=1, value='').font = bold_font
+            ws.cell(row=total_row_idx, column=2, value='ИТОГО:').font = bold_font
+            ws.cell(row=total_row_idx, column=2).alignment = Alignment(horizontal='right', vertical='center')
+            ws.cell(row=total_row_idx, column=3, value=grand_total_positions).font = bold_font
+            ws.cell(row=total_row_idx, column=3).alignment = Alignment(horizontal='center', vertical='center')
+            ws.cell(row=total_row_idx, column=4, value=grand_total_qty).font = bold_font
+            ws.cell(row=total_row_idx, column=4).alignment = Alignment(horizontal='center', vertical='center')
+            if grand_total_cost > 0:
+                ws.cell(row=total_row_idx, column=5, value=grand_total_cost).font = bold_font
+                ws.cell(row=total_row_idx, column=5).alignment = Alignment(horizontal='center', vertical='center')
             
             # Автоподбор ширины колонок
             for column in ws.columns:

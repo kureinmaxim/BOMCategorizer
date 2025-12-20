@@ -884,7 +884,16 @@ class PDFExporter:
         story.append(Spacer(1, 5*mm))
         
         # Сначала выводим SUMMARY и SOURCES на первом листе
-        priority_sheets = ['SUMMARY', 'SOURCES']
+        # Также добавляем "Несопоставленные ТРУ" в приоритетные, но с разрывом страницы
+        priority_sheets = []
+        
+        # Ищем Summary (любой регистр) и SOURCES
+        for name in wb.sheetnames:
+            if name.upper() == 'SUMMARY':
+                priority_sheets.append(name)
+            elif name.upper() == 'SOURCES':
+                priority_sheets.append(name)
+        
         processed_sheets = []
         
         for sheet_name in priority_sheets:
@@ -932,6 +941,12 @@ class PDFExporter:
         for idx, sheet_name in enumerate(wb.sheetnames):
             if sheet_name in processed_sheets:
                 continue
+            
+            # Если это "Несопоставленные ТРУ" или "Summary" (если вдруг не попал в приоритет) 
+            # — начинаем с новой страницы
+            if sheet_name == 'Несопоставленные ТРУ' or sheet_name.upper() == 'SUMMARY':
+                if not story or not isinstance(story[-1], PageBreak):
+                    story.append(PageBreak())
             
             sheet = wb[sheet_name]
             

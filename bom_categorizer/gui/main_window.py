@@ -16,6 +16,7 @@ import platform
 import re
 from datetime import datetime
 from typing import Dict, Optional, List
+from openpyxl.styles import Alignment, Font
 
 from bom_categorizer.tru_rkm_processor import process_tru_rkm_files
 
@@ -1685,6 +1686,68 @@ class BOMCategorizerMainWindow(QMainWindow):
                         
                         self.log_text.append(f"      ❗ Несопоставленных ТРУ элементов: {len(unmatched_tru)}")
                         merged_sheets['Несопоставленные ТРУ'] = unmatched_tru
+                    
+                    # Генерируем новый Summary лист со статистикой
+                    summary_rows = []
+                    
+                    # Порядок листов: сначала существующие категории, потом Несопоставленные
+                    sheets_order = [k for k in merged_sheets.keys() if k != 'Summary' and k != 'Несопоставленные ТРУ']
+                    if 'Несопоставленные ТРУ' in merged_sheets:
+                        sheets_order.append('Несопоставленные ТРУ')
+                        
+                    for sheet_name in sheets_order:
+                        df_sheet = merged_sheets[sheet_name]
+                        
+                        # Ищем колонки
+                        qty_col = None
+                        cost_col = None
+                        
+                        for col in df_sheet.columns:
+                            col_lower = str(col).lower()
+                            if col_lower in ['шт.', 'шт', 'qty', 'количество', 'кол-во', 'кол.']:
+                                qty_col = col
+                            elif col_lower in ['стоимость', 'cost', 'сумма', 'total']:
+                                cost_col = col
+                        
+                        # Считаем
+                        positions_count = len(df_sheet)
+                        total_qty = 0
+                        total_cost = 0
+                        
+                        if qty_col:
+                            for val in df_sheet[qty_col]:
+                                try:
+                                    if pd.notna(val):
+                                        total_qty += int(float(val))
+                                except (ValueError, TypeError):
+                                    pass
+                        else:
+                            total_qty = positions_count
+                            
+                        if cost_col:
+                            for val in df_sheet[cost_col]:
+                                try:
+                                    if pd.notna(val) and str(val).strip():
+                                        val_str = str(val).replace(' ', '').replace(',', '.')
+                                        total_cost += float(val_str)
+                                except (ValueError, TypeError):
+                                    pass
+                                    
+                        summary_rows.append({
+                            '№ п/п': len(summary_rows) + 1,
+                            'Категория': sheet_name,
+                            'Кол-во позиций': positions_count,
+                            'Общее количество': total_qty,
+                            'Стоимость': int(total_cost) if total_cost > 0 else ''
+                        })
+                    
+                    for k in list(merged_sheets.keys()):
+                        if k.lower() == 'summary':
+                            del merged_sheets[k]
+                    
+                    if summary_rows:
+                        summary_df = pd.DataFrame(summary_rows)
+                        merged_sheets['Summary'] = summary_df
                         
                         # Перемещаем на позицию 1 (после Summary)
                         keys = list(merged_sheets.keys())
@@ -1710,9 +1773,16 @@ class BOMCategorizerMainWindow(QMainWindow):
                     # 4. Применяем стили к изменённым строкам
                     wb = load_workbook(output_path)
                     
-                    for sheet_name, merged_indices in merged_rows_per_sheet.items():
-                        if not merged_indices:
+                    # Проходим по ВСЕМ листам в merged_sheets, а не только по тем где были объединения
+                    # Для этого используем merged_sheets.keys() и берем индексы из merged_rows_per_sheet (или пустой set)
+                    for sheet_name in merged_sheets.keys():
+                        if sheet_name == 'Summary' or sheet_name == 'Несопоставленные ТРУ':
+                            continue # Стилизуются отдельно
+                        
+                        if sheet_name not in wb.sheetnames:
                             continue
+                            
+                        merged_indices = merged_rows_per_sheet.get(sheet_name, set())
                         
                         ws = wb[sheet_name]
                         
@@ -1735,6 +1805,35 @@ class BOMCategorizerMainWindow(QMainWindow):
                             qty_col_idx=qty_col_idx or 4,
                             header_row=1
                         )
+                        
+                        # Добавляем строку ИТОГО со стоимостью
+                        # Ищем колонку "Стоимость"
+                        cost_col_idx = None
+                        for col_idx, cell in enumerate(ws[1], start=1):
+                            cell_val = str(cell.value).lower() if cell.value else ''
+                            if 'стоимость' in cell_val:
+                                cost_col_idx = col_idx
+                                break
+                        
+                        if cost_col_idx:
+                            # Считаем сумму стоимости
+                            total_cost = 0
+                            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=cost_col_idx, max_col=cost_col_idx):
+                                for cell in row:
+                                    try:
+                                        if cell.value and str(cell.value).strip():
+                                            val = str(cell.value).replace(' ', '').replace(',', '.')
+                                            total_cost += float(val)
+                                    except (ValueError, TypeError):
+                                        pass
+                            
+                            # Добавляем строку ИТОГО
+                            if total_cost > 0:
+                                total_row = ws.max_row + 2  # Пустая строка + ИТОГО
+                                ws.cell(row=total_row, column=cost_col_idx - 1, value="ИТОГО:").font = Font(bold=True)
+                                ws.cell(row=total_row, column=cost_col_idx - 1).alignment = Alignment(horizontal='right', vertical='center')
+                                ws.cell(row=total_row, column=cost_col_idx, value=int(total_cost)).font = Font(bold=True)
+                                ws.cell(row=total_row, column=cost_col_idx).alignment = Alignment(horizontal='center', vertical='center')
                     
                     # Стилизуем лист несопоставленных ТРУ
                     if 'Несопоставленные ТРУ' in wb.sheetnames:
@@ -1747,16 +1846,125 @@ class BOMCategorizerMainWindow(QMainWindow):
                             header_row=1
                         )
                         
+                        # Добавляем ИТОГО для несопоставленных ТРУ
+                        cost_col_idx_unm = None
+                        for col_idx, cell in enumerate(ws_unmatched[1], start=1):
+                            cell_val = str(cell.value).lower() if cell.value else ''
+                            if 'стоимость' in cell_val:
+                                cost_col_idx_unm = col_idx
+                                break
+                        
+                        if cost_col_idx_unm:
+                            total_cost_unm = 0
+                            for row in ws_unmatched.iter_rows(min_row=2, max_row=ws_unmatched.max_row, min_col=cost_col_idx_unm, max_col=cost_col_idx_unm):
+                                for cell in row:
+                                    try:
+                                        if cell.value and str(cell.value).strip():
+                                            val = str(cell.value).replace(' ', '').replace(',', '.')
+                                            total_cost_unm += float(val)
+                                    except (ValueError, TypeError):
+                                        pass
+                            
+                            if total_cost_unm > 0:
+                                total_row_unm = ws_unmatched.max_row + 2
+                                ws_unmatched.cell(row=total_row_unm, column=cost_col_idx_unm - 1, value="ИТОГО:").font = Font(bold=True)
+                                ws_unmatched.cell(row=total_row_unm, column=cost_col_idx_unm - 1).alignment = Alignment(horizontal='right', vertical='center')
+                                ws_unmatched.cell(row=total_row_unm, column=cost_col_idx_unm, value=int(total_cost_unm)).font = Font(bold=True)
+                                ws_unmatched.cell(row=total_row_unm, column=cost_col_idx_unm).alignment = Alignment(horizontal='center', vertical='center')
+                        
                         # Перемещаем лист после Summary (позиция 1)
                         # Сначала нужно определить позицию Summary
                         sheet_names = wb.sheetnames
                         target_pos = 1  # После первого листа (обычно Summary)
                         if 'Summary' in sheet_names:
                             target_pos = sheet_names.index('Summary') + 1
-                        
+
                         # Перемещаем лист
                         current_pos = sheet_names.index('Несопоставленные ТРУ')
                         wb.move_sheet(ws_unmatched, offset=target_pos - current_pos)
+                    
+                    # Стилизуем лист Summary если он есть
+                    if 'Summary' in wb.sheetnames:
+                        ws_summary = wb['Summary']
+                        
+                        # 1. Заголовки жирным и центрирование
+                        for cell in ws_summary[1]:
+                            cell.font = Font(bold=True)
+                            cell.alignment = Alignment(horizontal='center', vertical='center')
+                        
+                        # 2. Ищем колонки для суммирования
+                        pos_col_idx = None
+                        qty_col_idx = None
+                        cost_col_idx = None
+                        
+                        for col_idx, cell in enumerate(ws_summary[1], start=1):
+                            val = str(cell.value).lower() if cell.value else ''
+                            if 'кол-во позиций' in val:
+                                pos_col_idx = col_idx
+                            elif 'общее количество' in val:
+                                qty_col_idx = col_idx
+                            elif 'стоимость' in val:
+                                cost_col_idx = col_idx
+                            
+                            # Центрируем данные в колонках (кроме Категории)
+                            if 'категория' not in val:
+                                for row in range(2, ws_summary.max_row + 1):
+                                    ws_summary.cell(row=row, column=col_idx).alignment = Alignment(horizontal='center', vertical='center')
+                            else:
+                                for row in range(2, ws_summary.max_row + 1):
+                                    ws_summary.cell(row=row, column=col_idx).alignment = Alignment(horizontal='left', vertical='center')
+
+                        # 3. Считаем суммы
+                        total_pos = 0
+                        total_qty = 0
+                        total_cost = 0
+                        
+                        for row in range(2, ws_summary.max_row + 1):
+                            if pos_col_idx:
+                                val = ws_summary.cell(row=row, column=pos_col_idx).value
+                                if val and isinstance(val, (int, float, str)) and str(val).isdigit():
+                                    total_pos += int(val)
+                            
+                            if qty_col_idx:
+                                val = ws_summary.cell(row=row, column=qty_col_idx).value
+                                if val and isinstance(val, (int, float, str)) and str(val).isdigit():
+                                    total_qty += int(val)
+                                    
+                            if cost_col_idx:
+                                val = ws_summary.cell(row=row, column=cost_col_idx).value
+                                if val:
+                                    try:
+                                        total_cost += float(str(val).replace(' ', '').replace(',', '.'))
+                                    except: pass
+                        
+                        # 4. Добавляем строку ИТОГО
+                        last_row = ws_summary.max_row + 2
+                        
+                        ws_summary.cell(row=last_row, column=2, value="ИТОГО:").font = Font(bold=True)
+                        ws_summary.cell(row=last_row, column=2).alignment = Alignment(horizontal='right', vertical='center')
+                        
+                        if pos_col_idx:
+                            ws_summary.cell(row=last_row, column=pos_col_idx, value=total_pos).font = Font(bold=True)
+                            ws_summary.cell(row=last_row, column=pos_col_idx).alignment = Alignment(horizontal='center', vertical='center')
+                            
+                        if qty_col_idx:
+                            ws_summary.cell(row=last_row, column=qty_col_idx, value=total_qty).font = Font(bold=True)
+                            ws_summary.cell(row=last_row, column=qty_col_idx).alignment = Alignment(horizontal='center', vertical='center')
+                            
+                        if cost_col_idx and total_cost > 0:
+                            ws_summary.cell(row=last_row, column=cost_col_idx, value=int(total_cost)).font = Font(bold=True)
+                            ws_summary.cell(row=last_row, column=cost_col_idx).alignment = Alignment(horizontal='center', vertical='center')
+
+                        # 5. Автоподбор ширины
+                        for column in ws_summary.columns:
+                            max_length = 0
+                            column_letter = column[0].column_letter
+                            for cell in column:
+                                try:
+                                    if cell.value:
+                                        max_length = max(max_length, len(str(cell.value)))
+                                except: pass
+                            ws_summary.column_dimensions[column_letter].width = min(max_length + 2, 50)
                     
                     wb.save(output_path)
                     
