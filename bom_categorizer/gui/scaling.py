@@ -21,16 +21,9 @@ if TYPE_CHECKING:
 
 from ..styles import DARK_THEME, LIGHT_THEME
 
+# Import from shared module to avoid duplication
+from ..shared.fonts import get_system_font
 
-def get_system_font() -> str:
-    """Возвращает подходящий системный шрифт для текущей ОС"""
-    system = platform.system()
-    if system == 'Darwin':  # macOS
-        return '.AppleSystemUIFont'
-    elif system == 'Windows':
-        return 'Segoe UI'
-    else:  # Linux и другие
-        return 'DejaVu Sans'
 
 
 def apply_theme(window: 'BOMCategorizerMainWindow') -> None:
@@ -349,7 +342,7 @@ def set_view_mode(window: 'BOMCategorizerMainWindow', mode: str) -> None:
 def save_ui_preferences(window: 'BOMCategorizerMainWindow') -> None:
     """Сохраняет настройки интерфейса"""
     try:
-        from .main_window import get_config_path
+        from ..shared.config import get_config_path
         
         if "ui" not in window.cfg:
             window.cfg["ui"] = {}
