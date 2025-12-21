@@ -5,7 +5,9 @@
 > **Быстрый старт:**
 > *   **Windows:** `python deployment/build_installer.py`
 > *   **macOS:** `./deployment/build_macos.sh`
-> *   **Версии:** `python tools/update_version.py status`
+> *   **Версии:** `python3 tools/update_version.py status`
+>
+> ⚠️ **macOS:** Используйте `python3` вместо `python` для всех команд.
 
 ---
 
@@ -26,7 +28,11 @@
 Перед началом работы проверьте, синхронизированы ли версии.
 
 ```bash
+# Windows
 python tools/update_version.py status
+
+# macOS / Linux
+python3 tools/update_version.py status
 ```
 *Если есть расхождения, скрипт предложит выполнить синхронизацию.*
 
@@ -35,20 +41,20 @@ python tools/update_version.py status
 
 ```bash
 # Обновить только Modern Edition
-python tools/update_version.py set modern 4.5.0
+python3 tools/update_version.py set modern 4.5.0
 
 # Обновить только Standard Edition
-python tools/update_version.py set standard 3.5.0
+python3 tools/update_version.py set standard 3.5.0
 
 # Обновить обе версии сразу (рекомендуется для мажорных релизов)
-python tools/update_version.py set both 5.0.0
+python3 tools/update_version.py set both 5.0.0
 ```
 
 #### Шаг 3: Синхронизация (если нужно)
 Команда `set` делает это автоматически, но если вы скачали обновления из Git, выполните:
 
 ```bash
-python tools/update_version.py sync
+python3 tools/update_version.py sync
 ```
 **Что делает sync:**
 1.  Обновляет локальные `config.json` / `config_qt.json` (не трогая ваши настройки).
@@ -69,6 +75,8 @@ python tools/update_version.py sync
 ```powershell
 python deployment/build_installer.py
 ```
+
+> 💡 **Примечание:** На Windows обычно работает команда `python`, но если нет — используйте `python3` или `py`.
 
 **Процесс:**
 1.  Скрипт спросит, какую версию собирать (1 - Standard, 2 - Modern).
@@ -103,12 +111,12 @@ python deployment/build_installer.py
 
 1.  **Подготовка:**
     ```bash
-    python tools/update_version.py status  # Проверяем, что все чисто
+    python3 tools/update_version.py status  # Проверяем, что все чисто
     ```
 
 2.  **Обновление:**
     ```bash
-    python tools/update_version.py set modern 4.5.0
+    python3 tools/update_version.py set modern 4.5.0
     ```
 
 3.  **Сборка:**
@@ -151,5 +159,9 @@ INNO_SETUP_PATH = r"D:\Apps\Inno Setup 6\ISCC.exe"
 
 ### ❌ Версии рассинхронизировались
 Если `status` показывает красные предупреждения:
-1.  Запустите `python tools/update_version.py sync`.
+1.  Запустите `python3 tools/update_version.py sync`.
 2.  Это принудительно приведет все файлы к состоянию шаблонов.
+
+### ❌ Ошибка "command not found: python" (macOS)
+На macOS Python 3 доступен как `python3`, а не `python`.
+Замените `python` на `python3` во всех командах.

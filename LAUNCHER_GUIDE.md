@@ -282,6 +282,7 @@ open -a Console
 | **did not find executable (WSL)** | Вы пытаетесь использовать `.venv` от Windows в WSL (или наоборот). Удалите папку `.venv` и создайте `.venv-wsl` для Linux. |
 | **No matching distribution pywin32** | В Linux/macOS используйте `requirements.txt` — `pywin32` автоматически пропускается на Linux/macOS. |
 | **Не находит config/rules файлы** | После рефакторинга конфиги в `config/`, база данных в `data/`. Приложение автоматически создаст их при первом запуске. |
+| **command not found: python (macOS)** | На macOS используйте `python3` вместо `python` для всех команд. |
 
 ## 💡 Полезные советы
 *   **Ярлыки:** Создайте ярлык для `.bat` файла из `scripts/`, нажмите `Свойства` -> `Сменить значок`, чтобы сделать красиво.

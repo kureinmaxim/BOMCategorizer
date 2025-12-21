@@ -89,22 +89,23 @@ scripts/bump_version.py
 ### Основные команды
 
 > Все команды работают одинаково на Windows, macOS и Linux.
+> ⚠️ **macOS/Linux:** Используйте `python3` вместо `python`.
 
 #### 🐛 Исправление бага (Patch)
 ```bash
-python scripts/bump_version.py --bump patch
+python3 scripts/bump_version.py --bump patch
 # 5.0.0 → 5.0.1
 ```
 
 #### ✨ Новая функция (Minor)
 ```bash
-python scripts/bump_version.py --bump minor
+python3 scripts/bump_version.py --bump minor
 # 5.0.0 → 5.1.0
 ```
 
 #### 💥 Критические изменения (Major)
 ```bash
-python scripts/bump_version.py --bump major
+python3 scripts/bump_version.py --bump major
 # 5.0.0 → 6.0.0
 ```
 
@@ -112,39 +113,39 @@ python scripts/bump_version.py --bump major
 
 ```bash
 # Modern Edition (по умолчанию)
-python scripts/bump_version.py --bump patch
+python3 scripts/bump_version.py --bump patch
 
 # Standard Edition
-python scripts/bump_version.py --bump patch --edition standard
+python3 scripts/bump_version.py --bump patch --edition standard
 
 # Обе редакции
-python scripts/bump_version.py --bump patch --edition both
+python3 scripts/bump_version.py --bump patch --edition both
 ```
 
 ### Установка конкретной версии
 
 ```bash
 # Modern Edition
-python scripts/bump_version.py --version 5.2.0
+python3 scripts/bump_version.py --version 5.2.0
 
 # Standard Edition
-python scripts/bump_version.py --version 3.4.0 --edition standard
+python3 scripts/bump_version.py --version 3.4.0 --edition standard
 ```
 
 ### Дополнительные опции
 
 ```bash
 # Без обновления даты релиза
-python scripts/bump_version.py --bump patch --no-release-date
+python3 scripts/bump_version.py --bump patch --no-release-date
 
 # С конкретной датой релиза
-python scripts/bump_version.py --version 5.5.0 --release-date 31.12.2025
+python3 scripts/bump_version.py --version 5.5.0 --release-date 31.12.2025
 
 # Изменить разработчика
-python scripts/bump_version.py --developer "Иванов И.И."
+python3 scripts/bump_version.py --developer "Иванов И.И."
 
 # Тестовый запуск (без записи)
-python scripts/bump_version.py --bump patch --dry-run
+python3 scripts/bump_version.py --bump patch --dry-run
 ```
 
 ---
@@ -162,19 +163,19 @@ tools/update_version.py
 
 ```bash
 # Показать текущие версии
-python tools/update_version.py status
+python3 tools/update_version.py status
 
 # Обновить Modern Edition
-python tools/update_version.py set modern 5.1.0
+python3 tools/update_version.py set modern 5.1.0
 
 # Обновить Standard Edition
-python tools/update_version.py set standard 3.4.0
+python3 tools/update_version.py set standard 3.4.0
 
 # Обновить обе редакции
-python tools/update_version.py set both 5.0.0
+python3 tools/update_version.py set both 5.0.0
 
 # Синхронизировать файлы сборки
-python tools/update_version.py sync
+python3 tools/update_version.py sync
 ```
 
 ### Пример вывода `status`
@@ -204,8 +205,8 @@ python tools/update_version.py sync
 ### Автоматически при запуске
 
 ```bash
-python app_qt.py    # Создаст config_qt.json из шаблона
-python app.py       # Создаст config.json из шаблона
+python3 app_qt.py    # Создаст config_qt.json из шаблона
+python3 app.py       # Создаст config.json из шаблона
 ```
 
 ### Вручную
@@ -244,7 +245,7 @@ cp config/config_qt.json.template config_qt.json
 ### Команда синхронизации
 
 ```bash
-python tools/update_version.py sync
+python3 tools/update_version.py sync
 ```
 
 **Что делает:**
@@ -262,13 +263,13 @@ python tools/update_version.py sync
 
 ```bash
 # 1. Обновить версию
-python scripts/bump_version.py --bump minor
+python3 scripts/bump_version.py --bump minor
 
 # 2. Синхронизировать файлы сборки
-python tools/update_version.py sync
+python3 tools/update_version.py sync
 
 # 3. Проверить
-python tools/update_version.py status
+python3 tools/update_version.py status
 
 # 4. Закоммитить
 git add config/ deployment/
@@ -288,7 +289,7 @@ python deployment/build_installer.py
 ### Standard Edition (если нужно)
 
 ```bash
-python scripts/bump_version.py --bump patch --edition standard
+python3 scripts/bump_version.py --bump patch --edition standard
 ```
 
 ### Синхронизация APP_ID с TelegramHelper
@@ -374,19 +375,19 @@ ALLOWED_APPS: Dict[str, dict] = {
 
 ```bash
 # 1. Обновить версию
-python scripts/bump_version.py --bump minor
+python3 scripts/bump_version.py --bump minor
 
 # 2. Синхронизировать и проверить
-python tools/update_version.py sync
-python tools/update_version.py status
+python3 tools/update_version.py sync
+python3 tools/update_version.py status
 
 # 3. Закоммитить
 git add config/ deployment/
 git commit -m "Release: Modern Edition v5.1.0"
 
 # 4. Собрать инсталлятор
-python deployment/build_installer.py     # Windows
-./deployment/build_macos.sh              # macOS
+python deployment/build_installer.py       # Windows (python или py)
+./deployment/build_macos.sh                # macOS
 ```
 
 ### 🎯 Сценарий 2: Работа на новой машине
@@ -394,16 +395,16 @@ python deployment/build_installer.py     # Windows
 ```bash
 git clone <repo-url>
 cd BOMCategorizer
-python tools/update_version.py status
-python tools/update_version.py sync
+python3 tools/update_version.py status
+python3 tools/update_version.py sync
 python app_qt.py
 ```
 
 ### 🎯 Сценарий 3: После git pull
 
 ```bash
-python tools/update_version.py status
-python tools/update_version.py sync
+python3 tools/update_version.py status
+python3 tools/update_version.py sync
 ```
 
 ---
@@ -412,23 +413,23 @@ python tools/update_version.py sync
 
 ### ❓ Как узнать текущую версию?
 ```bash
-python tools/update_version.py status
+python3 tools/update_version.py status
 ```
 
 ### ❓ Как обновить только Modern Edition?
 ```bash
-python scripts/bump_version.py --bump patch
+python3 scripts/bump_version.py --bump patch
 ```
 По умолчанию обновляется только Modern Edition.
 
 ### ❓ Как обновить Standard Edition?
 ```bash
-python scripts/bump_version.py --bump patch --edition standard
+python3 scripts/bump_version.py --bump patch --edition standard
 ```
 
 ### ❓ Версии рассинхронизировались, что делать?
 ```bash
-python tools/update_version.py sync
+python3 tools/update_version.py sync
 ```
 
 ### ❓ Команда sync затронет мои настройки UI?
@@ -447,7 +448,7 @@ python tools/update_version.py sync
 
 Выполните перед сборкой:
 ```bash
-python tools/update_version.py sync
+python3 tools/update_version.py sync
 ```
 
 ---

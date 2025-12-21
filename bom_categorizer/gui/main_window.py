@@ -3134,9 +3134,9 @@ class BOMCategorizerMainWindow(QMainWindow):
         
         # Размеры по умолчанию для каждого режима
         default_sizes = {
-            "simple": {"width": 800, "height": 560},
-            "advanced": {"width": 800, "height": 790},
-            "expert": {"width": 800, "height": 1160}
+            "simple": {"width": 820, "height": 580},
+            "advanced": {"width": 820, "height": 810},
+            "expert": {"width": 820, "height": 1220}
         }
         
         # Если используется старый формат конфигурации (width/height на верхнем уровне)
