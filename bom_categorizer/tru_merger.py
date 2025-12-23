@@ -638,27 +638,26 @@ def generate_unmatched_report(
             tu_or_mfr_list.append(tu_or_mfr)
             clean_names_list.append(clean_nm)
         
-        # Преобразуем
+        # Преобразуем в формат BOM: №, Наименование ИВП, ТУ, Источник, шт., Примечание, № ТРУ, Стоимость, КОД ERP(MP)
         unmatched_tru = pd.DataFrame()
         unmatched_tru['№ п/п'] = range(1, len(unmatched_raw) + 1)
         unmatched_tru['Наименование ИВП'] = clean_names_list
-        unmatched_tru['ТУ/Производитель'] = tu_or_mfr_list
+        unmatched_tru['ТУ'] = tu_or_mfr_list  # Переименовано для соответствия формату BOM
+        unmatched_tru['Источник'] = 'ТРУ (не найден в BOM)'
         unmatched_tru['шт.'] = unmatched_raw.get('Количество', '').values
+        unmatched_tru['Примечание'] = ''
+        unmatched_tru['№ ТРУ'] = unmatched_raw.get('_tru_number', '').values if '_tru_number' in unmatched_raw.columns else ''
         
-        # Обработка артикула
+        # Вычисляем стоимость
+        unmatched_tru['Стоимость'] = unmatched_raw.apply(calc_cost, axis=1).values
+        
+        # Обработка артикула (последняя колонка)
         if 'Артикул' in unmatched_raw.columns:
             unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].apply(
                 lambda x: int(float(x)) if pd.notna(x) and str(x).strip() != '' else ''
             ).values
         else:
             unmatched_tru['КОД ERP(МР)'] = ''
-            
-        unmatched_tru['Источник'] = 'ТРУ (не найден в BOM)'
-        unmatched_tru['Примечание'] = ''
-        unmatched_tru['№ ТРУ'] = unmatched_raw.get('_tru_number', '').values if '_tru_number' in unmatched_raw.columns else ''
-        
-        # Вычисляем стоимость
-        unmatched_tru['Стоимость'] = unmatched_raw.apply(calc_cost, axis=1).values
         
         return unmatched_tru
     else:

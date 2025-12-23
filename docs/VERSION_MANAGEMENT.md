@@ -95,18 +95,24 @@ scripts/bump_version.py
 ```bash
 python3 scripts/bump_version.py --bump patch
 # 5.0.0 → 5.0.1
+# For Windows
+python scripts/bump_version.py --bump patch
 ```
 
 #### ✨ Новая функция (Minor)
 ```bash
 python3 scripts/bump_version.py --bump minor
 # 5.0.0 → 5.1.0
+# For Windows
+python scripts/bump_version.py --bump minor
 ```
 
 #### 💥 Критические изменения (Major)
 ```bash
 python3 scripts/bump_version.py --bump major
 # 5.0.0 → 6.0.0
+# For Windows
+python scripts/bump_version.py --bump major
 ```
 
 ### Выбор редакции
@@ -114,6 +120,8 @@ python3 scripts/bump_version.py --bump major
 ```bash
 # Modern Edition (по умолчанию)
 python3 scripts/bump_version.py --bump patch
+# For Windows
+python scripts/bump_version.py --bump patch
 
 # Standard Edition
 python3 scripts/bump_version.py --bump patch --edition standard
@@ -127,6 +135,8 @@ python3 scripts/bump_version.py --bump patch --edition both
 ```bash
 # Modern Edition
 python3 scripts/bump_version.py --version 5.2.0
+# For Windows
+python scripts/bump_version.py --version 5.2.0
 
 # Standard Edition
 python3 scripts/bump_version.py --version 3.4.0 --edition standard
@@ -137,9 +147,13 @@ python3 scripts/bump_version.py --version 3.4.0 --edition standard
 ```bash
 # Без обновления даты релиза
 python3 scripts/bump_version.py --bump patch --no-release-date
+# For Windows
+python scripts/bump_version.py --bump patch --no-release-date
 
 # С конкретной датой релиза
 python3 scripts/bump_version.py --version 5.5.0 --release-date 31.12.2025
+# For Windows
+python scripts/bump_version.py --version 5.5.0 --release-date 31.12.2025
 
 # Изменить разработчика
 python3 scripts/bump_version.py --developer "Иванов И.И."
@@ -164,18 +178,32 @@ tools/update_version.py
 ```bash
 # Показать текущие версии
 python3 tools/update_version.py status
+# For Windows
+python tools/update_version.py status
+
+python3 tools/update_version.py sync
+# For Windows
+python tools/update_version.py sync
 
 # Обновить Modern Edition
 python3 tools/update_version.py set modern 5.1.0
+# For Windows
+python tools/update_version.py set modern 5.1.0
 
 # Обновить Standard Edition
 python3 tools/update_version.py set standard 3.4.0
+# For Windows
+python tools/update_version.py set standard 3.4.0
 
 # Обновить обе редакции
 python3 tools/update_version.py set both 5.0.0
+# For Windows
+python tools/update_version.py set both 5.0.0
 
 # Синхронизировать файлы сборки
 python3 tools/update_version.py sync
+# For Windows
+python tools/update_version.py sync
 ```
 
 ### Пример вывода `status`

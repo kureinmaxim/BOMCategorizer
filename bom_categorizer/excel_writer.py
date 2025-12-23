@@ -836,33 +836,50 @@ def write_categorized_excel(
         
         # SOURCES sheet (записываем до SUMMARY)
         # Очищаем source_file от тегов замен/подборов: (зам D4), (п/б C21*) и т.д.
-        unique_sources = set()
+        # ВАЖНО: Дедуплицируем источники — один файл не должен появляться дважды
+        unique_source_basenames = set()  # Только уникальные базовые имена файлов
+        sources_data = []  # (base_name, source_sheet)
+        
         for _, r in df.iterrows():
             source_file = r.get("source_file", "")
             source_sheet = r.get("source_sheet", "")
             
-            # Очищаем source_file от тегов в скобках: (зам ...), (п/б ...), (подбор ...)
-            if source_file:
-                # Убираем ВСЕ теги в скобках (может быть несколько: (п/б D3*), (п/б D5*), ...)
-                import re
-                clean_source = source_file
-                # Повторяем пока есть скобки (убираем все теги, даже если их несколько)
-                while '(' in clean_source:
-                    prev = clean_source
-                    clean_source = re.sub(r'\s*\([^)]*\)', '', clean_source)
-                    # Если ничего не изменилось - выходим (защита от бесконечного цикла)
-                    if prev == clean_source:
-                        break
-                clean_source = clean_source.strip().rstrip(',').strip()
+            if not source_file:
+                continue
                 
+            # Очищаем source_file от тегов в скобках: (зам ...), (п/б ...), (подбор ...)
+            import re
+            clean_source = source_file
+            # Повторяем пока есть скобки (убираем все теги, даже если их несколько)
+            while '(' in clean_source:
+                prev = clean_source
+                clean_source = re.sub(r'\s*\([^)]*\)', '', clean_source)
+                # Если ничего не изменилось - выходим (защита от бесконечного цикла)
+                if prev == clean_source:
+                    break
+            clean_source = clean_source.strip().rstrip(',').strip()
+            
+            # Разбиваем по запятой если есть несколько файлов в одной записи
+            # Например: "BU_SHSK_M_+.docx, Mod_PIT_SHSK_M" -> ["BU_SHSK_M_+.docx", "Mod_PIT_SHSK_M"]
+            file_parts = [p.strip() for p in clean_source.split(',') if p.strip()]
+            
+            for file_part in file_parts:
                 # Извлекаем базовое имя файла без расширения
-                base_name = os.path.splitext(os.path.basename(clean_source))[0]
-                unique_sources.add((base_name, source_sheet))
-            else:
-                unique_sources.add((source_file, source_sheet))
+                base_name = os.path.splitext(os.path.basename(file_part))[0]
+                
+                if not base_name:
+                    continue
+                    
+                # Нормализуем имя (убираем пробелы, приводим к нижнему регистру для сравнения)
+                normalized_name = base_name.lower().strip()
+                
+                # Добавляем только если такого имени ещё не было
+                if normalized_name not in unique_source_basenames:
+                    unique_source_basenames.add(normalized_name)
+                    sources_data.append((base_name, source_sheet if len(file_parts) == 1 else ""))
         
         sources = pd.DataFrame(
-            sorted(unique_sources), 
+            sorted(sources_data, key=lambda x: x[0].lower()), 
             columns=["source_file", "source_sheet"]
         )
         if not sources.empty:

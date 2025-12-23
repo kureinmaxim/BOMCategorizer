@@ -1,4 +1,4 @@
-#define MyAppVersion "5.4.7"
+#define MyAppVersion "5.4.8"
 #define MyAppEdition "Modern Edition"
 #define MyAppPublisher "Kurein M.N."
 [Setup]
