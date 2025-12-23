@@ -101,10 +101,12 @@ class AIClassifierWorker(QThread):
             # Инициализируем шифрование
             messenger = SecureMessenger(self.encryption_key)
             
-            # Подготавливаем данные
+            # Подготавливаем данные (api_key и app_id ВНУТРИ зашифрованного payload!)
             request_data = {
-                "query": prompt,
-                "provider": "openai", # Telegram бот сам выберет провайдера по умолчанию
+                "api_key": self.api_key,  # ВАЖНО: передаём api_key внутри шифрования
+                "app_id": self.app_id,    # ВАЖНО: передаём app_id внутри шифрования
+                "prompt": prompt,         # Исправлено: было "query", должно быть "prompt"
+                "provider": "openai",
                 "model": "gpt-4"
             }
             
@@ -126,14 +128,16 @@ class AIClassifierWorker(QThread):
             else:
                 endpoint = f"{base_url}/ai_query/secure"
                 
+            # ПРИМЕЧАНИЕ: X-API-KEY и X-APP-ID в заголовках теперь необязательны,
+            # так как credentials передаются внутри зашифрованного payload.
+            # X-APP-ID в заголовке используется только для выбора ключа шифрования.
             response = requests.post(
                 endpoint,
                 json={"data": b64_payload},
                 headers={
                     "Content-Type": "application/json",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36", # Fake UA
-                    "X-API-KEY": self.api_key, # Исправлено: используем api_key, а не encryption_key
-                    "X-APP-ID": self.app_id
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                    "X-APP-ID": self.app_id  # Для выбора ключа шифрования на сервере
                 },
                 timeout=60
             )

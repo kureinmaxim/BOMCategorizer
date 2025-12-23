@@ -1,8 +1,18 @@
 #define MyAppVersion "3.3.0"
 #define MyAppEdition "Standard"
+#define MyAppPublisher "Kurein M.N."
 [Setup]
 AppName=BOM Categorizer Standard
 AppVersion={#MyAppVersion}
+AppVerName=BOM Categorizer {#MyAppEdition} v{#MyAppVersion}
+AppPublisher={#MyAppPublisher}
+AppPublisherURL=https://github.com/kureinmaxim/BOMCategorizer
+AppSupportURL=https://github.com/kureinmaxim/BOMCategorizer/issues
+VersionInfoVersion={#MyAppVersion}.0
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription=BOM Categorizer - Bill of Materials Categorization Tool
+VersionInfoProductName=BOM Categorizer {#MyAppEdition}
+VersionInfoProductVersion={#MyAppVersion}
 DefaultDirName={userappdata}\BOMCategorizer
 DefaultGroupName=BOM Categorizer Standard
 OutputDir=.
@@ -15,6 +25,8 @@ CloseApplications=yes
 RestartIfNeededByRun=yes
 SetupIconFile=assets\icon.ico
 UninstallDisplayIcon={app}\assets\icon.ico
+UninstallDisplayName=BOM Categorizer {#MyAppEdition} v{#MyAppVersion}
+
 
 [Files]
 Source: "temp_installer\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "*.pyc,__pycache__"

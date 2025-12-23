@@ -37,22 +37,24 @@ def read_version_from_config(config_file):
         return "Unknown"
 
 
-# Версии приложения (версии читаются автоматически из config файлов)
+# Версии приложения (версии читаются из шаблонов конфигов, чтобы не зависеть от пользовательских файлов)
 EDITIONS = {
     "1": {
         "name": "Standard",
-        "version": read_version_from_config("config.json"),
+        "version": read_version_from_config("config/config.json.template") or read_version_from_config("config.json"),
         "app_file": "app.py",
         "config": "config.json",
+        "config_template": "config/config.json.template",
         "iss_file": "deployment/installer_clean.iss",
         "output": "BOMCategorizerSetup.exe",
         "description": "Tkinter GUI (стабильная версия)"
     },
     "2": {
         "name": "Modern Edition",
-        "version": read_version_from_config("config_qt.json"),
+        "version": read_version_from_config("config/config_qt.json.template") or read_version_from_config("config_qt.json"),
         "app_file": "app_qt.py",
         "config": "config_qt.json",
+        "config_template": "config/config_qt.json.template",
         "iss_file": "deployment/installer_qt.iss",
         "output": "BOMCategorizerModernSetup.exe",
         "description": "PySide6 GUI (современный дизайн + экспериментальные функции)"
@@ -328,14 +330,23 @@ def main():
     print_step("Шаг 2: Копирование файлов проекта")
     copy_files()
     
-    # Копируем правильный конфигурационный файл
-    print(f"\nКопирую {edition['config']} -> config.json...")
-    if not os.path.exists(edition['config']):
-        print(f"[ERROR] Файл {edition['config']} не найден!")
-        print(f"       Убедитесь, что файл существует в корне проекта.")
+    # Копируем шаблон конфигурации (без секретов) вместо текущего конфига с ключами
+    # Это гарантирует, что ваши настроенные ключи НЕ попадут в инсталлятор
+    template_config = edition.get('config_template', f"config/{edition['config']}.template")
+    
+    print(f"\nКопирую шаблон {template_config} -> config.json (без ваших ключей)...")
+    if os.path.exists(template_config):
+        shutil.copy2(template_config, os.path.join(TEMP_DIR, 'config.json'))
+        print(f"[OK] {template_config} -> config.json (чистый шаблон)")
+    elif os.path.exists(edition['config']):
+        # Fallback: если шаблона нет, используем текущий конфиг
+        print(f"[WARN] Шаблон {template_config} не найден, использую {edition['config']}")
+        print(f"       ВНИМАНИЕ: Ваши API ключи могут попасть в инсталлятор!")
+        shutil.copy2(edition['config'], os.path.join(TEMP_DIR, 'config.json'))
+    else:
+        print(f"[ERROR] Файл конфигурации не найден!")
         return 1
-    shutil.copy2(edition['config'], os.path.join(TEMP_DIR, 'config.json'))
-    print(f"[OK] {edition['config']} -> config.json")
+    print(f"[OK] Конфигурация готова")
     
     # Копируем правильный файл запуска
     print(f"Копирую {edition['app_file']} -> app.py...")

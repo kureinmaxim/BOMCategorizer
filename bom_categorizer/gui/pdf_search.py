@@ -383,10 +383,16 @@ class AIPDFSearcher:
             
             # Проверяем, нужно ли шифрование
             if self.use_encryption and self.encryption_key and ENCRYPTION_AVAILABLE:
+                # ВАЖНО: api_key и app_id должны быть ВНУТРИ зашифрованного payload!
+                secure_payload = {
+                    **payload,
+                    "api_key": self.api_key,
+                    "app_id": self.app_id
+                }
+                
                 # Шифруем запрос
                 messenger = SecureMessenger(self.encryption_key)
-                request_data = json.dumps(payload).encode('utf-8')
-                encrypted_bytes = messenger.encrypt(request_data)
+                encrypted_bytes = messenger.encrypt(secure_payload)
                 b64_payload = base64.b64encode(encrypted_bytes).decode('utf-8')
                 
                 # Определяем endpoint для шифрованных запросов
@@ -396,10 +402,10 @@ class AIPDFSearcher:
                 elif not url.endswith('/ai_query/secure'):
                     url = f"{url}/ai_query/secure"
                 
+                # X-APP-ID в заголовке используется только для выбора ключа шифрования
                 headers = {
                     "Content-Type": "application/json",
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "X-API-KEY": self.api_key,
                     "X-APP-ID": self.app_id
                 }
                 response = requests.post(url, json={"data": b64_payload}, headers=headers, timeout=120)
@@ -650,10 +656,16 @@ class AIPDFSearcher:
             
             # Проверяем, нужно ли шифрование
             if self.use_encryption and self.encryption_key and ENCRYPTION_AVAILABLE:
+                # ВАЖНО: api_key и app_id должны быть ВНУТРИ зашифрованного payload!
+                secure_payload = {
+                    **payload,
+                    "api_key": self.api_key,
+                    "app_id": self.app_id
+                }
+                
                 # Шифруем запрос
                 messenger = SecureMessenger(self.encryption_key)
-                request_data = json.dumps(payload).encode('utf-8')
-                encrypted_bytes = messenger.encrypt(request_data)
+                encrypted_bytes = messenger.encrypt(secure_payload)
                 b64_payload = base64.b64encode(encrypted_bytes).decode('utf-8')
                 
                 # Определяем endpoint для шифрованных запросов
@@ -663,10 +675,10 @@ class AIPDFSearcher:
                 elif not url.endswith('/ai_query/secure'):
                     url = f"{url}/ai_query/secure"
                 
+                # X-APP-ID в заголовке используется только для выбора ключа шифрования
                 headers = {
                     "Content-Type": "application/json",
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                    "X-API-KEY": self.api_key,
                     "X-APP-ID": self.app_id
                 }
                 response = requests.post(url, json={"data": b64_payload}, headers=headers, timeout=60)

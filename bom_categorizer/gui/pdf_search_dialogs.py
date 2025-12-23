@@ -2390,16 +2390,22 @@ class PDFSearchSettingsDialog(QDialog):
     
     def __init__(self, parent, config: dict):
         super().__init__(parent)
+        # Скрываем этот диалог - мы его не показываем
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.FramelessWindowHint)
+        self.setFixedSize(0, 0)
+        self.hide()
+        
         # Перенаправляем на единое окно настроек
         unified_dialog = UnifiedSettingsDialog(parent, config)
         result = unified_dialog.exec()
+        
         # Для совместимости возвращаем конфиг
         self.config = unified_dialog.get_config() if result == QDialog.Accepted else config
-        # Устанавливаем результат для этого диалога
-        if result == QDialog.Accepted:
-            self.accept()
-        else:
-            self.reject()
+        self._result = result
+    
+    def exec(self):
+        """Возвращаем результат UnifiedSettingsDialog"""
+        return self._result
     
     def get_config(self) -> dict:
         """Возвращает обновленный конфиг"""

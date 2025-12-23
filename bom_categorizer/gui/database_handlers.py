@@ -341,3 +341,99 @@ class DatabaseHandlersMixin:
                 raise RuntimeError("Не удалось открыть проводник.")
         except Exception as e:
             QMessageBox.critical(self, "Ошибка", f"Не удалось открыть папку:\n{str(e)}")
+
+    def on_view_database(self: 'BOMCategorizerMainWindow'):
+        """Открывает диалог для просмотра содержимого базы данных"""
+        import json
+        
+        try:
+            db_path = get_database_path()
+            
+            if not os.path.exists(db_path):
+                QMessageBox.warning(
+                    self,
+                    "База данных не найдена",
+                    f"Файл базы данных не существует:\n{db_path}"
+                )
+                return
+            
+            # Загружаем данные из JSON
+            with open(db_path, 'r', encoding='utf-8') as f:
+                db_data = json.load(f)
+            
+            components = db_data.get('components', {})
+            metadata = db_data.get('metadata', {})
+            
+            # Создаем диалог
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Просмотр базы данных")
+            dialog.resize(900, 600)
+            
+            layout = QVBoxLayout(dialog)
+            
+            # Информация о БД
+            info_label = QLabel(
+                f"📦 Версия: {metadata.get('version', 'N/A')} | "
+                f"📊 Компонентов: {sum(len(v) for v in components.values())} | "
+                f"📁 Путь: {db_path}"
+            )
+            info_label.setWordWrap(True)
+            layout.addWidget(info_label)
+            
+            # Таблица с компонентами
+            table = QTableWidget()
+            table.setColumnCount(4)
+            table.setHorizontalHeaderLabels(["Наименование", "Категория", "Ключевые слова", "Источник"])
+            table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+            table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+            table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+            table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+            table.setSelectionBehavior(QAbstractItemView.SelectRows)
+            table.setAlternatingRowColors(True)
+            table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+            
+            # Получаем имена категорий
+            from ..component_database import CATEGORY_NAMES
+            
+            # Заполняем таблицу
+            all_rows = []
+            for category_id, items in components.items():
+                category_name = CATEGORY_NAMES.get(category_id, category_id)
+                for item in items:
+                    if isinstance(item, dict):
+                        name = item.get('name', str(item))
+                        keywords = ', '.join(item.get('keywords', [])) if item.get('keywords') else ''
+                        source = item.get('source', '')
+                    else:
+                        name = str(item)
+                        keywords = ''
+                        source = ''
+                    all_rows.append((name, category_name, keywords, source))
+            
+            table.setRowCount(len(all_rows))
+            for row_idx, (name, cat, kw, src) in enumerate(all_rows):
+                table.setItem(row_idx, 0, QTableWidgetItem(name))
+                table.setItem(row_idx, 1, QTableWidgetItem(cat))
+                table.setItem(row_idx, 2, QTableWidgetItem(kw))
+                table.setItem(row_idx, 3, QTableWidgetItem(src))
+            
+            layout.addWidget(table)
+            
+            # Кнопки
+            buttons_layout = QHBoxLayout()
+            
+            close_btn = QPushButton("Закрыть")
+            close_btn.clicked.connect(dialog.accept)
+            buttons_layout.addStretch()
+            buttons_layout.addWidget(close_btn)
+            
+            layout.addLayout(buttons_layout)
+            
+            dialog.exec()
+            
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Ошибка",
+                f"Не удалось открыть базу данных:\n{str(e)}"
+            )
