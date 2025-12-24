@@ -1,7 +1,7 @@
 # 📁 Структура проекта BOM Categorizer
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.0.0 (PySide6)  
-> **Обновлено:** 28.11.2025
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.4.12 (PySide6)  
+> **Обновлено:** 24.12.2025
 
 ---
 
@@ -44,6 +44,8 @@ BOMCategorizer/
 │   ├── txt_writer.py                     # Генерация текстовых отчётов
 │   ├── pdf_exporter.py                   # Экспорт в PDF
 │   ├── podborka_extractor.py             # Извлечение подборки
+│   ├── tru_merger.py                     # 🔄 Слияние данных ТРУ
+│   ├── tru_rkm_processor.py              # Обработка данных РКМ
 │   ├── utils.py                          # Вспомогательные утилиты
 │   ├── cli_interactive.py                # Интерактивная консоль
 │   ├── styles.py                         # Стили для GUI
@@ -60,6 +62,10 @@ BOMCategorizer/
 │       ├── search_methods.py             # Методы поиска
 │       ├── workers.py                    # Фоновые потоки (QThread)
 │       ├── drag_drop.py                  # Drag & Drop
+│       ├── file_handlers.py              # Обработка файлов
+│       ├── database_handlers.py          # Работа с БД в GUI
+│       ├── processing_handlers.py        # Обработка BOM/ТРУ
+│       ├── help_dialogs.py               # Окна помощи
 │       ├── ai_classifier.py              # AI классификация
 │       ├── pdf_search.py                 # Поиск компонентов
 │       └── pdf_search_dialogs.py         # Диалоги AI поиска
@@ -106,6 +112,7 @@ BOMCategorizer/
 │   ├── merge_component_database.py       # Слияние баз данных
 │   ├── update_version.py                 # Управление версиями
 │   ├── sync_installer_versions.py        # Синхронизация версий
+│   ├── sync_telegram_api.py              # Синхронизация API ключей
 │   ├── create_icons.py                   # Создание иконок
 │   ├── check_pdf_fonts.py                # Проверка PDF шрифтов
 │   └── init_project.py                   # Инициализация проекта

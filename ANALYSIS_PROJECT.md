@@ -2,7 +2,7 @@
 
 **BOM Categorizer** — десктопное приложение для автоматической классификации электронных компонентов из спецификаций (BOM).
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.0.0 (PySide6)  
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.4.12 (PySide6)  
 > **Язык:** Python 3.13+  
 > **Архитектура:** Модульный пайплайн + AI интеграция + Шифрование
 
@@ -91,6 +91,8 @@
 | `parsers.py` | 📥 Ввод | Чтение .docx, .xlsx, .txt |
 | `config_manager.py` | ⚙️ Конфиг | Управление настройками |
 | `encryption.py` | 🔐 Безопасность | AES-256-GCM шифрование |
+| `tru_merger.py` | 🔄 TRU Merger | Слияние BOM с данными ТРУ/РКМ |
+| `tru_rkm_processor.py` | 📦 RKM Logic | Обработка справочников ТРУ |
 
 ### GUI Modern Edition (`gui/`)
 
@@ -108,14 +110,17 @@
 | `ai_classifier.py` | AI классификация |
 | `pdf_search.py` | Поиск компонентов |
 | `pdf_search_dialogs.py` | Диалоги AI поиска |
+| `processing_handlers.py` | Обработка BOM/ТРУ |
+| `database_handlers.py` | Работа с БД в GUI |
+| `file_handlers.py` | Обработка файлов |
 
 ### Вывод (Output)
 
 | Модуль | Описание |
 |--------|----------|
-| `excel_writer.py` | Excel отчёты (.xlsx) |
+| `excel_writer.py` | Excel отчёты (горизонтальные SOURCES, текст ERP) |
 | `txt_writer.py` | Текстовые отчёты |
-| `pdf_exporter.py` | PDF с кириллицей |
+| `pdf_exporter.py` | PDF (авто-ориентация, источники блоком) |
 
 ---
 
@@ -327,4 +332,4 @@ BOMCategorizer/
 ---
 
 **Разработчик:** Куреин М.Н.  
-**Обновлено:** 28.11.2025
+**Обновлено:** 24.12.2025

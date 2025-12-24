@@ -250,11 +250,12 @@ def find_matching_tru_row(
         score = 0.0
         
         # НОВАЯ Стратегия: Сравнение чистых кодов (без категорий и суффиксов)
+        # Это самый надёжный способ — включает полный номер модели (напр. МДМ30-1В15ТУП)
         if bom_pure_code and tru_pure_code:
             if bom_pure_code == tru_pure_code:
-                score = 0.98  # Почти точное совпадение
+                score = 0.99  # Точное совпадение — максимальный приоритет
             elif bom_pure_code in tru_pure_code or tru_pure_code in bom_pure_code:
-                score = 0.95  # Один содержит другой
+                score = 0.97  # Один содержит другой — высокий приоритет
         
         # Стратегия 0: Если BOM — короткий код, ищем его вхождение в ТРУ
         if score < 0.9 and bom_is_short_code and norm_bom_name:
@@ -265,10 +266,12 @@ def find_matching_tru_row(
             elif bom_name.strip().lower().replace(' ', '') in tru_name.lower().replace(' ', ''):
                 score = max(score, 0.95)
         
-        # Стратегия 1: Совпадение кода компонента
+        # Стратегия 1: Совпадение кода компонента (напр. МДМ30)
+        # ВНИМАНИЕ: Это менее точный метод — может давать ложные совпадения!
+        # Например, МДМ30-1В12 и МДМ30-1В15 оба имеют код МДМ30
         if score < 0.9 and bom_code and tru_code:
             if bom_code.lower() == tru_code.lower():
-                score = max(score, 0.95)  # Высокий приоритет
+                score = max(score, 0.92)  # Ниже чем pure code чтобы избежать ложных матчей
             elif bom_code.lower() in tru_code.lower() or tru_code.lower() in bom_code.lower():
                 score = max(score, 0.85)
         
@@ -638,26 +641,27 @@ def generate_unmatched_report(
             tu_or_mfr_list.append(tu_or_mfr)
             clean_names_list.append(clean_nm)
         
-        # Преобразуем в формат BOM: №, Наименование ИВП, ТУ, Источник, шт., Примечание, № ТРУ, Стоимость, КОД ERP(MP)
+        # Преобразуем в формат BOM: №, Наименование ИВП, ТУ, шт., КОД ERP(МР), Источник, Примечание, № ТРУ, Стоимость
         unmatched_tru = pd.DataFrame()
         unmatched_tru['№ п/п'] = range(1, len(unmatched_raw) + 1)
         unmatched_tru['Наименование ИВП'] = clean_names_list
-        unmatched_tru['ТУ'] = tu_or_mfr_list  # Переименовано для соответствия формату BOM
-        unmatched_tru['Источник'] = 'ТРУ (не найден в BOM)'
+        unmatched_tru['ТУ'] = tu_or_mfr_list
         unmatched_tru['шт.'] = unmatched_raw.get('Количество', '').values
+        
+        # Обработка артикула (КОД ERP)
+        if 'Артикул' in unmatched_raw.columns:
+            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].apply(
+                lambda x: str(int(float(x))) if pd.notna(x) and str(x).strip() != '' else ''
+            ).values
+        else:
+            unmatched_tru['КОД ERP(МР)'] = ''
+            
+        unmatched_tru['Источник'] = 'ТРУ (не найден в BOM)'
         unmatched_tru['Примечание'] = ''
         unmatched_tru['№ ТРУ'] = unmatched_raw.get('_tru_number', '').values if '_tru_number' in unmatched_raw.columns else ''
         
         # Вычисляем стоимость
         unmatched_tru['Стоимость'] = unmatched_raw.apply(calc_cost, axis=1).values
-        
-        # Обработка артикула (последняя колонка)
-        if 'Артикул' in unmatched_raw.columns:
-            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].apply(
-                lambda x: int(float(x)) if pd.notna(x) and str(x).strip() != '' else ''
-            ).values
-        else:
-            unmatched_tru['КОД ERP(МР)'] = ''
         
         return unmatched_tru
     else:
@@ -793,15 +797,39 @@ def apply_merge_styles(
                             # Fallback — весь текст красным
                             cell.font = Font(color='8B0000', bold=True)
     
-    # Автоматическая ширина колонок
-    for column in worksheet.columns:
-        max_length = 0
-        column_letter = column[0].column_letter
-        for cell in column:
-            try:
-                if cell.value:
-                    max_length = max(max_length, len(str(cell.value)))
-            except Exception:
-                pass
-        adjusted_width = min(max_length + 2, 60)  # Max 60 символов
-        worksheet.column_dimensions[column_letter].width = max(adjusted_width, 8)  # Min 8
+    # Установка ширины колонок (заданные ширины для стандартных колонок BOM)
+    standard_widths = {
+        '№ п/п': 6,
+        '№': 6,
+        'наименование ивп': 55,
+        'наименование': 55,
+        'ту': 35,
+        'ту/производитель': 35,
+        'шт.': 8,
+        'шт': 8,
+        'код erp(мр)': 15,
+        'код erp': 15,
+        'источник': 25,
+        'примечание': 25,
+        '№ тру': 20,
+        'стоимость': 15
+    }
+
+    for col_idx in range(1, worksheet.max_column + 1):
+        header_cell = worksheet.cell(row=header_row, column=col_idx)
+        header_val = str(header_cell.value).strip().lower() if header_cell.value else ''
+        column_letter = header_cell.column_letter
+        
+        # Если колонка стандартная — ставим фиксированную ширину
+        if header_val in standard_widths:
+            worksheet.column_dimensions[column_letter].width = standard_widths[header_val]
+        else:
+            # Автоподбор ширины для неизвестных колонок
+            max_length = 0
+            for row in range(1, worksheet.max_row + 1):
+                cell_val = worksheet.cell(row=row, column=col_idx).value
+                if cell_val:
+                    max_length = max(max_length, len(str(cell_val)))
+            
+            adjusted_width = min(max_length + 2, 60)  # Max 60 символов
+            worksheet.column_dimensions[column_letter].width = max(adjusted_width, 8)  # Min 8

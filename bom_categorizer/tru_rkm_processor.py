@@ -528,6 +528,47 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
             
         result_df = pd.DataFrame(data)
         
+        # === Enhanced Processing for Manager-Friendly Report ===
+        
+        # 1. Clean description names (remove technical noise)
+        def clean_description(name: str) -> str:
+            if not name:
+                return name
+            # Remove multi-line noise, keep first meaningful line
+            lines = [line.strip() for line in str(name).split('\n') if line.strip()]
+            if not lines:
+                return name
+            clean_name = lines[0]
+            # Remove common noise patterns
+            noise_patterns = [
+                r'\s*,\s*$',  # trailing commas
+                r'\s+',  # multiple spaces -> single
+            ]
+            for pattern in noise_patterns:
+                clean_name = re.sub(pattern, ' ' if 'spaces' in pattern else '', clean_name)
+            return clean_name.strip()
+        
+        result_df['Наименование'] = result_df['Наименование'].apply(clean_description)
+        
+        # 2. Deduplicate: Group by Наименование, sum Стоимость
+        # For deduplication, we take first occurrence for other columns
+        aggregation = {
+            '№': 'first',  # Keep first row number
+            'Цена': 'first',  # Keep first price
+            'Стоимость': 'sum',  # Sum costs
+            'Документы': lambda x: '; '.join(set(str(v) for v in x if v and str(v).lower() != 'nan')),
+            'Поставщик': 'first',  # Keep first supplier
+        }
+        
+        # Group by cleaned name
+        result_df = result_df.groupby('Наименование', as_index=False).agg(aggregation)
+        
+        # 3. Re-number rows sequentially
+        result_df['№'] = range(1, len(result_df) + 1)
+        
+        # 4. Sort by row number
+        result_df = result_df.sort_values('№')
+        
         # Упорядочиваем колонки
         cols_order = ['№', 'Наименование', 'Цена', 'Стоимость', 'Документы', 'Поставщик']
         # Проверяем, все ли есть, если каких-то нет в result_df, добавляем пустые
@@ -543,7 +584,7 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
             
             worksheet = writer.sheets['РКМ']
             
-             # Стили (копипаст из ТРУ, чуть адаптирован)
+            # Стили
             header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
             header_font = Font(bold=True, color='FFFFFF', size=11)
             header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
@@ -557,7 +598,7 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
                 cell.alignment = header_alignment
             
             # Apply widths
-            ws_widths = {'A': 8, 'B': 60, 'C': 15, 'D': 15, 'E': 30, 'F': 40}
+            ws_widths = {'A': 8, 'B': 60, 'C': 15, 'D': 15, 'E': 35, 'F': 45}
             for col_l, w in ws_widths.items():
                 worksheet.column_dimensions[col_l].width = w
                 
@@ -570,8 +611,33 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
                 row[3].number_format = '#,##0.00'
                 row[4].alignment = left_align # Docs
                 row[5].alignment = left_align # Provider
+            
+            # === Add Grand Total Row ===
+            last_data_row = len(result_df) + 1
+            total_row = last_data_row + 2
+            
+            # Total label
+            total_label_cell = worksheet.cell(row=total_row, column=3, value="ИТОГО:")
+            total_label_cell.font = Font(bold=True, size=12)
+            total_label_cell.alignment = Alignment(horizontal='right', vertical='center')
+            
+            # Total value (formula)
+            total_value_cell = worksheet.cell(row=total_row, column=4, value=f"=SUM(D2:D{last_data_row})")
+            total_value_cell.font = Font(bold=True, size=12)
+            total_value_cell.alignment = Alignment(horizontal='center', vertical='center')
+            total_value_cell.number_format = '#,##0.00'
+            
+            # Styling for total row
+            top_border = Border(top=Side(border_style="double", color="000000"))
+            total_fill = PatternFill(start_color='E0E0E0', end_color='E0E0E0', fill_type='solid')
+            
+            total_label_cell.border = top_border
+            total_value_cell.border = top_border
+            total_label_cell.fill = total_fill
+            total_value_cell.fill = total_fill
 
-        return True, f"РКМ обработан: {len(result_df)} строк"
+        return True, f"РКМ обработан: {len(result_df)} строк (дедуплицировано)"
+
 
     except Exception as e:
         import traceback

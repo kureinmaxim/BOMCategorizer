@@ -25,28 +25,56 @@ class FileHandlersMixin:
 
     def on_add_files(self: 'BOMCategorizerMainWindow'):
         """Добавление файлов"""
+        # Import file type detection from tru_rkm_processor
+        from ..tru_rkm_processor import detect_file_type
+        
         files, _ = QFileDialog.getOpenFileNames(
             self,
             "Выберите файлы",
             "",
-            "Документы Word (*.docx *.doc);;Excel (*.xlsx);;Текст (*.txt);;Все BOM файлы (*.xlsx *.docx *.doc *.txt);;Все файлы (*)"
+            "Документы Word (*.docx *.doc);;Excel (*.xlsx *.xls);;Текст (*.txt);;Все BOM файлы (*.xlsx *.xls *.docx *.doc *.txt);;Все файлы (*)"
         )
 
         if files:
+            tru_rkm_added = []
+            bom_added = []
+            
             for file_path in files:
-                # Проверяем наличие файла (без учета регистра)
-                exists = False
-                for existing_path in self.input_files:
-                    if existing_path.lower() == file_path.lower():
-                        exists = True
-                        break
+                # Auto-detect RKM/TRU files by filename
+                file_type = detect_file_type(os.path.basename(file_path))
+                ext = os.path.splitext(file_path)[1].lower()
                 
-                if not exists:
-                    self.input_files[file_path] = 1
-                    self.last_input_file = file_path  # Сохраняем последний добавленный файл
+                if file_type in ('tpy', 'rkm') and ext in ('.xls', '.xlsx'):
+                    # This is a TRU/RKM file - route to TRU/RKM list
+                    exists = any(
+                        existing.lower() == file_path.lower()
+                        for existing in self.tru_rkm_files
+                    )
+                    if not exists:
+                        self.tru_rkm_files.append(file_path)
+                        tru_rkm_added.append(os.path.basename(file_path))
+                else:
+                    # Regular BOM file
+                    exists = any(
+                        existing.lower() == file_path.lower()
+                        for existing in self.input_files
+                    )
+                    if not exists:
+                        self.input_files[file_path] = 1
+                        self.last_input_file = file_path
+                        bom_added.append(os.path.basename(file_path))
 
+            # Update both lists
             self.update_listbox()
+            self.update_tru_rkm_listbox()
             self.update_output_filename()
+            
+            # Log what was auto-categorized
+            if tru_rkm_added and hasattr(self, 'log_text') and self.log_text:
+                self.log_text.append(f"📋 Авто-категоризация: {len(tru_rkm_added)} файлов → ТРУ/РКМ")
+                for name in tru_rkm_added:
+                    self.log_text.append(f"   • {name}")
+
 
     def on_clear_files(self: 'BOMCategorizerMainWindow'):
         """Очистка списка файлов"""

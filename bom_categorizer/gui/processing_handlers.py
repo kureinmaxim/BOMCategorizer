@@ -37,6 +37,9 @@ class ProcessingHandlersMixin:
             # Сохраняем путь для экспорта
             if output_file:
                 self.last_generated_output = output_file
+            
+            # Удаляем промежуточные файлы конвертации (doc -> docx)
+            self.cleanup_converted_files()
                 
             QMessageBox.information(self, "Готово", message)
             

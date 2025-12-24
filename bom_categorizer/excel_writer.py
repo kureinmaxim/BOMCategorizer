@@ -834,15 +834,12 @@ def write_categorized_excel(
             category_sheets.append(sheet_name)
             sheets_written += 1
         
-        # SOURCES sheet (записываем до SUMMARY)
-        # Очищаем source_file от тегов замен/подборов: (зам D4), (п/б C21*) и т.д.
-        # ВАЖНО: Дедуплицируем источники — один файл не должен появляться дважды
-        unique_source_basenames = set()  # Только уникальные базовые имена файлов
-        sources_data = []  # (base_name, source_sheet)
+        # Собираем данные об источниках для добавления в SUMMARY
+        # Считаем количество вхождений каждого файла
+        source_counts = {}  # {normalized_name: [display_name, count]}
         
         for _, r in df.iterrows():
             source_file = r.get("source_file", "")
-            source_sheet = r.get("source_sheet", "")
             
             if not source_file:
                 continue
@@ -860,7 +857,6 @@ def write_categorized_excel(
             clean_source = clean_source.strip().rstrip(',').strip()
             
             # Разбиваем по запятой если есть несколько файлов в одной записи
-            # Например: "BU_SHSK_M_+.docx, Mod_PIT_SHSK_M" -> ["BU_SHSK_M_+.docx", "Mod_PIT_SHSK_M"]
             file_parts = [p.strip() for p in clean_source.split(',') if p.strip()]
             
             for file_part in file_parts:
@@ -870,21 +866,17 @@ def write_categorized_excel(
                 if not base_name:
                     continue
                     
-                # Нормализуем имя (убираем пробелы, приводим к нижнему регистру для сравнения)
+                # Нормализуем имя для сравнения
                 normalized_name = base_name.lower().strip()
                 
-                # Добавляем только если такого имени ещё не было
-                if normalized_name not in unique_source_basenames:
-                    unique_source_basenames.add(normalized_name)
-                    sources_data.append((base_name, source_sheet if len(file_parts) == 1 else ""))
+                if normalized_name in source_counts:
+                    source_counts[normalized_name][1] += 1
+                else:
+                    source_counts[normalized_name] = [base_name, 1]
         
-        sources = pd.DataFrame(
-            sorted(sources_data, key=lambda x: x[0].lower()), 
-            columns=["source_file", "source_sheet"]
-        )
-        if not sources.empty:
-            sources.to_excel(writer, sheet_name="SOURCES", index=False)
-            sheets_written += 1
+        # source_counts теперь содержит словарь {нормализованное_имя: [отображаемое_имя, количество]}
+        # Они будут добавлены в конец листа SUMMARY ниже
+
         
         # Проверить что хотя бы один лист записан
         if sheets_written == 0:
@@ -1008,6 +1000,32 @@ def write_categorized_excel(
             if grand_total_cost > 0:
                 ws.cell(row=total_row_idx, column=5, value=grand_total_cost).font = bold_font
                 ws.cell(row=total_row_idx, column=5).alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Добавляем SOURCES в конец SUMMARY
+            if source_counts:
+                sources_row_idx = total_row_idx + 2  # Пустая строка перед SOURCES
+                
+                # Заголовок SOURCES
+                ws.cell(row=sources_row_idx, column=1, value='SOURCES:').font = bold_font
+                ws.cell(row=sources_row_idx, column=1).alignment = Alignment(horizontal='left', vertical='center')
+                
+                # Сортируем и записываем каждый источник в отдельную ячейку по горизонтали
+                sorted_sources_items = sorted(source_counts.items(), key=lambda x: x[1][0].lower())
+                
+                for i, (s_norm, (display_name, count)) in enumerate(sorted_sources_items):
+                    col = 2 + i  # Начинаем с колонки B (2)
+                    if count > 1:
+                        cell_value = f"{display_name} ({count} шт.)"
+                    else:
+                        cell_value = display_name
+                    
+                    cell = ws.cell(row=sources_row_idx, column=col, value=cell_value)
+                    cell.alignment = Alignment(horizontal='left', vertical='center')
+                    # Автоширина для колонки (приблизительная)
+                    ws.column_dimensions[cell.column_letter].width = max(
+                        ws.column_dimensions[cell.column_letter].width or 0, 
+                        len(cell_value) + 2
+                    )
             
             # Автоподбор ширины колонок
             for column in ws.columns:

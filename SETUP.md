@@ -2,7 +2,7 @@
 
 Этот файл содержит инструкции по первоначальной настройке проекта **BOM Categorizer** после клонирования с GitHub.
 
-**Версии:** Standard 3.3.0 | Modern 4.5.1
+**Версии:** Standard 3.3.0 | Modern 5.4.12
 
 ---
 
@@ -138,7 +138,7 @@ python tools/update_version.py status
 Должно показать:
 ```
 Standard Edition: v3.3.0
-Modern Edition: v4.5.1
+Modern Edition: v5.4.12
 ```
 
 ---
@@ -171,9 +171,9 @@ Modern Edition: v4.5.1
 ```json
 {
   "app_info": {
-    "version": "4.5.1",
+    "version": "5.4.12",
     "edition": "Modern Edition",
-    "release_date": "26.11.2025"
+    "release_date": "24.12.2025"
   },
   "security": {
     "pin": "1234",
@@ -386,7 +386,7 @@ python tools/ai_search.py "TPS54302"
 ---
 
 **Дата создания:** 20.11.2025  
-**Обновлено:** 26.11.2025  
+**Обновлено:** 24.12.2025  
 **Автор:** Куреин М.Н. / Kurein M.N.  
-**Версия документа:** 1.1
+**Версия документа:** 1.2
 

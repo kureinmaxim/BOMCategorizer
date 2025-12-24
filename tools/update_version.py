@@ -433,6 +433,25 @@ def sync_all():
     safe_print(f"\n{Colors.BOLD}{Emoji.SYNC} СИНХРОНИЗАЦИЯ ФАЙЛОВ СБОРКИ И ЛОКАЛЬНЫХ CONFIG{Colors.NC}\n")
     safe_print("=" * 70)
     
+    # Обновляем даты в шаблонах
+    now = datetime.now()
+    release_date = now.strftime("%d.%m.%Y")
+    last_updated = now.strftime("%Y-%m-%d")
+    
+    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Обновление дат в шаблонах:{Colors.NC}")
+    
+    for template_path, name in [
+        ('../config/config.json.template', 'Standard Edition'),
+        ('../config/config_qt.json.template', 'Modern Edition')
+    ]:
+        template_config = read_config_template(template_path)
+        if template_config:
+            old_date = template_config['app_info'].get('release_date', 'N/A')
+            template_config['app_info']['release_date'] = release_date
+            template_config['app_info']['last_updated'] = last_updated
+            if write_config_template(template_path, template_config):
+                safe_print(f"  {Colors.GREEN}{Emoji.CHECK} {name}: дата {old_date} → {release_date}{Colors.NC}")
+    
     # Синхронизация локальных config файлов
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Синхронизация локальных config файлов:{Colors.NC}")
     

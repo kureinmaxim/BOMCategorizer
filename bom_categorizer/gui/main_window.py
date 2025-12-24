@@ -834,6 +834,9 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
         
         # Обновляем список файлов
         if success and converted_files:
+            # Сохраняем список для последующего удаления промежуточных файлов
+            self.converted_docx_files = [new_file for old_file, new_file in converted_files]
+            
             for old_file, new_file in converted_files:
                 if old_file in self.input_files:
                     count = self.input_files[old_file]
@@ -1100,6 +1103,32 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
             progress_dialog.exec()
             return False
     
+    def cleanup_converted_files(self):
+        """
+        Удаляет промежуточные .docx файлы, созданные при конвертации из .doc
+        Вызывается после успешного завершения обработки BOM
+        """
+        if not hasattr(self, 'converted_docx_files') or not self.converted_docx_files:
+            return
+        
+        deleted_count = 0
+        for docx_file in self.converted_docx_files:
+            try:
+                if os.path.exists(docx_file):
+                    os.remove(docx_file)
+                    deleted_count += 1
+                    if self.log_text:
+                        self.log_text.append(f"🗑️  Удалён промежуточный файл: {os.path.basename(docx_file)}")
+            except Exception as e:
+                if self.log_text:
+                    self.log_text.append(f"⚠️  Не удалось удалить {os.path.basename(docx_file)}: {e}")
+        
+        # Очищаем список
+        self.converted_docx_files = []
+        
+        if deleted_count > 0 and self.log_text:
+            self.log_text.append(f"✅ Удалено промежуточных файлов: {deleted_count}")
+    
     def open_interactive_cli(self):
         """Открывает интерактивную командную строку"""
         from PySide6.QtWidgets import QDialog, QVBoxLayout
@@ -1323,7 +1352,7 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     summary_rows = []
                     
                     # Порядок листов: сначала существующие категории, потом Несопоставленные
-                    sheets_order = [k for k in merged_sheets.keys() if k != 'Summary' and k != 'Несопоставленные ТРУ']
+                    sheets_order = [k for k in merged_sheets.keys() if k.lower() not in ('summary', 'sources', 'несопоставленные тру')]
                     if 'Несопоставленные ТРУ' in merged_sheets:
                         sheets_order.append('Несопоставленные ТРУ')
                         
@@ -1503,17 +1532,6 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                                 ws_unmatched.cell(row=total_row_unm, column=cost_col_idx_unm - 1).alignment = Alignment(horizontal='right', vertical='center')
                                 ws_unmatched.cell(row=total_row_unm, column=cost_col_idx_unm, value=int(total_cost_unm)).font = Font(bold=True)
                                 ws_unmatched.cell(row=total_row_unm, column=cost_col_idx_unm).alignment = Alignment(horizontal='center', vertical='center')
-                        
-                        # Перемещаем лист после Summary (позиция 1)
-                        # Сначала нужно определить позицию Summary
-                        sheet_names = wb.sheetnames
-                        target_pos = 1  # После первого листа (обычно Summary)
-                        if 'Summary' in sheet_names:
-                            target_pos = sheet_names.index('Summary') + 1
-
-                        # Перемещаем лист
-                        current_pos = sheet_names.index('Несопоставленные ТРУ')
-                        wb.move_sheet(ws_unmatched, offset=target_pos - current_pos)
                     
                     # Стилизуем лист Summary если он есть
                     if 'Summary' in wb.sheetnames:
@@ -1598,6 +1616,108 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                                 except: pass
                             ws_summary.column_dimensions[column_letter].width = min(max_length + 2, 50)
                     
+                    # Переупорядочиваем листы: Summary первый, в конце Другие → Несопоставленные ТРУ → SOURCES
+                    sheet_names = list(wb.sheetnames)
+                    
+                    # Определяем правильный порядок
+                    first_sheets = []  # Summary в начале
+                    middle_sheets = []  # Категории в середине
+                    end_sheets = []  # Другие, Несопоставленные ТРУ, SOURCES в конце
+                    
+                    for name in sheet_names:
+                        if name == 'Summary' or name.upper() == 'SUMMARY':
+                            first_sheets.append(name)
+                        elif name == 'Другие':
+                            end_sheets.insert(0, name)  # Другие первым в конце
+                        elif name == 'Несопоставленные ТРУ':
+                            # Вставляем после Другие (или первым если Другие нет)
+                            if end_sheets and end_sheets[0] == 'Другие':
+                                end_sheets.insert(1, name)
+                            else:
+                                end_sheets.insert(0, name)
+                        elif name.upper() == 'SOURCES':
+                            end_sheets.append(name)  # SOURCES в самом конце
+                        else:
+                            middle_sheets.append(name)
+                    
+                    # Применяем новый порядок
+                    new_order = first_sheets + middle_sheets + end_sheets
+                    
+                    # Перемещаем листы в правильном порядке
+                    for idx, name in enumerate(new_order):
+                        if name in wb.sheetnames:
+                            ws = wb[name]
+                            current_idx = list(wb.sheetnames).index(name)
+                            if current_idx != idx:
+                                wb.move_sheet(ws, offset=idx - current_idx)
+                    
+                    # === Перенос SOURCES в SUMMARY и удаление листа SOURCES ===
+                    sources_sheet_name = None
+                    for name in wb.sheetnames:
+                        if name.upper() == 'SOURCES':
+                            sources_sheet_name = name
+                            break
+                    
+                    if sources_sheet_name and 'Summary' in wb.sheetnames:
+                        ws_sources = wb[sources_sheet_name]
+                        ws_summary = wb['Summary']
+                        
+                        # Собираем источники с подсчётом количества
+                        source_counts = {}  # {normalized_name: (display_name, count)}
+                        
+                        for row in ws_sources.iter_rows(min_row=2, max_col=1, values_only=True):
+                            if row[0]:
+                                source_str = str(row[0])
+                                for part in source_str.split(','):
+                                    part = part.strip()
+                                    if not part:
+                                        continue
+                                    import re
+                                    clean_part = part
+                                    # Убираем теги типа (зам...), (п/б...)
+                                    while '(' in clean_part:
+                                        prev = clean_part
+                                        clean_part = re.sub(r'\s*\([^)]*\)', '', clean_part)
+                                        if prev == clean_part:
+                                            break
+                                    clean_part = clean_part.strip().rstrip(',').strip()
+                                    
+                                    # Убираем расширение
+                                    base_name = os.path.splitext(clean_part)[0]
+                                    s_norm = base_name.lower().strip()
+                                    
+                                    if base_name and s_norm:
+                                        if s_norm in source_counts:
+                                            # Увеличиваем счётчик
+                                            display_name, count = source_counts[s_norm]
+                                            source_counts[s_norm] = (display_name, count + 1)
+                                        else:
+                                            source_counts[s_norm] = (base_name, 1)
+                        
+                        # Записываем в SUMMARY — каждый источник в отдельной ячейке
+                        if source_counts:
+                            # Заголовок SOURCES
+                            ws_summary.cell(row=1, column=7, value='SOURCES:').font = Font(bold=True)
+                            ws_summary.cell(row=1, column=7).alignment = Alignment(horizontal='left', vertical='center')
+                            
+                            # Сортируем и записываем каждый источник в отдельную ячейку по горизонтали
+                            sorted_sources = sorted(source_counts.items(), key=lambda x: x[1][0].lower())
+                            
+                            for i, (s_norm, (display_name, count)) in enumerate(sorted_sources):
+                                col = 8 + i  # Начинаем с колонки H (8)
+                                if count > 1:
+                                    cell_value = f"{display_name} ({count} шт.)"
+                                else:
+                                    cell_value = display_name
+                                ws_summary.cell(row=1, column=col, value=cell_value)
+                                ws_summary.cell(row=1, column=col).alignment = Alignment(horizontal='left', vertical='center')
+                                # Автоширина для каждой колонки
+                                ws_summary.column_dimensions[chr(64 + col)].width = len(cell_value) + 2
+                        
+                        # Удаляем лист SOURCES
+                        del wb[sources_sheet_name]
+                        self.log_text.append(f"   📋 SOURCES перенесены в Summary")
+                    
                     wb.save(output_path)
                     
                     unmatched_count = len(unmatched_tru) if unmatched_tru is not None and not unmatched_tru.empty else 0
@@ -1616,6 +1736,9 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
             unmatched_msg = ""
             if unmatched_count > 0:
                 unmatched_msg = f"\nНесопоставленных элементов: {unmatched_count}\n(см. лист 'Несопоставленные ТРУ')"
+            
+            # Удаляем промежуточные файлы конвертации
+            self.cleanup_converted_files()
             
             QMessageBox.information(
                 self,

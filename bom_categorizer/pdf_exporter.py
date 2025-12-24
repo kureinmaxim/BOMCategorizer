@@ -293,48 +293,34 @@ class PDFExporter:
                 if row and row[0]:  # Если есть данные в первой колонке
                     sources_list.append(str(row[0]))
         
-        # Заголовок документа с источниками в скобках
+        # Заголовок документа с датой и именем файла
+        from datetime import datetime
+        date_str = datetime.now().strftime('%d.%m.%Y %H:%M')
+        output_filename = os.path.basename(excel_path)
+        
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=self.styles['Heading1'],
             fontName=self.cyrillic_font_bold,
-            fontSize=11,  # Уменьшен для размещения источников
+            fontSize=12,
             textColor=colors.HexColor('#1e3a8a'),
             spaceAfter=8,
             alignment=TA_CENTER
         )
         
-        # Формируем заголовок с источниками
-        if sources_list:
-            # Deduplicate sources (base names only)
-            unique_sources = []
-            seen_normalized = set()
-            for s in sources_list:
-                s_clean = str(s).strip()
-                # Remove extension
-                base_name = os.path.splitext(s_clean)[0]
-                s_norm = base_name.lower()
-                
-                if base_name and s_norm not in seen_normalized:
-                    unique_sources.append(base_name)
-                    seen_normalized.add(s_norm)
-            
-            sources_text = ", ".join(unique_sources)
-            title = Paragraph(f"<b>Отчет по обработке BOM ({sources_text})</b>", title_style)
-        else:
-            title = Paragraph(f"<b>Отчет по обработке BOM</b>", title_style)
+        # Заголовок с датой и именем файла
+        title = Paragraph(f"<b>Отчет по обработке BOM ({date_str}, {output_filename})</b>", title_style)
         story.append(title)
-        story.append(Spacer(1, 2*mm))  # Уменьшен отступ после заголовка
+        story.append(Spacer(1, 2*mm))
         
-        # Добавляем информацию о дате создания и количестве листов
-        from datetime import datetime
+        # Добавляем информацию о категориях и позициях
         info_style = ParagraphStyle(
             'Info',
             parent=self.styles['Normal'],
             fontName=self.cyrillic_font,
-            fontSize=8,  # Уменьшен с 9 до 8 для компактности
+            fontSize=8,
             textColor=colors.HexColor('#4b5563'),
-            spaceAfter=1,  # Уменьшен с 2 до 1
+            spaceAfter=1,
             alignment=TA_CENTER
         )
         
@@ -347,25 +333,118 @@ class PDFExporter:
                 if sheet.max_row > 1:
                     total_items += sheet.max_row - 1
         
-        date_str = datetime.now().strftime('%d.%m.%Y %H:%M')
-        story.append(Paragraph(f"<b>Дата создания:</b> {date_str}", info_style))
         story.append(Paragraph(f"<b>Категорий:</b> {len(wb.sheetnames) - 2} | <b>Всего позиций:</b> {total_items}", info_style))
         
         # Информация о фильтре подборов и файле импортных компонентов
-        podbor_status = "Да (подборы исключены)" if exclude_podbor else "Нет (подборы включены)"
-        story.append(Paragraph(f"<b>Исключить подборы:</b> {podbor_status}", info_style))
-        
+        podbor_status = "Да" if exclude_podbor else "Нет"
         imported_status = "Да" if has_imported_file else "Нет"
-        story.append(Paragraph(f"<b>Файл 'Импортные_компоненты.txt':</b> {imported_status}", info_style))
+        story.append(Paragraph(f"<b>Исключить подборы:</b> {podbor_status} | <b>Файл импортных:</b> {imported_status}", info_style))
         
         story.append(Spacer(1, 3*mm))
         
-        # ГОРИЗОНТАЛЬНАЯ КОМПОНОВКА: SUMMARY и SOURCES рядом
-        # Создаём две таблицы и размещаем их в одной строке
-        priority_sheets = ['SUMMARY', 'SOURCES']
-        processed_sheets = []
+        # === SOURCES как горизонтальный список (вверху) ===
+        sources_text_style = ParagraphStyle(
+            'SourcesText',
+            parent=self.styles['Normal'],
+            fontName=self.cyrillic_font,
+            fontSize=8,
+            textColor=colors.HexColor('#374151'),
+            spaceAfter=2,
+            alignment=TA_LEFT
+        )
         
-        # Стиль для заголовков таблиц
+        sources_title_style = ParagraphStyle(
+            'SourcesTitle',
+            parent=self.styles['Heading2'],
+            fontName=self.cyrillic_font_bold,
+            fontSize=9,
+            textColor=colors.HexColor('#2563eb'),
+            spaceAfter=1,
+            spaceBefore=0,
+            alignment=TA_LEFT
+        )
+        
+        # Читаем SOURCES из листа SUMMARY (колонка G) или из отдельного листа SOURCES
+        source_files = []
+        seen_normalized = set()
+        
+        # Сначала пробуем прочитать из SUMMARY (колонка G)
+        summary_sheet = None
+        for name in wb.sheetnames:
+            if name.upper() == 'SUMMARY':
+                summary_sheet = wb[name]
+                break
+        
+        if summary_sheet:
+            # SOURCES: может быть либо в Row 1 Col G (ТРУ), либо в конце Col A (Categorized)
+            # Ищем заголовок 'SOURCES:'
+            found_sources = False
+            
+            # 1. Проверяем Row 1 Col G (современный формат после ТРУ)
+            header_g1 = str(summary_sheet.cell(row=1, column=7).value).strip()
+            if header_g1.upper() == 'SOURCES:':
+                col = 8
+                while col <= summary_sheet.max_column:
+                    val = summary_sheet.cell(row=1, column=col).value
+                    if not val: break
+                    source_files.append(str(val))
+                    col += 1
+                found_sources = True
+            
+            # 2. Ищем в колонке A (стандартный формат в конце SUMMARY)
+            if not found_sources:
+                for row_idx in range(1, summary_sheet.max_row + 1):
+                    cell_val = str(summary_sheet.cell(row=row_idx, column=1).value).strip()
+                    if cell_val.upper() == 'SOURCES:':
+                        col = 2
+                        while col <= summary_sheet.max_column:
+                            val = summary_sheet.cell(row=row_idx, column=col).value
+                            if not val: break
+                            source_files.append(str(val))
+                            col += 1
+                        found_sources = True
+                        break
+            
+            # 3. Fallback: старый формат (Row 2 Col G)
+            if not found_sources:
+                sources_cell = summary_sheet.cell(row=2, column=7).value
+                if sources_cell:
+                    sources_str = str(sources_cell)
+                    for part in sources_str.split(','):
+                        part = part.strip()
+                        if not part: continue
+                        # Убираем расширение для имен
+                        base_name = os.path.splitext(part)[0]
+                        s_norm = base_name.lower().strip()
+                        if base_name and s_norm not in seen_normalized:
+                            source_files.append(base_name)
+                            seen_normalized.add(s_norm)
+        
+        # Fallback: читаем из отдельного листа SOURCES если есть
+        if not source_files and 'SOURCES' in wb.sheetnames:
+            sources_sheet = wb['SOURCES']
+            for row in sources_sheet.iter_rows(min_row=2, max_col=1, values_only=True):
+                if row[0]:
+                    s_clean = str(row[0]).strip()
+                    for part in s_clean.split(','):
+                        part = part.strip()
+                        if not part:
+                            continue
+                        base_name = os.path.splitext(part)[0]
+                        s_norm = base_name.lower()
+                        if base_name and s_norm not in seen_normalized:
+                            source_files.append(base_name)
+                            seen_normalized.add(s_norm)
+        
+        if source_files:
+            story.append(Paragraph("<b>SOURCES:</b>", sources_title_style))
+            sources_list = ", ".join(source_files)
+            story.append(Paragraph(sources_list, sources_text_style))
+            story.append(Spacer(1, 3*mm))
+
+
+        
+        # === SUMMARY таблица ===
         sheet_title_style = ParagraphStyle(
             'SheetTitleCompact',
             parent=self.styles['Heading2'],
@@ -377,81 +456,29 @@ class PDFExporter:
             alignment=TA_LEFT
         )
         
-        # Собираем элементы для каждой таблицы
-        summary_elements = []
-        sources_elements = []
+        processed_sheets = []
         
-        for sheet_name in priority_sheets:
-            if sheet_name in wb.sheetnames:
-                sheet = wb[sheet_name]
-                processed_sheets.append(sheet_name)
-                
-                # Заголовок таблицы
-                title_para = Paragraph(f"<b>{sheet_name}</b>", sheet_title_style)
-                
-                # Получаем данные и создаём таблицу
-                data = self._get_sheet_data(sheet)
-                
-                if data:
-                    # Создаем компактную таблицу
-                    table = self._create_table(data, sheet, is_compact=True)
-                    
-                    if sheet_name == 'SUMMARY':
-                        summary_elements = [title_para, Spacer(1, 1*mm), table]
-                    else:
-                        sources_elements = [title_para, Spacer(1, 1*mm), table]
-                else:
-                    empty_style = ParagraphStyle('Empty', parent=self.styles['Normal'], fontName=self.cyrillic_font)
-                    empty_text = Paragraph("<i>Лист пуст</i>", empty_style)
-                    if sheet_name == 'SUMMARY':
-                        summary_elements = [title_para, empty_text]
-                    else:
-                        sources_elements = [title_para, empty_text]
-        
-        # Если есть обе таблицы — размещаем горизонтально
-        if summary_elements and sources_elements:
-            # Доступная ширина страницы
-            page_width = self.page_size[0] - 20*mm  # Минус поля
+        if 'SUMMARY' in wb.sheetnames:
+            sheet = wb['SUMMARY']
+            processed_sheets.append('SUMMARY')
             
-            # SUMMARY занимает 60%, SOURCES — 40%
-            summary_width = page_width * 0.58
-            sources_width = page_width * 0.40
-            gap = page_width * 0.02  # Промежуток между таблицами
+            title_para = Paragraph("<b>SUMMARY</b>", sheet_title_style)
+            story.append(title_para)
+            story.append(Spacer(1, 1*mm))
             
-            # Создаём таблицу-контейнер для горизонтального размещения
-            # Ячейки содержат списки flowables
-            from reportlab.platypus import KeepTogether
+            data = self._get_sheet_data(sheet)
+            if data:
+                table = self._create_table(data, sheet, is_compact=True)
+                story.append(table)
+            else:
+                empty_style = ParagraphStyle('Empty', parent=self.styles['Normal'], fontName=self.cyrillic_font)
+                story.append(Paragraph("<i>Лист пуст</i>", empty_style))
             
-            # Оборачиваем элементы для каждой колонки
-            summary_cell = summary_elements
-            sources_cell = sources_elements
-            
-            # Создаём внешнюю таблицу с двумя колонками
-            wrapper_data = [[summary_cell, sources_cell]]
-            wrapper_table = Table(
-                wrapper_data,
-                colWidths=[summary_width, sources_width],
-                style=TableStyle([
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('LEFTPADDING', (0, 0), (0, 0), 0),
-                    ('RIGHTPADDING', (0, 0), (0, 0), gap/2),
-                    ('LEFTPADDING', (1, 0), (1, 0), gap/2),
-                    ('RIGHTPADDING', (1, 0), (1, 0), 0),
-                    ('TOPPADDING', (0, 0), (-1, -1), 0),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-                ])
-            )
-            
-            story.append(wrapper_table)
             story.append(Spacer(1, 3*mm))
-        else:
-            # Если только одна таблица — добавляем вертикально
-            for elements in [summary_elements, sources_elements]:
-                if elements:
-                    for elem in elements:
-                        story.append(elem)
-                    story.append(Spacer(1, 2*mm))
+        
+        # Добавляем SOURCES в processed_sheets чтобы не обрабатывать повторно
+        if 'SOURCES' in wb.sheetnames:
+            processed_sheets.append('SOURCES')
         
         # После SUMMARY и SOURCES добавляем разрыв страницы
         if processed_sheets:
@@ -517,6 +544,17 @@ class PDFExporter:
         sheet_name = sheet.title if hasattr(sheet, 'title') else ''
         is_compact = sheet_name.upper() in ['SUMMARY', 'SOURCES']
         
+        # Для SUMMARY ограничиваем до 5 колонок (A-E), исключаем SOURCES (G+)
+        if sheet_name.upper() == 'SUMMARY':
+            max_col = min(max_col, 5)  # Только № п/п, Категория, Кол-во поз., Общее кол., Стоимость
+            
+            # Исключаем строку SOURCES: из общей таблицы PDF
+            for r in range(1, max_row + 1):
+                val = str(sheet.cell(row=r, column=1).value).strip().upper()
+                if val == 'SOURCES:':
+                    max_row = r - 1
+                    break
+        
         # Создаем стиль для ячеек с переносом
         cell_style = ParagraphStyle(
             'CellStyle',
@@ -573,6 +611,8 @@ class PDFExporter:
                 if idx == 0:
                     if value == '№ п/п':
                         value = '№'
+                    elif 'КОД ERP' in value.upper():
+                        value = 'Код ERP'
                 
                 # Оборачиваем в Paragraph для автоматического переноса
                 # Заголовки (первая строка) - жирным шрифтом
@@ -583,6 +623,13 @@ class PDFExporter:
             
             # Проверяем, не пустая ли строка
             if any(str(cell) for cell in row_data):
+                # Для SUMMARY: пропускаем строки с SOURCES (они выводятся отдельно)
+                if is_compact and sheet_name.upper() == 'SUMMARY':
+                    first_cell_text = str(row[0].value).upper() if row[0].value else ''
+                    second_cell_text = str(row[1].value).upper() if len(row) > 1 and row[1].value else ''
+                    if 'SOURCES' in first_cell_text or 'SOURCES' in second_cell_text:
+                        continue  # Пропускаем эту строку
+                
                 data.append(row_data)
         
         return data
@@ -633,34 +680,34 @@ class PDFExporter:
         page_width = self.page_size[0] - 20*mm  # Вычитаем отступы
         
         # Индивидуальные ширины колонок в зависимости от содержимого
-        # Структура BOM: №, Наименование ИВП, ТУ/Производитель, шт., КОД ERP(МР), Источник, Примечание, № ТРУ, Стоимость
+        # Структура BOM: №, Наименование ИВП, ТУ/Производитель, шт., Код ERP, Источник, Примечание, № ТРУ, Стоимость
         if num_cols == 9:
             # 9 колонок — оптимизировано для A4 landscape (277mm доступно)
-            # Реальный порядок: №, Наименование ИВП, ТУ/Производитель, шт., КОД ERP(МР), Источник, Примечание, № ТРУ, Стоимость
-            # Сумма: 8+48+35+10+28+46+35+22+25 = 257mm
+            # Все заголовки должны помещаться в одну строку
+            # Сумма: 6+42+34+8+17+48+48+27+22 = 252mm
             col_widths = [
-                8*mm,    # 1. № (узкая)
-                48*mm,   # 2. Наименование ИВП (широкая)
-                35*mm,   # 3. ТУ/Производитель
-                10*mm,   # 4. шт. (узкая, числа)
-                28*mm,   # 5. КОД ERP(МР) — уменьшена на 20% (было 35mm)
-                46*mm,   # 6. Источник — увеличена (+4mm)
-                35*mm,   # 7. Примечание — увеличена (+3mm)
-                22*mm,   # 8. № ТРУ
-                25*mm    # 9. Стоимость
+                6*mm,    # 1. № (минимальная)
+                45*mm,   # 2. Наименование ИВП
+                33*mm,   # 3. ТУ/Производитель
+                8*mm,    # 4. шт. (минимальная)
+                16*mm,   # 5. Код ERP (минимум для 8-значных значений)
+                50*mm,   # 6. Источник
+                45*mm,   # 7. Примечание
+                25*mm,   # 8. № ТРУ
+                24*mm    # 9. Стоимость (в одну строку)
             ]
         elif num_cols == 8:
             # 8 колонок (без КОД ERP или другой колонки)
             # Скорректировано: ТУ +10%, шт -50%, № -70%, № ТРУ -20%, Стоимость -40%
             col_widths = [
-                3*mm,    # 1. № (было 10mm, -70%)
+                6*mm,    # 1. № (было 10mm, -70%)
                 60*mm,   # 2. Наименование ИВП
                 44*mm,   # 3. ТУ/Производитель (+10%)
-                5*mm,    # 4. шт. (было 10mm, -50%)
-                60*mm,   # 5. Источник
+                6*mm,    # 4. шт. (было 10mm, -50%)
+                50*mm,   # 5. Источник
                 45*mm,   # 6. Примечание
-                18*mm,   # 7. № ТРУ (было 23mm, -20%)
-                10*mm    # 8. Стоимость (было 16mm, -40%)
+                22*mm,   # 7. № ТРУ (было 23mm, -20%)
+                12*mm    # 8. Стоимость (было 16mm, -40%)
             ]
         elif num_cols == 7:
             # Если 7 колонок (без стоимости или другого поля)
@@ -721,18 +768,18 @@ class PDFExporter:
             # SUMMARY формат: №, Категория, Кол-во позиций, Общее количество, Стоимость
             # Увеличенные ширины для лучшей читаемости итоговой информации
             col_widths = [
-                8*mm,    # 1. № (узкая)
-                60*mm,   # 2. Категория (основная ширина, увеличена)
-                22*mm,   # 3. Кол-во позиций (увеличена)
-                26*mm,   # 4. Общее количество (увеличена)
-                22*mm    # 5. Стоимость (увеличена)
+                10*mm,   # 1. № 
+                68*mm,   # 2. Категория (широкая)
+                30*mm,   # 3. Кол-во позиций
+                40*mm,   # 4. Общее количество
+                40*mm    # 5. Стоимость
             ]
         elif num_cols == 2:
             # SOURCES формат: source_file, source_sheet
-            # source_sheet часто пустой, но оставляем достаточно места
+            # Минимальные ширины для горизонтальной компоновки
             col_widths = [
-                80*mm,   # 1. source_file (увеличена)
-                25*mm    # 2. source_sheet (увеличена)
+                55*mm,   # 1. source_file (уменьшена)
+                15*mm    # 2. source_sheet (минимальная)
             ]
         else:
             # Для других количеств колонок - равномерное распределение
@@ -753,11 +800,23 @@ class PDFExporter:
         # Создаем таблицу с повтором заголовка на каждой странице
         table = Table(data, colWidths=col_widths, repeatRows=repeat_rows, splitByRow=True)
         
-        # Базовый стиль таблицы (компактный для SUMMARY/SOURCES)
-        header_font_size = 7 if is_compact else 9
-        body_font_size = 5.5 if is_compact else 7  # Уменьшен на 1
-        v_padding = 2 if is_compact else 3
-        h_padding = 2 if is_compact else 3
+        # Базовый стиль таблицы (крупный шрифт для SUMMARY, компактный для остальных)
+        is_summary = hasattr(sheet, 'title') and sheet.title.upper() == 'SUMMARY'
+        if is_summary:
+            header_font_size = 11
+            body_font_size = 10
+            v_padding = 5
+            h_padding = 4
+        elif is_compact:
+            header_font_size = 7
+            body_font_size = 5.5
+            v_padding = 2
+            h_padding = 2
+        else:
+            header_font_size = 9
+            body_font_size = 7
+            v_padding = 3
+            h_padding = 3
         
         # Определяем, есть ли строка заголовка категории
         has_category_header = sheet_name and sheet_name not in ['SUMMARY', 'SOURCES']
@@ -889,41 +948,27 @@ class PDFExporter:
                 if row and row[0]:
                     sources_list.append(str(row[0]))
         
-        # Заголовок документа с источниками в скобках
+        # Заголовок документа с датой и именем файла
+        from datetime import datetime
+        date_str = datetime.now().strftime('%d.%m.%Y %H:%M')
+        output_filename = os.path.basename(excel_path)
+        
         title_style = ParagraphStyle(
             'CustomTitle',
             parent=self.styles['Heading1'],
             fontName=self.cyrillic_font_bold,
-            fontSize=11,
+            fontSize=12,
             textColor=colors.HexColor('#1e3a8a'),
             spaceAfter=8,
             alignment=TA_CENTER
         )
         
-        # Формируем заголовок с источниками
-        if sources_list:
-            # Deduplicate sources (base names only)
-            unique_sources = []
-            seen_normalized = set()
-            for s in sources_list:
-                s_clean = str(s).strip()
-                # Remove extension
-                base_name = os.path.splitext(s_clean)[0]
-                s_norm = base_name.lower()
-                
-                if base_name and s_norm not in seen_normalized:
-                    unique_sources.append(base_name)
-                    seen_normalized.add(s_norm)
-            
-            sources_text = ", ".join(unique_sources)
-            title = Paragraph(f"<b>Отчет по обработке BOM ({sources_text})</b>", title_style)
-        else:
-            title = Paragraph(f"<b>Отчет по обработке BOM</b>", title_style)
+        # Заголовок с датой и именем файла
+        title = Paragraph(f"<b>Отчет по обработке BOM ({date_str}, {output_filename})</b>", title_style)
         story.append(title)
         story.append(Spacer(1, 3*mm))
         
         # Добавляем информацию из summary_info, если есть
-        from datetime import datetime
         info_style = ParagraphStyle(
             'Info',
             parent=self.styles['Normal'],
@@ -934,10 +979,12 @@ class PDFExporter:
             alignment=TA_CENTER
         )
         
-        # Если есть сводная информация из GUI, показываем её
+        # Если есть сводная информация из GUI, показываем её (кроме дублирующихся полей)
         if summary_info:
+            skip_keys = ['Исходных файлов', 'Выходной файл', 'Дата создания']  # Уже в заголовке
             for key, value in summary_info.items():
-                story.append(Paragraph(f"<b>{key}:</b> {value}", info_style))
+                if key not in skip_keys:
+                    story.append(Paragraph(f"<b>{key}:</b> {value}", info_style))
         
         # Подсчитываем общее количество позиций
         total_items = 0
@@ -947,24 +994,86 @@ class PDFExporter:
                 if sheet.max_row > 1:
                     total_items += sheet.max_row - 1
         
-        date_str = datetime.now().strftime('%d.%m.%Y %H:%M')
-        story.append(Paragraph(f"<b>Дата создания:</b> {date_str}", info_style))
         story.append(Paragraph(f"<b>Категорий:</b> {len(wb.sheetnames) - 2} | <b>Всего позиций:</b> {total_items}", info_style))
-        story.append(Spacer(1, 3*mm))
         
-        # ГОРИЗОНТАЛЬНАЯ КОМПОНОВКА: SUMMARY и SOURCES рядом
-        priority_sheets = []
+        # === SOURCES как горизонтальный список (вверху) ===
+        sources_text_style = ParagraphStyle(
+            'SourcesText',
+            parent=self.styles['Normal'],
+            fontName=self.cyrillic_font,
+            fontSize=8,
+            textColor=colors.HexColor('#374151'),
+            spaceAfter=2,
+            alignment=TA_LEFT
+        )
         
-        # Ищем Summary (любой регистр) и SOURCES
-        for name in wb.sheetnames:
-            if name.upper() == 'SUMMARY':
-                priority_sheets.append(name)
-            elif name.upper() == 'SOURCES':
-                priority_sheets.append(name)
+        sources_title_style = ParagraphStyle(
+            'SourcesTitle',
+            parent=self.styles['Heading2'],
+            fontName=self.cyrillic_font_bold,
+            fontSize=9,
+            textColor=colors.HexColor('#2563eb'),
+            spaceAfter=1,
+            spaceBefore=0,
+            alignment=TA_LEFT
+        )
         
         processed_sheets = []
         
-        # Стиль для заголовков таблиц
+        # Читаем SOURCES из SUMMARY (колонка G) или из отдельного листа
+        source_files = []
+        seen_normalized = set()
+        
+        # Сначала пробуем из SUMMARY (колонка G)
+        summary_sheet = None
+        for name in wb.sheetnames:
+            if name.upper() == 'SUMMARY':
+                summary_sheet = wb[name]
+                break
+        
+        if summary_sheet:
+            sources_cell = summary_sheet.cell(row=2, column=7).value
+            if sources_cell:
+                for part in str(sources_cell).split(','):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    base_name = os.path.splitext(part)[0]
+                    s_norm = base_name.lower().strip()
+                    if base_name and s_norm not in seen_normalized:
+                        source_files.append(base_name)
+                        seen_normalized.add(s_norm)
+        
+        # Fallback: из отдельного листа SOURCES
+        if not source_files:
+            sources_sheet_name = None
+            for name in wb.sheetnames:
+                if name.upper() == 'SOURCES':
+                    sources_sheet_name = name
+                    processed_sheets.append(sources_sheet_name)
+                    break
+            
+            if sources_sheet_name:
+                sources_sheet = wb[sources_sheet_name]
+                for row in sources_sheet.iter_rows(min_row=2, max_col=1, values_only=True):
+                    if row[0]:
+                        for part in str(row[0]).split(','):
+                            part = part.strip()
+                            if not part:
+                                continue
+                            base_name = os.path.splitext(part)[0]
+                            s_norm = base_name.lower()
+                            if base_name and s_norm not in seen_normalized:
+                                source_files.append(base_name)
+                                seen_normalized.add(s_norm)
+        
+        if source_files:
+            story.append(Paragraph("<b>SOURCES:</b>", sources_title_style))
+            sources_list = ", ".join(source_files)
+            story.append(Paragraph(sources_list, sources_text_style))
+            story.append(Spacer(1, 3*mm))
+        
+        # === SUMMARY таблица ===
         sheet_title_style = ParagraphStyle(
             'SheetTitleCompact',
             parent=self.styles['Heading2'],
@@ -976,73 +1085,28 @@ class PDFExporter:
             alignment=TA_LEFT
         )
         
-        # Собираем элементы для каждой таблицы
-        summary_elements = []
-        sources_elements = []
+        # Ищем Summary (любой регистр)
+        summary_sheet_name = None
+        for name in wb.sheetnames:
+            if name.upper() == 'SUMMARY':
+                summary_sheet_name = name
+                break
         
-        for sheet_name in priority_sheets:
-            if sheet_name in wb.sheetnames:
-                sheet = wb[sheet_name]
-                processed_sheets.append(sheet_name)
-                
-                # Заголовок таблицы
-                title_para = Paragraph(f"<b>{sheet_name}</b>", sheet_title_style)
-                
-                # Получаем данные и создаём таблицу
-                data = self._get_sheet_data(sheet)
-                
-                if data:
-                    # Создаем компактную таблицу
-                    table = self._create_table(data, sheet, is_compact=True)
-                    
-                    if sheet_name.upper() == 'SUMMARY':
-                        summary_elements = [title_para, Spacer(1, 1*mm), table]
-                    else:
-                        sources_elements = [title_para, Spacer(1, 1*mm), table]
-                else:
-                    empty_style = ParagraphStyle('Empty', parent=self.styles['Normal'], fontName=self.cyrillic_font)
-                    empty_text = Paragraph("<i>Лист пуст</i>", empty_style)
-                    if sheet_name.upper() == 'SUMMARY':
-                        summary_elements = [title_para, empty_text]
-                    else:
-                        sources_elements = [title_para, empty_text]
-        
-        # Если есть обе таблицы — размещаем горизонтально
-        if summary_elements and sources_elements:
-            # Доступная ширина страницы
-            page_width = self.page_size[0] - 20*mm  # Минус поля
+        if summary_sheet_name:
+            sheet = wb[summary_sheet_name]
+            processed_sheets.append(summary_sheet_name)
             
-            # SUMMARY занимает 60%, SOURCES — 40%
-            summary_width = page_width * 0.58
-            sources_width = page_width * 0.40
-            gap = page_width * 0.02
+            # Не добавляем заголовок 'Summary' для компактности - сразу таблицу
             
-            # Создаём внешнюю таблицу с двумя колонками
-            wrapper_data = [[summary_elements, sources_elements]]
-            wrapper_table = Table(
-                wrapper_data,
-                colWidths=[summary_width, sources_width],
-                style=TableStyle([
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('LEFTPADDING', (0, 0), (0, 0), 0),
-                    ('RIGHTPADDING', (0, 0), (0, 0), gap/2),
-                    ('LEFTPADDING', (1, 0), (1, 0), gap/2),
-                    ('RIGHTPADDING', (1, 0), (1, 0), 0),
-                    ('TOPPADDING', (0, 0), (-1, -1), 0),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-                ])
-            )
+            data = self._get_sheet_data(sheet)
+            if data:
+                table = self._create_table(data, sheet, is_compact=True)
+                story.append(table)
+            else:
+                empty_style = ParagraphStyle('Empty', parent=self.styles['Normal'], fontName=self.cyrillic_font)
+                story.append(Paragraph("<i>Лист пуст</i>", empty_style))
             
-            story.append(wrapper_table)
             story.append(Spacer(1, 3*mm))
-        else:
-            # Если только одна таблица — добавляем вертикально
-            for elements in [summary_elements, sources_elements]:
-                if elements:
-                    for elem in elements:
-                        story.append(elem)
-                    story.append(Spacer(1, 2*mm))
         
         # После SUMMARY и SOURCES добавляем разрыв страницы
         if processed_sheets:
