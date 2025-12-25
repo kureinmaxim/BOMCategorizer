@@ -337,227 +337,172 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
     1. Ищет заголовок таблицы
     2. Оставляет колонки: № п/п, Наименование, Цена, Затраты, Документы, Поставщик
     3. Фильтрует строки (начиная с 2.1.1 и т.д.)
-    4. Очищает поле поставщика (только название)
     """
     try:
-        # Читаем весь файл для поиска заголовка
+        # Читаем весь файл
         df_raw = pd.read_excel(input_path, header=None)
         
-        # 1. Поиск строки заголовка
-        header_row_idx = -1
-        col_map = {} # {canonical_name: col_index}
-        
-        # Ключевые слова для поиска колонок
-        keywords = {
-            '№': ['№', 'п/п', 'номер'],
-            'Наименование': ['наименование', 'материал'],
-            'Цена': ['цена', 'за единицу'],
-            'Стоимость': ['затраты', 'сумма', 'стоимость'],
-            'Документы': ['обосновывающие', 'документ'],
-            'Поставщик': ['поставщик', 'подрядчик', 'исполнитель']
+        # Фиксированные индексы колонок для PKM формата (на основе анализа заголовков)
+        # План (правая часть): 17-22
+        # Факт (левая часть): 6-15
+        PLAN_COLS = {
+            'Количество': 17,
+            'Цена': 18,
+            'Стоимость': 19,
+            'Документы': 20,
+            'Поставщик': 22
+        }
+        FACT_COLS = {
+            'Количество': 6,
+            'Цена': 8,
+            'Стоимость': 10,
+            'Документы': 12,
+            'Поставщик': 14
         }
         
-        # Сканируем первые 30 строк и накапливаем найденные колонки
-        for idx, row in df_raw.head(30).iterrows():
-            row_str = row.astype(str).str.lower().tolist()
-            
-            # Для текущей строки ищем совпадения
-            for col_idx, cell_val in enumerate(row_str):
-                # Проверяем каждое ключевое слово
-                
-                # 1. № п/п
-                if '№' not in col_map:
-                    if '№' in cell_val or 'п/п' in cell_val:
-                        col_map['№'] = col_idx
-                
-                # 2. Наименование (First wins - usually Col 1)
-                if 'Наименование' not in col_map:
-                    if 'наименование' in cell_val:
-                        col_map['Наименование'] = col_idx
-                        
-                # 3. Цена (Last wins - prefer Plan which is usually later columns?)
-                # В РКМ часто две цены (план/факт). Обычно План идет первым или вторым?
-                # В данном файле по дампу: 8:цена (план), 18:цена...
-                # Нам нужна та, что относится к ТЕКУЩЕМУ (Планируемому) периоду.
-                # Обычно левые колонки - это отчетный (прошлый), правые - планируемый.
-                # НО в Row 1 написано:
-                # Col 6: "Отчетный период..."
-                # Col 17: "Планируемый период..."
-                # Значит, правые колонки (после 17) - это План.
-                # Левые (6-16) - Факт (Отчетный).
-                # ИЛИ наоборот? 
-                # Row 1: "6:Отчетный..." (cols 6-15?), "17:Планируемый..." (cols 17-23?)
-                # Значит нам нужны колонки > 17 для Плана (2026)?
-                # Давай попробуем искать "цена" и "затраты" которые имеют больший индекс, если есть выбор.
-                # "Last wins" стратегия для цены/стоимости подойдет.
-                
-                if 'цена' in cell_val and 'единицу' in cell_val:
-                    col_map['Цена'] = col_idx
-                    # Обновляем header_row_idx, так как нашли важную колонку на этой строке
-                    header_row_idx = max(header_row_idx, idx)
-                    
-                # 4. Стоимость/Затраты (Last wins)
-                if 'затраты' in cell_val or 'стоимость' in cell_val:
-                     col_map['Стоимость'] = col_idx
-                     header_row_idx = max(header_row_idx, idx)
-                    
-                # 5. Документы
-                if 'обосновывающие' in cell_val and 'документы' in cell_val:
-                    col_map['Документы'] = col_idx
-                    header_row_idx = max(header_row_idx, idx)
-                elif 'обоснование' in cell_val and 'Документы' not in col_map:
-                     col_map['Документы'] = col_idx # Fallback
-                     header_row_idx = max(header_row_idx, idx)
-                     
-                # 6. Поставщик
-                # Тут сложно. Поставщик есть и в Отчетном (Фактическом) и в Планируемом.
-                # Обычно для РКМ заполняют План?
-                # Но если План не выбран, берут Факт?
-                # User request: "организация-поставщик ... и в ней только название".
-                # Давайте использовать Last wins для Поставщика тоже (План), 
-                # но если он пустой в данных, это будет проблема.
-                # Для начала возьмем Last wins (План).
-                
-                if 'поставщик' in cell_val or 'подрядчик' in cell_val:
-                     col_map['Поставщик'] = col_idx
-                     header_row_idx = max(header_row_idx, idx)
-            
-            # Также обновляем header_row если нашли Наименование (оно обычно в верхней строке)
-            if 'Наименование' in col_map and idx > header_row_idx:
-                 # Если мы нашли наименование на строке 1, но цену на строке 2,
-                 # header_row_idx будет 2. Это ок.
-                 pass
-
-        # Если не нашли заголовки
-        if 'Наименование' not in col_map or 'Цена' not in col_map:
-             return False, f"Не удалось найти заголовок таблицы. Найдено: {list(col_map.keys())}"
-
-        # Adjust header_row_idx to ensure we skip sub-headers (like "план/факт" row)
-        # Если после строки заголовка идет строка "1, 2, 3...", нужно её пропустить.
-        # Обычно это +1 или +2 строки.
-        # Проверим строку header_row_idx + 1
-        if header_row_idx + 1 < len(df_raw):
-             next_row = df_raw.iloc[header_row_idx + 1].astype(str).str.lower().tolist()
-             if any('план' in s or 'факт' in s for s in next_row):
-                 header_row_idx += 1
+        # Поиск строки с номерами колонок (1, 2, 3...)
+        header_row_idx = -1
+        for idx, row in df_raw.head(20).iterrows():
+            row_str = row.astype(str).tolist()
+            digit_count = sum(1 for s in row_str if s.strip().isdigit() and len(s.strip()) <= 2)
+            if digit_count > 10:
+                header_row_idx = idx
+                break
         
-        # Проверим строку с номерами колонок "1", "2", "3"
-        if header_row_idx + 1 < len(df_raw):
-             next_row = df_raw.iloc[header_row_idx + 1].astype(str).tolist()
-             # Если много цифр подряд
-             digit_count = sum(1 for s in next_row if s.strip().isdigit())
-             if digit_count > 3:
-                 header_row_idx += 1
-                 
-        # 2. Извлечение данных
-            
-        # 2. Извлечение данных
+        if header_row_idx < 0:
+            # Fallback: ищем "№ п/п"
+            for idx, row in df_raw.head(10).iterrows():
+                if '№' in str(row.iloc[0]).lower() or 'п/п' in str(row.iloc[0]).lower():
+                    header_row_idx = idx
+                    break
+            if header_row_idx < 0:
+                header_row_idx = 4  # Дефолт
+        
+        # Извлечение данных
         data = []
         
-        # Итерируемся по строкам после заголовка
+        def clean_float(val):
+            if pd.isna(val) or str(val).lower() == 'nan': return 0.0
+            try: return float(val)
+            except:
+                try: return float(str(val).replace(',','.').replace(' ','').replace('\xa0', ''))
+                except: return 0.0
+
+        def get_val(row, plan_col, fact_col, is_num=False):
+            # Сначала пробуем План, потом Факт
+            for col_idx in [plan_col, fact_col]:
+                if col_idx < len(row):
+                    val = row.iloc[col_idx]
+                    if pd.isna(val) or str(val).lower() == 'nan': continue
+                    if is_num:
+                        f_v = clean_float(val)
+                        if f_v > 0: return f_v
+                    else:
+                        s_v = str(val).strip()
+                        if s_v and len(s_v) > 1: return s_v
+            return 0.0 if is_num else ""
+
         for idx, row in df_raw.iloc[header_row_idx+1:].iterrows():
-            if idx >= len(df_raw): break
-            
             try:
-                item = {}
-                for key in keywords.keys():
-                    col_idx = col_map.get(key)
-                    val = row.iloc[col_idx] if col_idx is not None and col_idx < len(row) else None
-                    item[key] = val
+                # Колонка 0 = №, Колонка 1 = Наименование
+                no_val = str(row.iloc[0]).strip() if not pd.isna(row.iloc[0]) else ""
+                name_val = str(row.iloc[1]).strip() if len(row) > 1 and not pd.isna(row.iloc[1]) else ""
                 
-                # 3. Фильтрация
-                no_val = str(item['№']).strip() if item['№'] is not None else ""
-                name_val = str(item['Наименование']).strip() if item['Наименование'] is not None else ""
-                
+                # Фильтрация: нужен номер вида X.X.X и непустое название
                 if not name_val or name_val.lower() == 'nan':
-                     continue
-                
-                # Фильтр по номеру (2.1.1 и т.д.)
-                # Должен начинаться с цифры
+                    continue
                 if not no_val or not no_val[0].isdigit():
                     continue
-                    
-                # Проверка на наличие "структуры" (точки)
-                # User said "начиная с 2.1.1".
-                # Accept anything looking like a dotted number or simple integer
                 if not re.match(r'^[\d\.]+$', no_val):
-                    # Maybe it has some text? Strict check:
                     continue
-
-                # 4. Обработка Поставщика
-                if item['Поставщик'] is not None:
-                    s_val = str(item['Поставщик'])
-                    if s_val.lower() == 'nan':
-                        item['Поставщик'] = ""
-                    else:
-                        item['Поставщик'] = s_val.split('\n')[0].strip()
-                else:
-                    item['Поставщик'] = ""
-                    
-                # 5. Обработка Документов (Clean nan)
-                if item['Документы'] is not None:
-                    d_val = str(item['Документы'])
-                    if d_val.lower() == 'nan':
-                        item['Документы'] = ""
-                else:
-                    item['Документы'] = ""
-
-                # Форматирование чисел
-                def clean_float(val):
-                    if pd.isna(val): return 0.0
-                    try:
-                        return float(val)
-                    except:
-                        try:
-                            # Удаляем пробелы, заменяем запятую
-                            s = str(val).replace(',', '.').replace(' ', '').replace('\xa0', '')
-                            return float(s)
-                        except:
-                            return 0.0
-                            
-                item['Цена'] = clean_float(item['Цена'])
-                item['Стоимость'] = clean_float(item['Стоимость'])
+                # Пропускаем категории (номера вида "1." или "2.")
+                if re.match(r'^\d+\.$', no_val):
+                    continue
+                
+                item = {
+                    '№': no_val,
+                    'Наименование': name_val,
+                    'Количество': get_val(row, PLAN_COLS['Количество'], FACT_COLS['Количество'], is_num=True),
+                    'Цена': get_val(row, PLAN_COLS['Цена'], FACT_COLS['Цена'], is_num=True),
+                    'Стоимость': get_val(row, PLAN_COLS['Стоимость'], FACT_COLS['Стоимость'], is_num=True),
+                    'Документы': get_val(row, PLAN_COLS['Документы'], FACT_COLS['Документы']),
+                    'Поставщик': get_val(row, PLAN_COLS['Поставщик'], FACT_COLS['Поставщик']),
+                }
+                
+                # Пропускаем подзаголовки категорий (все числовые значения = 0)
+                if item['Количество'] == 0 and item['Цена'] == 0 and item['Стоимость'] == 0:
+                    continue
+                
+                # Чистка поставщика и документов
+                item['Поставщик'] = " ".join(line.strip() for line in str(item['Поставщик']).split('\n') if line.strip())
+                item['Поставщик'] = re.sub(r'\s*,\s*$', '', item['Поставщик'])
+                item['Документы'] = " ".join(line.strip() for line in str(item['Документы']).split('\n') if line.strip())
                 
                 data.append(item)
-                
-            except Exception as e:
+            except Exception:
                 continue
                 
         if not data:
-            return False, "Не найдено строк данных для экспорта"
+            return False, "Данные не найдены"
             
         result_df = pd.DataFrame(data)
-        
-        # === Enhanced Processing for Manager-Friendly Report ===
         
         # 1. Clean description names (remove technical noise)
         def clean_description(name: str) -> str:
             if not name:
                 return name
-            # Remove multi-line noise, keep first meaningful line
+            # Split and join with spaces to replace newlines
             lines = [line.strip() for line in str(name).split('\n') if line.strip()]
             if not lines:
                 return name
-            clean_name = lines[0]
-            # Remove common noise patterns
-            noise_patterns = [
-                r'\s*,\s*$',  # trailing commas
-                r'\s+',  # multiple spaces -> single
+            
+            clean_name = " ".join(lines)
+            
+            # Remove multi-line noise
+            clean_name = re.sub(r'\s*,\s*$', '', clean_name)
+            # Normalize multiple spaces to one
+            clean_name = re.sub(r'\s+', ' ', clean_name)
+            # Ensure space before parenthesis if missing
+            clean_name = re.sub(r'([^\s])\(', r'\1 (', clean_name)
+            
+            # Fix common run-together Russian words and manufacturers
+            keywords_to_fix = [
+                'отладочная плата', 'плата инструментальная', 'передачи данных',
+                'индикации', 'управления', 'питания',
+                'Analog Devices', 'AnalogDevices', 'Coilcraft', 'Mini-Circuits', 
+                'Texas Instruments', 'Maxim Integrated', 'MaximIntegrated',
+                'STMicroelectronics', 'Avnet', 'Vishay', 'Yageo', 'Murata', 'TDK',
+                'Samsung', 'Infineon', 'Microchip', 'Renesas', 'Broadcom', 
+                'Qualcomm', 'Xilinx', 'Altera'
             ]
-            for pattern in noise_patterns:
-                clean_name = re.sub(pattern, ' ' if 'spaces' in pattern else '', clean_name)
+            
+            for kw in keywords_to_fix:
+                stuck_kw = kw.replace(' ', '')
+                clean_name = re.sub(rf'([a-zA-Z0-9])({stuck_kw})', rf'\1 {kw}', clean_name, flags=re.IGNORECASE)
+                if ' ' in kw:
+                    clean_name = re.sub(rf'\b{stuck_kw}\b', kw, clean_name, flags=re.IGNORECASE)
+            
+            clean_name = re.sub(r'\s+', ' ', clean_name)
             return clean_name.strip()
         
         result_df['Наименование'] = result_df['Наименование'].apply(clean_description)
         
-        # 2. Deduplicate: Group by Наименование, sum Стоимость
-        # For deduplication, we take first occurrence for other columns
+        # Helper to pick first non-empty string
+        def first_non_empty(series):
+            for v in series:
+                s = str(v).strip()
+                if s and s.lower() != 'nan':
+                    return s
+            return ""
+
+        # 2. Deduplicate: Group by Наименование
         aggregation = {
-            '№': 'first',  # Keep first row number
-            'Цена': 'first',  # Keep first price
-            'Стоимость': 'sum',  # Sum costs
-            'Документы': lambda x: '; '.join(set(str(v) for v in x if v and str(v).lower() != 'nan')),
-            'Поставщик': 'first',  # Keep first supplier
+            '№': 'first',
+            'Цена': 'max',      # Берем максимальную цену если есть разброс
+            'Количество': 'sum',
+            'Стоимость': 'sum',
+            'Документы': lambda x: '; '.join(sorted(set(str(v).strip() for v in x if str(v).strip() and str(v).lower() != 'nan'))),
+            'Поставщик': first_non_empty,
         }
         
         # Group by cleaned name
@@ -569,8 +514,11 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
         # 4. Sort by row number
         result_df = result_df.sort_values('№')
         
+        # Rename column to "шт."
+        result_df = result_df.rename(columns={'Количество': 'шт.'})
+        
         # Упорядочиваем колонки
-        cols_order = ['№', 'Наименование', 'Цена', 'Стоимость', 'Документы', 'Поставщик']
+        cols_order = ['№', 'Наименование', 'шт.', 'Цена', 'Стоимость', 'Документы', 'Поставщик']
         # Проверяем, все ли есть, если каких-то нет в result_df, добавляем пустые
         for c in cols_order:
             if c not in result_df.columns:
@@ -598,31 +546,35 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
                 cell.alignment = header_alignment
             
             # Apply widths
-            ws_widths = {'A': 8, 'B': 60, 'C': 15, 'D': 15, 'E': 35, 'F': 45}
+            # User request: Name -20% (60->48), Docs +40% (35->49), Provider -30% (45->31.5 -> 32)
+            # Plus new "шт." column
+            ws_widths = {'A': 8, 'B': 48, 'C': 10, 'D': 15, 'E': 15, 'F': 49, 'G': 32}
             for col_l, w in ws_widths.items():
                 worksheet.column_dimensions[col_l].width = w
                 
             for row in worksheet.iter_rows(min_row=2):
                 row[0].alignment = center_align # No
                 row[1].alignment = left_align # Name
-                row[2].alignment = center_align # Price
-                row[2].number_format = '#,##0.00'
-                row[3].alignment = center_align # Cost
+                row[2].alignment = center_align # Qty
+                row[3].alignment = center_align # Price
                 row[3].number_format = '#,##0.00'
-                row[4].alignment = left_align # Docs
-                row[5].alignment = left_align # Provider
+                row[4].alignment = center_align # Cost
+                row[4].number_format = '#,##0.00'
+                row[5].alignment = left_align # Docs
+                row[6].alignment = left_align # Provider
             
             # === Add Grand Total Row ===
             last_data_row = len(result_df) + 1
             total_row = last_data_row + 2
             
             # Total label
-            total_label_cell = worksheet.cell(row=total_row, column=3, value="ИТОГО:")
+            total_label_cell = worksheet.cell(row=total_row, column=4, value="ИТОГО:")
             total_label_cell.font = Font(bold=True, size=12)
             total_label_cell.alignment = Alignment(horizontal='right', vertical='center')
             
-            # Total value (formula)
-            total_value_cell = worksheet.cell(row=total_row, column=4, value=f"=SUM(D2:D{last_data_row})")
+            # Total value (вычисленное значение, не формула - для корректного отображения в PDF)
+            total_sum = result_df['Стоимость'].sum() if 'Стоимость' in result_df.columns else 0
+            total_value_cell = worksheet.cell(row=total_row, column=5, value=total_sum)
             total_value_cell.font = Font(bold=True, size=12)
             total_value_cell.alignment = Alignment(horizontal='center', vertical='center')
             total_value_cell.number_format = '#,##0.00'

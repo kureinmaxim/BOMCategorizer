@@ -7,3 +7,4 @@ reportlab
 requests
 pillow
 cryptography
+xlrd
