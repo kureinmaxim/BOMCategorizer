@@ -813,8 +813,85 @@ def write_categorized_excel(
     sheets_written = 0
     category_sheets = []  # Список записанных листов категорий для SUMMARY
     
+    # Собираем источники ДО записи, чтобы использовать source_multiplier
+    # {normalized_name: [display_name, multiplier]}
+    import re
+    source_multipliers = {}
+    
+    def extract_file_names_for_sources(source_value):
+        """Извлекает имена файлов из значения source_file/Источник"""
+        if not source_value or pd.isna(source_value):
+            return []
+        
+        clean = str(source_value)
+        # Удаляем ", п/п X"
+        clean = re.sub(r',\s*п/п\s*\d+', '', clean)
+        # Удаляем " Лист_X"
+        clean = re.sub(r'\s+Лист_\d+', '', clean)
+        # Удаляем теги в скобках
+        while '(' in clean:
+            prev = clean
+            clean = re.sub(r'\s*\([^)]*\)', '', clean)
+            if prev == clean:
+                break
+        clean = clean.strip().rstrip(',').strip()
+        
+        results = []
+        for part in clean.split(','):
+            part = part.strip()
+            if part and not part.lower().startswith('п/п'):
+                base = os.path.splitext(os.path.basename(part))[0]
+                if base:
+                    results.append(base)
+        return results
+    
+    def get_multiplier_for_row_pre(row, source_name):
+        """Получает множитель для строки с данным источником"""
+        if 'source_multiplier' in row.index and pd.notna(row.get('source_multiplier')):
+            try:
+                return int(row['source_multiplier'])
+            except (ValueError, TypeError):
+                pass
+        return 1
+    
+    # 1. Собираем из ИСХОДНОГО df с учётом множителя
+    for col in ['source_file', 'Источник']:
+        if col in df.columns:
+            for idx, row in df.iterrows():
+                val = row.get(col)
+                for name in extract_file_names_for_sources(val):
+                    norm = name.lower().strip()
+                    mult = get_multiplier_for_row_pre(row, name)
+                    if norm in source_multipliers:
+                        # Берём максимальный множитель
+                        if mult > source_multipliers[norm][1]:
+                            source_multipliers[norm][1] = mult
+                    else:
+                        source_multipliers[norm] = [name, mult]
+            break
+    
+    # 2. Дополнительно из outputs
+    for part_df in outputs.values():
+        if part_df.empty:
+            continue
+        for col in ['source_file', 'Источник']:
+            if col in part_df.columns:
+                for idx, row in part_df.iterrows():
+                    val = row.get(col)
+                    for name in extract_file_names_for_sources(val):
+                        norm = name.lower().strip()
+                        mult = get_multiplier_for_row_pre(row, name)
+                        if norm not in source_multipliers:
+                            source_multipliers[norm] = [name, mult]
+                        elif mult > source_multipliers[norm][1]:
+                            source_multipliers[norm][1] = mult
+                break
+    
+    # Служебные колонки, которые не должны записываться в Excel
+    SERVICE_COLUMNS = ['source_multiplier']
+    
     with pd.ExcelWriter(output_xlsx, engine='openpyxl') as writer:
-        # Сначала записываем все категории
+        # Записываем все категории
         for key, part_df in outputs.items():
             if len(part_df) == 0:
                 continue
@@ -825,6 +902,11 @@ def write_categorized_excel(
             # НЕ применяем format_excel_output повторно
             result_df = part_df.copy()
             
+            # Удаляем служебные колонки
+            for col in SERVICE_COLUMNS:
+                if col in result_df.columns:
+                    result_df = result_df.drop(columns=[col])
+            
             # Проверка что есть данные
             if result_df.empty or len(result_df) == 0:
                 continue
@@ -833,50 +915,6 @@ def write_categorized_excel(
             result_df.to_excel(writer, sheet_name=sheet_name, index=False)
             category_sheets.append(sheet_name)
             sheets_written += 1
-        
-        # Собираем данные об источниках для добавления в SUMMARY
-        # Считаем количество вхождений каждого файла
-        source_counts = {}  # {normalized_name: [display_name, count]}
-        
-        for _, r in df.iterrows():
-            source_file = r.get("source_file", "")
-            
-            if not source_file:
-                continue
-                
-            # Очищаем source_file от тегов в скобках: (зам ...), (п/б ...), (подбор ...)
-            import re
-            clean_source = source_file
-            # Повторяем пока есть скобки (убираем все теги, даже если их несколько)
-            while '(' in clean_source:
-                prev = clean_source
-                clean_source = re.sub(r'\s*\([^)]*\)', '', clean_source)
-                # Если ничего не изменилось - выходим (защита от бесконечного цикла)
-                if prev == clean_source:
-                    break
-            clean_source = clean_source.strip().rstrip(',').strip()
-            
-            # Разбиваем по запятой если есть несколько файлов в одной записи
-            file_parts = [p.strip() for p in clean_source.split(',') if p.strip()]
-            
-            for file_part in file_parts:
-                # Извлекаем базовое имя файла без расширения
-                base_name = os.path.splitext(os.path.basename(file_part))[0]
-                
-                if not base_name:
-                    continue
-                    
-                # Нормализуем имя для сравнения
-                normalized_name = base_name.lower().strip()
-                
-                if normalized_name in source_counts:
-                    source_counts[normalized_name][1] += 1
-                else:
-                    source_counts[normalized_name] = [base_name, 1]
-        
-        # source_counts теперь содержит словарь {нормализованное_имя: [отображаемое_имя, количество]}
-        # Они будут добавлены в конец листа SUMMARY ниже
-
         
         # Проверить что хотя бы один лист записан
         if sheets_written == 0:
@@ -1002,20 +1040,21 @@ def write_categorized_excel(
                 ws.cell(row=total_row_idx, column=5).alignment = Alignment(horizontal='center', vertical='center')
             
             # Добавляем SOURCES в конец SUMMARY
-            if source_counts:
+            if source_multipliers:
                 sources_row_idx = total_row_idx + 2  # Пустая строка перед SOURCES
                 
                 # Заголовок SOURCES
                 ws.cell(row=sources_row_idx, column=1, value='SOURCES:').font = bold_font
                 ws.cell(row=sources_row_idx, column=1).alignment = Alignment(horizontal='left', vertical='center')
                 
-                # Сортируем и записываем каждый источник в отдельную ячейку по горизонтали
-                sorted_sources_items = sorted(source_counts.items(), key=lambda x: x[1][0].lower())
+                # Сортируем по имени и записываем каждый источник
+                sorted_sources = sorted(source_multipliers.items(), key=lambda x: x[1][0].lower())
                 
-                for i, (s_norm, (display_name, count)) in enumerate(sorted_sources_items):
+                for i, (s_norm, (display_name, multiplier)) in enumerate(sorted_sources):
                     col = 2 + i  # Начинаем с колонки B (2)
-                    if count > 1:
-                        cell_value = f"{display_name} ({count} шт.)"
+                    # Показываем множитель в скобках только если > 1
+                    if multiplier > 1:
+                        cell_value = f"{display_name} ({multiplier} шт.)"
                     else:
                         cell_value = display_name
                     

@@ -58,6 +58,8 @@ from .dialogs import (
     DocConversionDialog
 )
 
+from ..excel_writer import apply_excel_styles
+
 from ..styles import DARK_THEME, LIGHT_THEME
 
 # Импорты из новых модулей
@@ -2058,13 +2060,110 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             df_un_cleaned = df_un.drop(index=list(set(indices_to_drop)))
                             all_sheets['Не распределено'] = df_un_cleaned
                             
-                            # Сохраняем обновленный файл
+                            # Собираем источники ДО перезаписи файла
+                            import re as re_module
+                            source_multipliers = {}
+                            
+                            def extract_source_names(source_value):
+                                """Извлекает имена файлов из значения source_file/Источник"""
+                                if not source_value or pd.isna(source_value):
+                                    return []
+                                clean = str(source_value)
+                                clean = re_module.sub(r',\s*п/п\s*\d+', '', clean)
+                                clean = re_module.sub(r'\s+Лист_\d+', '', clean)
+                                while '(' in clean:
+                                    prev = clean
+                                    clean = re_module.sub(r'\s*\([^)]*\)', '', clean)
+                                    if prev == clean:
+                                        break
+                                clean = clean.strip().rstrip(',').strip()
+                                results = []
+                                for part in clean.split(','):
+                                    part = part.strip()
+                                    if part and not part.lower().startswith('п/п'):
+                                        base = os.path.splitext(os.path.basename(part))[0]
+                                        if base:
+                                            results.append(base)
+                                return results
+                            
+                            # Собираем источники из всех листов (кроме SUMMARY)
+                            for sheet_name_src, df_src in all_sheets.items():
+                                if sheet_name_src == 'SUMMARY':
+                                    continue
+                                for col in ['source_file', 'Источник']:
+                                    if col in df_src.columns:
+                                        for idx, row in df_src.iterrows():
+                                            val = row.get(col)
+                                            mult = 1
+                                            if 'source_multiplier' in row.index and pd.notna(row.get('source_multiplier')):
+                                                try:
+                                                    mult = int(row['source_multiplier'])
+                                                except:
+                                                    pass
+                                            for name in extract_source_names(val):
+                                                norm = name.lower().strip()
+                                                if norm not in source_multipliers:
+                                                    source_multipliers[norm] = [name, mult]
+                                                elif mult > source_multipliers[norm][1]:
+                                                    source_multipliers[norm][1] = mult
+                                        break
+                            
+                            # Сохраняем обновленный файл с форматированием
                             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                                 for sheet_name, df in all_sheets.items():
+                                    # Удаляем "Unnamed" и служебные столбцы
+                                    cols_to_drop = [col for col in df.columns if str(col).startswith('Unnamed') or col == 'source_multiplier']
+                                    if cols_to_drop:
+                                        df = df.drop(columns=cols_to_drop)
                                     df.to_excel(writer, sheet_name=sheet_name, index=False)
+                                # Применяем стили (ширина столбцов, границы, выравнивание)
+                                apply_excel_styles(writer)
+                            
+                            # Добавляем SOURCES в SUMMARY
+                            if source_multipliers:
+                                from openpyxl import load_workbook
+                                from openpyxl.styles import Font, Alignment
+                                
+                                wb = load_workbook(output_file)
+                                if 'SUMMARY' in wb.sheetnames:
+                                    ws = wb['SUMMARY']
+                                    
+                                    # Находим последнюю строку с данными
+                                    last_row = ws.max_row
+                                    sources_row = last_row + 2
+                                    
+                                    # Заголовок SOURCES
+                                    bold_font = Font(bold=True)
+                                    ws.cell(row=sources_row, column=1, value='SOURCES:').font = bold_font
+                                    ws.cell(row=sources_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
+                                    
+                                    # Записываем источники
+                                    sorted_sources = sorted(source_multipliers.items(), key=lambda x: x[1][0].lower())
+                                    for i, (s_norm, (display_name, multiplier)) in enumerate(sorted_sources):
+                                        col = 2 + i
+                                        if multiplier > 1:
+                                            cell_value = f"{display_name} ({multiplier} шт.)"
+                                        else:
+                                            cell_value = display_name
+                                        cell = ws.cell(row=sources_row, column=col, value=cell_value)
+                                        cell.alignment = Alignment(horizontal='left', vertical='center')
+                                        
+                                        # Устанавливаем ширину колонки по содержимому
+                                        from openpyxl.utils import get_column_letter
+                                        col_letter = get_column_letter(col)
+                                        current_width = ws.column_dimensions[col_letter].width or 0
+                                        new_width = len(cell_value) + 2
+                                        if new_width > current_width:
+                                            ws.column_dimensions[col_letter].width = new_width
+                                    
+                                    wb.save(output_file)
                             
                             self.log_text.append(f"✅ Перемещено в категории: {moved_count} строк\n")
                             self.log_text.append(f"💾 Файл обновлен: {output_file}\n")
+                            
+                            # Регенерация PDF если включена автогенерация
+                            if self.auto_export_pdf:
+                                self._regenerate_pdf_after_classification(output_file)
                             
                             # Предлагаем открыть обновленный файл
                             reply = QMessageBox.question(

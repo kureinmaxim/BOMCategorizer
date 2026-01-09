@@ -156,6 +156,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 # Добавляем source_file ПЕРЕД извлечением подборов (нужно для пометки)
                 df_txt["source_file"] = os.path.basename(input_path)
                 df_txt["source_sheet"] = ""
+                df_txt["source_multiplier"] = multiplier  # Сохраняем множитель
                 
                 # Извлечь подборные элементы из примечаний (с пометкой source_file)
                 df_txt = extract_podbor_elements(df_txt)
@@ -175,6 +176,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 # Добавляем source_file ПЕРЕД извлечением подборов (нужно для пометки)
                 df_docx["source_file"] = os.path.basename(input_path)
                 df_docx["source_sheet"] = ""
+                df_docx["source_multiplier"] = multiplier  # Сохраняем множитель
                 
                 # Извлечь подборные элементы из примечаний (с пометкой source_file)
                 df_docx = extract_podbor_elements(df_docx)
@@ -245,6 +247,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                             
                             dfi["source_file"] = os.path.basename(input_path)
                             dfi["source_sheet"] = str(sh)
+                            dfi["source_multiplier"] = multiplier  # Сохраняем множитель
                             dfi = multiply_quantities(dfi, multiplier)
                             all_rows.append(dfi)
                         except Exception as exc:
@@ -281,6 +284,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                     
                     df["source_file"] = os.path.basename(input_path)
                     df["source_sheet"] = str(src_sheet)
+                    df["source_multiplier"] = multiplier  # Сохраняем множитель
                     df = multiply_quantities(df, multiplier)
                     all_rows.append(df)
                 
@@ -319,6 +323,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                         
                         df_local["source_file"] = os.path.basename(input_path)
                         df_local["source_sheet"] = str(sheet_name)
+                        df_local["source_multiplier"] = multiplier  # Сохраняем множитель
                         
                         # ВАЖНО: Если лист имеет имя категории, сохраняем категорию из имени листа
                         # Это предотвращает переклассификацию уже обработанных файлов

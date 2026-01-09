@@ -107,23 +107,23 @@ def get_database_path() -> str:
         return os.path.join(parent_dir, "data", "component_database.json")
 
 
-# Названия категорий
+# Названия категорий (должны совпадать с RUS_SHEET_NAMES в excel_writer.py!)
 CATEGORY_NAMES = {
     "resistors": "Резисторы",
     "capacitors": "Конденсаторы",
-    "inductors": "Дроссели/Катушки индуктивности",
+    "inductors": "Индуктивности",
     "ics": "Микросхемы",
-    "semiconductors": "Полупроводники (диоды, транзисторы)",
+    "semiconductors": "Полупроводники",
     "connectors": "Разъемы",
-    "dev_boards": "Отладочные платы и модули",
+    "dev_boards": "Отладочные платы",
     "optics": "Оптические компоненты",
     "rf_modules": "СВЧ модули",
-    "cables": "Кабели и провода",
+    "cables": "Кабели",
     "power_modules": "Модули питания",
     "our_developments": "Наши разработки",
-    "others": "Другие компоненты",
-    "unclassified": "Неклассифицированные",
-    "non_bom": "Не ИВП (служебная информация)"
+    "others": "Другие",
+    "unclassified": "Не распределено",
+    "non_bom": "Не ИВП"
 }
 
 

@@ -374,7 +374,7 @@ class DatabaseHandlersMixin:
             # Информация о БД
             info_label = QLabel(
                 f"📦 Версия: {metadata.get('version', 'N/A')} | "
-                f"📊 Компонентов: {sum(len(v) for v in components.values())} | "
+                f"📊 Компонентов: {len(components)} | "
                 f"📁 Путь: {db_path}"
             )
             info_label.setWordWrap(True)
@@ -396,26 +396,49 @@ class DatabaseHandlersMixin:
             from ..component_database import CATEGORY_NAMES
             
             # Заполняем таблицу
+            # Структура components: {"Название компонента": "category_id", ...}
             all_rows = []
-            for category_id, items in components.items():
-                category_name = CATEGORY_NAMES.get(category_id, category_id)
-                for item in items:
-                    if isinstance(item, dict):
-                        name = item.get('name', str(item))
-                        keywords = ', '.join(item.get('keywords', [])) if item.get('keywords') else ''
-                        source = item.get('source', '')
-                    else:
-                        name = str(item)
-                        keywords = ''
-                        source = ''
-                    all_rows.append((name, category_name, keywords, source))
+            for component_name, category_id in components.items():
+                # category_id может быть строкой ("resistors") или dict с доп. инфо
+                if isinstance(category_id, dict):
+                    cat_id = category_id.get('category', 'others')
+                    keywords = ', '.join(category_id.get('keywords', [])) if category_id.get('keywords') else ''
+                    source = category_id.get('source', '')
+                else:
+                    cat_id = str(category_id)
+                    keywords = ''
+                    source = ''
+                
+                category_name = CATEGORY_NAMES.get(cat_id, cat_id)
+                all_rows.append((component_name, category_name, keywords, source))
+            
+            # Сортируем по наименованию для удобства
+            all_rows.sort(key=lambda x: x[0].lower())
             
             table.setRowCount(len(all_rows))
             for row_idx, (name, cat, kw, src) in enumerate(all_rows):
-                table.setItem(row_idx, 0, QTableWidgetItem(name))
-                table.setItem(row_idx, 1, QTableWidgetItem(cat))
-                table.setItem(row_idx, 2, QTableWidgetItem(kw))
-                table.setItem(row_idx, 3, QTableWidgetItem(src))
+                # Наименование - по левому краю (длинный текст)
+                name_item = QTableWidgetItem(name)
+                name_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                table.setItem(row_idx, 0, name_item)
+                
+                # Категория - по центру
+                cat_item = QTableWidgetItem(cat)
+                cat_item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(row_idx, 1, cat_item)
+                
+                # Ключевые слова - по центру
+                kw_item = QTableWidgetItem(kw)
+                kw_item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(row_idx, 2, kw_item)
+                
+                # Источник - по центру
+                src_item = QTableWidgetItem(src)
+                src_item.setTextAlignment(Qt.AlignCenter)
+                table.setItem(row_idx, 3, src_item)
+            
+            # Включаем сортировку по клику на заголовок
+            table.setSortingEnabled(True)
             
             layout.addWidget(table)
             

@@ -104,6 +104,43 @@ class ProcessingHandlersMixin:
             if self.log_text:
                 self.log_text.append(f"⚠️ Ошибка автоматического экспорта в PDF: {e}")
     
+    def _regenerate_pdf_after_classification(self: 'BOMCategorizerMainWindow', output_file: str):
+        """Регенерирует PDF после интерактивной классификации"""
+        try:
+            from ..pdf_exporter import export_bom_to_pdf
+            
+            # Создаем путь для PDF
+            pdf_path = os.path.splitext(output_file)[0] + ".pdf"
+            
+            # Собираем сводную информацию
+            summary_info = {
+                "Исходных файлов": len(self.input_files) if hasattr(self, 'input_files') else 0,
+                "Выходной файл": os.path.basename(output_file),
+                "Версия БД": self.db.get_version() if hasattr(self, 'db') else "N/A",
+                "Программа": f"BOM Categorizer {self.cfg.get('app_info', {}).get('version', 'dev')}"
+            }
+            
+            if self.log_text:
+                self.log_text.append(f"📄 Регенерация PDF после классификации: {os.path.basename(pdf_path)}")
+            
+            # Выполняем экспорт
+            result_pdf = export_bom_to_pdf(
+                output_file,
+                pdf_path,
+                with_summary=True,
+                summary_info=summary_info
+            )
+            
+            if self.log_text:
+                self.log_text.append(f"✅ PDF обновлен: {result_pdf}")
+        
+        except ImportError as e:
+            if self.log_text:
+                self.log_text.append(f"⚠️ Не удалось регенерировать PDF: библиотека reportlab не установлена")
+        except Exception as e:
+            if self.log_text:
+                self.log_text.append(f"⚠️ Ошибка регенерации PDF: {e}")
+    
     def check_and_offer_interactive_classification(self: 'BOMCategorizerMainWindow', output_file: str):
         """Проверяет наличие нераспределенных элементов и предлагает интерактивную классификацию"""
         if not output_file or not os.path.exists(output_file):

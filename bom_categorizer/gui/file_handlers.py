@@ -218,6 +218,9 @@ class FileHandlersMixin:
         else:
             return
         
+        # Нормализуем путь для текущей ОС (Windows: \ , macOS/Linux: /)
+        folder_path = os.path.normpath(folder_path)
+        
         # Определяем имя выходного файла в зависимости от типа файлов
         if has_tru_rkm_files and not has_bom_files:
             # Только ТРУ/РКМ файлы
@@ -252,7 +255,8 @@ class FileHandlersMixin:
                     break
                 counter += 1
         
-        self.output_xlsx = output_path
+        # Нормализуем финальный путь для текущей ОС
+        self.output_xlsx = os.path.normpath(output_path)
         self.output_entry.setText(self.output_xlsx)
 
     def on_pick_output(self: 'BOMCategorizerMainWindow'):
@@ -265,7 +269,8 @@ class FileHandlersMixin:
         )
 
         if file_path:
-            self.output_entry.setText(file_path)
+            # Нормализуем путь для текущей ОС
+            self.output_entry.setText(os.path.normpath(file_path))
 
     def on_pick_txt_dir(self: 'BOMCategorizerMainWindow'):
         """Выбор папки для TXT"""

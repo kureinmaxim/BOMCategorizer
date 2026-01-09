@@ -349,6 +349,7 @@ class FileListManager:
             
             if new_files:
                 self.parent_window.update_tru_rkm_listbox()
+                self.parent_window.update_output_filename()  # Обновляем имя выходного файла
                 
         elif list_id in ["compare_file1", "compare_file2"]:
             # Для файлов сравнения берем только первый файл

@@ -251,6 +251,7 @@ def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
 
     window.output_entry = QLineEdit()
     window.output_entry.setText(window.output_xlsx)
+    window.output_entry.setPlaceholderText("Имя файла заполнится автоматически после добавления входных файлов")
     window.lockable_widgets.append(window.output_entry)
     grid.addWidget(window.output_entry, row, 1)
 
