@@ -317,8 +317,22 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
         code = re.sub(r'\s+', '', code)
         clean_text = (text_str[:m.start(1)] + text_str[m.end(1):]).strip()
         clean_text = re.sub(r'\s+', ' ', clean_text).strip(" -—\t")
-        if not clean_text:
-            # если в строке был только код — оставим имя как код, чтобы не получить пустое поле
+        
+        # Если после удаления кода осталось только "производитель" (или пусто),
+        # то в колонке "Наименование" оставляем сам код, чтобы не получить абсурд вроде:
+        # Наименование="Mini-Circuits", ТУ="ГВАТ.467716.008"
+        def _norm_token(s: str) -> str:
+            return re.sub(r'[^a-zа-я0-9]+', '', s.lower())
+        
+        known_mfr_tokens = {
+            _norm_token(x) for x in [
+                "Mini-Circuits", "Mini Circuits", "Murata", "TDK", "Yageo", "Vishay",
+                "Texas Instruments", "Analog Devices", "Maxim Integrated", "STMicroelectronics",
+                "Infineon", "NXP", "Microchip", "Renesas", "Coilcraft", "Harting"
+            ]
+        }
+        
+        if (not clean_text) or (_norm_token(clean_text) in known_mfr_tokens):
             clean_text = code
         return clean_text, code
     
