@@ -321,7 +321,8 @@ def find_matching_tru_row(
     bom_nominal: str,
     tru_df: pd.DataFrame,
     name_col: str = 'Наименование',
-    min_name_similarity: float = 0.70
+    min_name_similarity: float = 0.70,
+    required_code: Optional[str] = None,
 ) -> Optional[pd.Series]:
     """
     Ищет соответствующую строку в ТРУ DataFrame.
@@ -345,6 +346,9 @@ def find_matching_tru_row(
     
     norm_bom_name = normalize_for_matching(bom_name)
     bom_code = extract_component_code(bom_name)
+    required_norm = None
+    if required_code:
+        required_norm = str(required_code).strip().lower().replace(" ", "")
     
     # Если BOM название короткое (только код без описания типа "Микросхема" и т.п.)
     # Считаем коротким, если нет типичных слов-описаний
@@ -362,6 +366,14 @@ def find_matching_tru_row(
     
     for idx, row in tru_df.iterrows():
         tru_name = str(row.get(name_col, ''))
+        
+        # Если требуется конкретный код (например АМФИ./ГВАТ./де...), то матчим только строки,
+        # где этот код реально присутствует (иначе будут ложные совпадения на "Плата 1", "Плата 2" и т.п.)
+        if required_norm:
+            tru_hay = tru_name.lower().replace(" ", "")
+            if required_norm not in tru_hay:
+                continue
+
         norm_tru_name = normalize_for_matching(tru_name)
         tru_code = extract_component_code(tru_name)
         tru_pure_code = extract_pure_code(tru_name)
@@ -519,11 +531,26 @@ def merge_tru_into_bom(
         if not bom_name or pd.isna(bom_name):
             continue
         
+        # Если в BOM есть "наш код" в колонке ТУ/Производитель — используем его как обязательный ключ матчинга.
+        required_code = None
+        try:
+            for tu_col in ['ТУ/Производитель', 'ТУ', 'ту', '_extracted_tu_']:
+                if tu_col in result_df.columns:
+                    v = bom_row.get(tu_col, '')
+                    if v and not pd.isna(v):
+                        vv = str(v).strip()
+                        if re.search(r'\b(гват|амфи|игнд)\.\d+(?:\.\d+)+\b|\bде\s*\d+(?:\.\d+){0,3}\b', vv, re.IGNORECASE):
+                            required_code = re.sub(r'\s+', '', vv)
+                            break
+        except Exception:
+            required_code = None
+
         tru_match = find_matching_tru_row(
             bom_name=str(bom_name),
             bom_nominal=extract_nominal(str(bom_name)),
             tru_df=combined_tru,
             name_col=tru_name_col,
+            required_code=required_code,
         )
         
         if tru_match is None:

@@ -356,11 +356,20 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             # Извлечь ТУ из текста
             cleaned_text, tu_code = extract_tu_code(cleaned_text)
             
-            # ИСПРАВЛЕНО: Если ТУ был в note, используем его (приоритет у note), 
-            # НО если note_tu пустой, а tu_code из текста есть - используем tu_code из текста
+            # Если ТУ был в note, используем его (приоритет у note), НО:
+            # - если из текста уже извлечён "наш код" (ГВАТ/АМФИ/ИГНД/де<цифра>), он важнее производителя из note,
+            #   иначе получаем "ТУ/Производитель = Mini-Circuits" для строк ГВАТ....
             if note_tu:
-                tu_code = note_tu
-            # Если note_tu пустой, но у нас уже есть tu_code из текста - оставляем его
+                try:
+                    is_our_code = bool(re.search(
+                        r'\b(гват|амфи|игнд)\.\d+(?:\.\d+)+\b|\bде\s*\d+(?:\.\d+){0,3}\b',
+                        str(tu_code),
+                        re.IGNORECASE
+                    ))
+                except Exception:
+                    is_our_code = False
+                if not is_our_code:
+                    tu_code = note_tu
             
             # ВАЖНО: ранее для "Наши разработки" очищали ТУ, но теперь там нужен код (ГВАТ/АМФИ/ИГНД/деX...)
             # Поэтому НИЧЕГО не очищаем — оставляем извлечённый код/производителя как есть.
