@@ -196,7 +196,7 @@ python tools/sync_telegram_api.py --test
 
 | Документ | Описание |
 |----------|----------|
-| [LAUNCHER_GUIDE.md](LAUNCHER_GUIDE.md) | Руководство по запуску |
+| [GUIDE.md](GUIDE.md) | Руководство пользователя (режимы, BOM/ТРУ/merge) |
 | [docs/USER_MANUAL.md](docs/USER_MANUAL.md) | Полное руководство |
 | [docs/INTERACTIVE_MODE_GUIDE.md](docs/INTERACTIVE_MODE_GUIDE.md) | Обучение классификатора |
 

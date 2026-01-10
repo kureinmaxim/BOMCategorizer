@@ -22,7 +22,7 @@ BOMCategorizer/
 ├── 📄 ANALYSIS_PROJECT.md                # Архитектура проекта
 ├── 📄 BUILD.md                           # Инструкция по сборке
 ├── 📄 CHANGELOG.md                       # История изменений
-├── 📄 LAUNCHER_GUIDE.md                  # Руководство по запуску
+├── 📄 GUIDE.md                           # Руководство пользователя (режимы, BOM/ТРУ/merge)
 ├── 📄 SETUP.md                           # Настройка окружения
 ├── 📄 CREATE_GIT_RELEASE.md              # Создание релизов
 │
@@ -175,7 +175,7 @@ BOMCategorizer/
 | Документ | Описание |
 |----------|----------|
 | [README.md](../README.md) | Главная страница, обзор возможностей |
-| [LAUNCHER_GUIDE.md](../LAUNCHER_GUIDE.md) | Руководство по запуску |
+| [GUIDE.md](../GUIDE.md) | Руководство пользователя (режимы, BOM/ТРУ/merge) |
 | [docs/USER_MANUAL.md](USER_MANUAL.md) | Полное руководство пользователя |
 | [docs/OFFLINE_INSTALLATION_GUIDE.md](OFFLINE_INSTALLATION_GUIDE.md) | Установка без интернета |
 
