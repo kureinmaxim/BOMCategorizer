@@ -1489,6 +1489,15 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         except Exception:
                             pass
                         self.log_text.append(f"📄 Создан файл остатков: {os.path.basename(ostatki_path)}")
+                        
+                        # PDF версия для печати
+                        try:
+                            from ..pdf_exporter import export_bom_to_pdf
+                            ostatki_pdf = os.path.splitext(ostatki_path)[0] + ".pdf"
+                            export_bom_to_pdf(ostatki_path, ostatki_pdf, with_summary=False)
+                            self.log_text.append(f"🖨️ PDF (остатки): {os.path.basename(ostatki_pdf)}")
+                        except Exception as e:
+                            self.log_text.append(f"⚠️ Не удалось создать PDF для остатков: {e}")
                     
                     if not zapas_df.empty:
                         with pd.ExcelWriter(zapas_path, engine='openpyxl') as writer:
@@ -1501,6 +1510,15 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         except Exception:
                             pass
                         self.log_text.append(f"📄 Создан файл запаса: {os.path.basename(zapas_path)}")
+                        
+                        # PDF версия для печати
+                        try:
+                            from ..pdf_exporter import export_bom_to_pdf
+                            zapas_pdf = os.path.splitext(zapas_path)[0] + ".pdf"
+                            export_bom_to_pdf(zapas_path, zapas_pdf, with_summary=False)
+                            self.log_text.append(f"🖨️ PDF (запас): {os.path.basename(zapas_pdf)}")
+                        except Exception as e:
+                            self.log_text.append(f"⚠️ Не удалось создать PDF для запаса: {e}")
                     
                     # 4. Применяем стили к изменённым строкам
                     wb = load_workbook(output_path)
