@@ -63,10 +63,19 @@ def classify_row(
     note_text = to_text(note)
     group_type_text = to_text(group_type)  # Тип из заголовка группы (DOCX)
 
-    # Create text blob early for use in reference-based checks (теперь включая note и group_type!)
+    # Create text blob for general heuristics (включая note и group_type)
     # ВАЖНО: group_type помогает определить категорию по заголовку (например, "Чип катушки индуктивности")
     text_blob = " ".join([desc, val, part, note_text, group_type_text])
     text_blob_lower = text_blob.lower()
+    
+    # Отдельный blob для распознавания "Наши разработки".
+    # Причина: в BOM часто встречаются примечания вида "допускается замена на ... ГВАТ....",
+    # и такие "замены" НЕ должны переводить покупной компонент (например, PAT-20+ ф. Mini-Circuits)
+    # в категорию "Наши разработки".
+    note_lower = note_text.lower()
+    note_is_replacement_hint = any(k in note_lower for k in ["допускается замена", "замена на", "возможна замена", "аналог", "эквивалент"])
+    our_blob = " ".join([desc, val, part, group_type_text]) if note_is_replacement_hint else text_blob
+    our_blob_lower = our_blob.lower()
 
     # Refdes first where reliable
     ref_prefix = ref.split(" ")[0].upper() if ref else ""
@@ -160,10 +169,10 @@ def classify_row(
     
     # Проверка децимальных номеров в любом месте текста (де4.835.001 и т.д.)
     # Паттерн: "де" + цифра + точка (например, де4.)
-    if re.search(r"де\d+\.", text_blob_lower):
+    if re.search(r"де\d+\.", our_blob_lower):
         return "our_developments"
     
-    if has_any(text_blob, [
+    if has_any(our_blob, [
         "195-9530", "195-", "амфи.", "амфи ", "гват.", "гват ", "игнд.", "игнд ",
         "шск-м", "плата контроллера шск", "плата преобразователя уровней",
         "бз шск-м", "бф шск-м", "наша разработ", "собственной разработ"
@@ -172,14 +181,14 @@ def classify_row(
         # (резисторы, конденсаторы с кодом АМФИ - это покупные, Шайба ОСТ - это крепеж)
         standard_components = ["резистор", "конденсатор", "дроссель", "индуктивност", "микродроссель",
                                "винт", "гайка", "шайба", "болт", "заклёпка", "заклепка"]
-        is_standard_component = any(comp in text_blob_lower for comp in standard_components)
+        is_standard_component = any(comp in our_blob_lower for comp in standard_components)
         
         if not is_standard_component:
             return "our_developments"
 
     # Доп. правило: децимальные номера "де<цифра>" считаем нашими разработками
     # (но только если есть цифра после "де", чтобы не ловить обычные слова)
-    if re.search(r"\bде\s*\d+", text_blob_lower):
+    if re.search(r"\bде\s*\d+", our_blob_lower):
         return "our_developments"
     
     # ===================================================================
