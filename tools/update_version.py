@@ -46,6 +46,15 @@ def setup_console_encoding():
 
 setup_console_encoding()
 
+# ВАЖНО: скрипт использует относительные пути вида "../config/...".
+# Чтобы его можно было запускать из ЛЮБОЙ папки (например, из корня репозитория),
+# фиксируем рабочую директорию на папку tools/.
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+try:
+    os.chdir(SCRIPT_DIR)
+except Exception:
+    pass
+
 
 class Colors:
     """ANSI цвета для вывода"""
