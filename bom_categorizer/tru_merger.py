@@ -74,6 +74,125 @@ def similarity_ratio(a: str, b: str) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
+def _find_qty_col(columns) -> Optional[str]:
+    """Пытается найти колонку количества по типичным названиям."""
+    for c in columns:
+        cl = str(c).strip().lower()
+        if cl in ['шт.', 'шт', 'qty', 'количество', 'кол-во', 'кол.', 'кол']:
+            return c
+    return None
+
+
+_QTY_PAIR_RE = re.compile(r'^\s*(\d+)\s*\(\s*(\d+)\s*\)\s*$')
+
+
+def _parse_qty_pair(value) -> Optional[Tuple[int, int]]:
+    """
+    Парсит формат количества "TRU (BOM)" -> (tru_qty, bom_qty).
+    Возвращает None если формат не совпал.
+    """
+    if value is None or pd.isna(value):
+        return None
+    m = _QTY_PAIR_RE.match(str(value))
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def _concat_preserve_columns(parts: List[pd.DataFrame]) -> pd.DataFrame:
+    """
+    Склеивает DataFrame'ы в один, сохраняя порядок колонок:
+    сначала колонки первого DF, затем добавляем новые (если встретились).
+    """
+    frames = [p for p in parts if isinstance(p, pd.DataFrame) and not p.empty]
+    if not frames:
+        return pd.DataFrame()
+    col_order: List[str] = []
+    seen = set()
+    for f in frames:
+        for c in f.columns:
+            if c not in seen:
+                seen.add(c)
+                col_order.append(c)
+    normalized = []
+    for f in frames:
+        ff = f.copy()
+        for c in col_order:
+            if c not in ff.columns:
+                ff[c] = ''
+        normalized.append(ff[col_order])
+    return pd.concat(normalized, ignore_index=True)
+
+
+def build_ostatki_and_zapas_reports(
+    merged_df: pd.DataFrame,
+    merged_indices: Set[int],
+    unmatched_tru: Optional[pd.DataFrame] = None,
+    qty_col: Optional[str] = None,
+    note_col: str = 'Примечание'
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Строит два "плоских" отчёта:
+    - *_ostatki: BOM позиции, которых нет в ТРУ + (BOM_qty - TRU_qty) для уменьшенных количеств
+    - *_zapas:   несопоставленные ТРУ + (TRU_qty - BOM_qty) для увеличенных количеств
+    """
+    if merged_df is None or merged_df.empty:
+        # даже если merged_df пустой, запасы могут быть из unmatched_tru
+        zapas = unmatched_tru.copy() if isinstance(unmatched_tru, pd.DataFrame) else pd.DataFrame()
+        return pd.DataFrame(), zapas
+
+    qty_col = qty_col or _find_qty_col(merged_df.columns)
+
+    ostatki_parts: List[pd.DataFrame] = []
+    zapas_parts: List[pd.DataFrame] = []
+
+    # 1) BOM позиции без совпадений (нет в ТРУ) -> ostatki
+    unmatched_bom_idx = [i for i in merged_df.index if i not in merged_indices] if merged_indices else list(merged_df.index)
+    if unmatched_bom_idx:
+        df_unmatched_bom = merged_df.loc[unmatched_bom_idx].copy()
+        if note_col not in df_unmatched_bom.columns:
+            df_unmatched_bom[note_col] = ''
+        # заполняем примечание только если пусто
+        df_unmatched_bom[note_col] = df_unmatched_bom[note_col].astype(str)
+        df_unmatched_bom.loc[df_unmatched_bom[note_col].str.strip().eq(''), note_col] = 'нет в ТРУ'
+        ostatki_parts.append(df_unmatched_bom)
+
+    # 2) Разница количества по совпавшим строкам (если qty_col найден)
+    if qty_col and merged_indices:
+        for i in merged_indices:
+            try:
+                v = merged_df.at[i, qty_col]
+            except Exception:
+                continue
+            pair = _parse_qty_pair(v)
+            if not pair:
+                continue
+            tru_qty, bom_qty0 = pair
+            if tru_qty == bom_qty0:
+                continue
+            row_df = merged_df.loc[[i]].copy()
+            if note_col not in row_df.columns:
+                row_df[note_col] = ''
+            if tru_qty < bom_qty0:
+                diff = bom_qty0 - tru_qty
+                row_df.at[i, qty_col] = diff
+                row_df.at[i, note_col] = f'остаток (BOM {bom_qty0} > ТРУ {tru_qty})'
+                ostatki_parts.append(row_df)
+            else:
+                diff = tru_qty - bom_qty0
+                row_df.at[i, qty_col] = diff
+                row_df.at[i, note_col] = f'запас (ТРУ {tru_qty} > BOM {bom_qty0})'
+                zapas_parts.append(row_df)
+
+    # 3) Несопоставленные ТРУ -> zapas
+    if isinstance(unmatched_tru, pd.DataFrame) and not unmatched_tru.empty:
+        zapas_parts.append(unmatched_tru.copy())
+
+    ostatki_df = _concat_preserve_columns(ostatki_parts)
+    zapas_df = _concat_preserve_columns(zapas_parts)
+    return ostatki_df, zapas_df
+
+
 def extract_component_code(text: str) -> str:
     """
     Извлекает код/марку компонента из названия.

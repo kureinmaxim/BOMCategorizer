@@ -1252,6 +1252,7 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
         from openpyxl import load_workbook
         from openpyxl.styles import Font, PatternFill, Border, Side
         from ..tru_merger import merge_tru_into_bom, apply_merge_styles
+        from ..tru_merger import build_ostatki_and_zapas_reports
         from ..tru_rkm_processor import _read_tru_file
         
         self.log_text.append(f"\n{'='*60}\n")
@@ -1303,6 +1304,12 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     merged_rows_per_sheet = {}
                     all_used_tru_indices = set()
                     
+                    # Для дополнительных отчетов (плоские списки, без разбиения по категориям)
+                    # *_ostatki.xlsx: BOM позиции без ТРУ + позиции где TRU_qty < BOM_qty (разница)
+                    # *_zapas.xlsx:  несопоставленные ТРУ + позиции где TRU_qty > BOM_qty (разница)
+                    ostatki_parts = []  # List[pd.DataFrame]
+                    zapas_parts = []    # List[pd.DataFrame]
+                    
                     for sheet_name, df in all_sheets.items():
                         # Ищем колонки
                         for col in df.columns:
@@ -1333,6 +1340,23 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         
                         if merged_indices:
                             self.log_text.append(f"      📊 {sheet_name}: совпадений — {len(merged_indices)}")
+                        
+                        # === Формирование *_ostatki / *_zapas (плоские списки) ===
+                        try:
+                            qty_col_hint = bom_qty_col if bom_qty_col and bom_qty_col in merged_df.columns else None
+                            o_df, z_df = build_ostatki_and_zapas_reports(
+                                merged_df=merged_df,
+                                merged_indices=merged_indices,
+                                unmatched_tru=None,  # добавим единым блоком после generate_unmatched_report
+                                qty_col=qty_col_hint
+                            )
+                            if not o_df.empty:
+                                ostatki_parts.append(o_df)
+                            if not z_df.empty:
+                                zapas_parts.append(z_df)
+                        except Exception as e:
+                            # Не блокируем основной merge из-за отчетов
+                            self.log_text.append(f"   ⚠️ Не удалось сформировать отчеты остатков/запаса для листа '{sheet_name}': {e}")
                     
                     # 3. Генерируем отчет о несопоставленных ТРУ (один раз для всех листов)
                     from ..tru_merger import generate_unmatched_report
@@ -1349,6 +1373,11 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         
                         self.log_text.append(f"      ❗ Несопоставленных ТРУ элементов: {len(unmatched_tru)}")
                         merged_sheets['Несопоставленные ТРУ'] = unmatched_tru
+                        # Несопоставленные ТРУ идут в файл *_zapas
+                        try:
+                            zapas_parts.append(unmatched_tru.copy())
+                        except Exception:
+                            pass
                     
                     # Генерируем новый Summary лист со статистикой
                     summary_rows = []
@@ -1432,6 +1461,46 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                         for sheet_name, df in merged_sheets.items():
                             df.to_excel(writer, sheet_name=sheet_name, index=False)
+                    
+                    # === Дополнительные файлы: *_ostatki.xlsx и *_zapas.xlsx ===
+                    # ВАЖНО: без разбиения по категориям — один лист, элементы подряд.
+                    def _concat_parts(parts: list) -> pd.DataFrame:
+                        frames = [p for p in parts if isinstance(p, pd.DataFrame) and not p.empty]
+                        if not frames:
+                            return pd.DataFrame()
+                        return pd.concat(frames, ignore_index=True)
+                    
+                    ostatki_df = _concat_parts(ostatki_parts)
+                    zapas_df = _concat_parts(zapas_parts)
+                    
+                    ostatki_path = os.path.join(output_dir, f"{base_name}_ostatki.xlsx")
+                    zapas_path = os.path.join(output_dir, f"{base_name}_zapas.xlsx")
+                    
+                    # Пишем только если есть данные (чтобы не плодить пустые файлы)
+                    if not ostatki_df.empty:
+                        with pd.ExcelWriter(ostatki_path, engine='openpyxl') as writer:
+                            ostatki_df.to_excel(writer, sheet_name='Остатки', index=False)
+                        # Лёгкие стили (границы/заголовки)
+                        try:
+                            wb_o = load_workbook(ostatki_path)
+                            ws_o = wb_o['Остатки']
+                            apply_merge_styles(worksheet=ws_o, merged_rows=set(), name_col_idx=2, qty_col_idx=4, header_row=1)
+                            wb_o.save(ostatki_path)
+                        except Exception:
+                            pass
+                        self.log_text.append(f"📄 Создан файл остатков: {os.path.basename(ostatki_path)}")
+                    
+                    if not zapas_df.empty:
+                        with pd.ExcelWriter(zapas_path, engine='openpyxl') as writer:
+                            zapas_df.to_excel(writer, sheet_name='Запас', index=False)
+                        try:
+                            wb_z = load_workbook(zapas_path)
+                            ws_z = wb_z['Запас']
+                            apply_merge_styles(worksheet=ws_z, merged_rows=set(), name_col_idx=2, qty_col_idx=4, header_row=1)
+                            wb_z.save(zapas_path)
+                        except Exception:
+                            pass
+                        self.log_text.append(f"📄 Создан файл запаса: {os.path.basename(zapas_path)}")
                     
                     # 4. Применяем стили к изменённым строкам
                     wb = load_workbook(output_path)

@@ -404,10 +404,10 @@ class DatabaseHandlersMixin:
                     cat_id = category_id.get('category', 'others')
                     keywords = ', '.join(category_id.get('keywords', [])) if category_id.get('keywords') else ''
                     source = category_id.get('source', '')
-                    else:
+                else:
                     cat_id = str(category_id)
-                        keywords = ''
-                        source = ''
+                    keywords = ''
+                    source = ''
                 
                 category_name = CATEGORY_NAMES.get(cat_id, cat_id)
                 all_rows.append((component_name, category_name, keywords, source))
