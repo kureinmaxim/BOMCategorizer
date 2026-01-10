@@ -146,6 +146,7 @@ class FileHandlersMixin:
         )
 
         if files:
+            warned_about_tpy = False
             for file_path in files:
                 # Проверяем расширение
                 ext = os.path.splitext(file_path)[1].lower()
@@ -166,6 +167,18 @@ class FileHandlersMixin:
                 
                 if not exists:
                     self.tru_rkm_files.append(file_path)
+                    # Подсказка: для режима BOM+ТРУ нужны обработанные *_tpy.xlsx
+                    if not warned_about_tpy:
+                        bn = os.path.basename(file_path).lower()
+                        if ext == '.xls' or (ext == '.xlsx' and not bn.endswith('_tpy.xlsx')):
+                            warned_about_tpy = True
+                            QMessageBox.information(
+                                self,
+                                "Подсказка по ТРУ файлам",
+                                "Для режима объединения BOM + ТРУ рекомендуется использовать только ТРУ файлы,\n"
+                                "уже обработанные приложением: *_tpy.xlsx.\n\n"
+                                "Исходные .xls можно добавлять для режима обработки ТРУ/РКМ, чтобы получить *_tpy.xlsx."
+                            )
 
             self.update_tru_rkm_listbox()
             self.update_output_filename()  # Обновляем имя выходного файла

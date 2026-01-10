@@ -1262,6 +1262,28 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
         self.log_text.append(f"📋 ТРУ файлов: {len(self.tru_rkm_files)}\n")
         
         try:
+            # Для режима BOM+ТРУ используем ТОЛЬКО заранее обработанные ТРУ файлы *_tpy.xlsx
+            # (в них стабильная структура колонок; исходные .xls могут давать ложные совпадения).
+            invalid_tru = []
+            for p in self.tru_rkm_files:
+                bn = os.path.basename(p).lower()
+                ext = os.path.splitext(bn)[1]
+                if ext in ('.xls', '.xlsx') and not bn.endswith('_tpy.xlsx'):
+                    invalid_tru.append(os.path.basename(p))
+            if invalid_tru:
+                msg = (
+                    "Для режима объединения BOM + ТРУ поддерживаются только ТРУ файлы, уже обработанные приложением:\n"
+                    "   *_tpy.xlsx\n\n"
+                    "Сначала запустите обработку ТРУ (режим ТРУ/РКМ), получите *_tpy.xlsx,\n"
+                    "и уже его добавляйте в список ТРУ для объединения.\n\n"
+                    "Неподходящие файлы:\n- " + "\n- ".join(invalid_tru)
+                )
+                QMessageBox.warning(self, "Нужны обработанные ТРУ файлы", msg)
+                self.log_text.append("⚠️ Объединение остановлено: в списке ТРУ есть не обработанные файлы (не *_tpy.xlsx).")
+                for f in invalid_tru:
+                    self.log_text.append(f"   • {f}")
+                return
+
             # 1. Читаем ТРУ файлы
             self.log_text.append("📖 Чтение ТРУ файлов...")
             tru_dfs = []
