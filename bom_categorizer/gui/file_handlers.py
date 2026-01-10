@@ -198,6 +198,13 @@ class FileHandlersMixin:
 
     def update_output_filename(self: 'BOMCategorizerMainWindow'):
         """Автоматическое обновление имени выходного файла"""
+        # Проверяем, не изменил ли пользователь имя файла вручную
+        # Если текущее значение отличается от последнего автоматически установленного - не перезаписываем
+        current_value = self.output_entry.text().strip() if hasattr(self, 'output_entry') else ""
+        if current_value and current_value != self.output_xlsx:
+            # Пользователь изменил имя вручную - не перезаписываем
+            return
+        
         # Определяем какие файлы присутствуют
         has_bom_files = bool(self.input_files)
         has_tru_rkm_files = bool(self.tru_rkm_files)

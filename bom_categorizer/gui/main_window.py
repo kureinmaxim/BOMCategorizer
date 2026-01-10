@@ -1660,65 +1660,12 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             sources_sheet_name = name
                             break
                     
-                    if sources_sheet_name and 'Summary' in wb.sheetnames:
-                        ws_sources = wb[sources_sheet_name]
-                        ws_summary = wb['Summary']
-                        
-                        # Собираем источники с подсчётом количества
-                        source_counts = {}  # {normalized_name: (display_name, count)}
-                        
-                        for row in ws_sources.iter_rows(min_row=2, max_col=1, values_only=True):
-                            if row[0]:
-                                source_str = str(row[0])
-                                for part in source_str.split(','):
-                                    part = part.strip()
-                                    if not part:
-                                        continue
-                                    import re
-                                    clean_part = part
-                                    # Убираем теги типа (зам...), (п/б...)
-                                    while '(' in clean_part:
-                                        prev = clean_part
-                                        clean_part = re.sub(r'\s*\([^)]*\)', '', clean_part)
-                                        if prev == clean_part:
-                                            break
-                                    clean_part = clean_part.strip().rstrip(',').strip()
-                                    
-                                    # Убираем расширение
-                                    base_name = os.path.splitext(clean_part)[0]
-                                    s_norm = base_name.lower().strip()
-                                    
-                                    if base_name and s_norm:
-                                        if s_norm in source_counts:
-                                            # Увеличиваем счётчик
-                                            display_name, count = source_counts[s_norm]
-                                            source_counts[s_norm] = (display_name, count + 1)
-                                        else:
-                                            source_counts[s_norm] = (base_name, 1)
-                        
-                        # Записываем в SUMMARY — каждый источник в отдельной ячейке
-                        if source_counts:
-                            # Заголовок SOURCES
-                            ws_summary.cell(row=1, column=7, value='SOURCES:').font = Font(bold=True)
-                            ws_summary.cell(row=1, column=7).alignment = Alignment(horizontal='left', vertical='center')
-                            
-                            # Сортируем и записываем каждый источник в отдельную ячейку по горизонтали
-                            sorted_sources = sorted(source_counts.items(), key=lambda x: x[1][0].lower())
-                            
-                            for i, (s_norm, (display_name, count)) in enumerate(sorted_sources):
-                                col = 8 + i  # Начинаем с колонки H (8)
-                                if count > 1:
-                                    cell_value = f"{display_name} ({count} шт.)"
-                                else:
-                                    cell_value = display_name
-                                ws_summary.cell(row=1, column=col, value=cell_value)
-                                ws_summary.cell(row=1, column=col).alignment = Alignment(horizontal='left', vertical='center')
-                                # Автоширина для каждой колонки
-                                ws_summary.column_dimensions[chr(64 + col)].width = len(cell_value) + 2
-                        
-                        # Удаляем лист SOURCES
+                    if sources_sheet_name:
+                        # SOURCES уже записываются в excel_writer.py после строки ИТОГО
+                        # с правильным множителем (source_multiplier)
+                        # Здесь только удаляем отдельный лист SOURCES
                         del wb[sources_sheet_name]
-                        self.log_text.append(f"   📋 SOURCES перенесены в Summary")
+                        self.log_text.append(f"   📋 Лист SOURCES удален (данные в SUMMARY)")
                     
                     wb.save(output_path)
                     
