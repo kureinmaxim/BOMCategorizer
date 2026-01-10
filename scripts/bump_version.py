@@ -18,6 +18,16 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+# Настройка UTF-8 для Windows консоли (иначе возможны ошибки на эмодзи)
+if sys.platform == "win32":
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 # Regex for JSON fields
 VERSION_RE = re.compile(r'("version"\s*:\s*")(?P<version>[^"]+)(")', re.MULTILINE)
 RELEASE_DATE_RE = re.compile(r'("release_date"\s*:\s*")(?P<date>[^"]+)(")', re.MULTILINE)

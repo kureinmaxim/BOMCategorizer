@@ -23,6 +23,15 @@ import re
 TEMP_DIR = "temp_installer"
 INNO_SETUP_PATH = r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 
+# ВАЖНО: скрипт может запускаться из любой директории (например, из deployment/).
+# Фиксируем cwd на корень репозитория, чтобы относительные пути к config/ и deployment/
+# всегда работали корректно и версия никогда "не понижалась" из-за чтения не тех файлов.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+try:
+    os.chdir(PROJECT_ROOT)
+except Exception:
+    pass
+
 
 def read_version_from_config(config_file):
     """Читает версию из config файла"""
@@ -37,29 +46,38 @@ def read_version_from_config(config_file):
         return "Unknown"
 
 
-# Версии приложения (версии читаются из шаблонов конфигов, чтобы не зависеть от пользовательских файлов)
-EDITIONS = {
-    "1": {
-        "name": "Standard",
-        "version": read_version_from_config("config/config.json.template") or read_version_from_config("config.json"),
-        "app_file": "app.py",
-        "config": "config.json",
-        "config_template": "config/config.json.template",
-        "iss_file": "deployment/installer_clean.iss",
-        "output": "BOMCategorizerSetup.exe",
-        "description": "Tkinter GUI (стабильная версия)"
-    },
-    "2": {
-        "name": "Modern Edition",
-        "version": read_version_from_config("config/config_qt.json.template") or read_version_from_config("config_qt.json"),
-        "app_file": "app_qt.py",
-        "config": "config_qt.json",
-        "config_template": "config/config_qt.json.template",
-        "iss_file": "deployment/installer_qt.iss",
-        "output": "BOMCategorizerModernSetup.exe",
-        "description": "PySide6 GUI (современный дизайн + экспериментальные функции)"
+def get_editions():
+    """
+    Возвращает словарь редакций для меню.
+
+    Источник правды по версии — ТОЛЬКО шаблоны config/*.template.
+    Это исключает ситуацию, когда версия "понижается" из-за старого локального config_qt.json.
+    """
+    standard_version = read_version_from_config("config/config.json.template")
+    modern_version = read_version_from_config("config/config_qt.json.template")
+
+    return {
+        "1": {
+            "name": "Standard",
+            "version": standard_version,
+            "app_file": "app.py",
+            "config": "config.json",
+            "config_template": "config/config.json.template",
+            "iss_file": "deployment/installer_clean.iss",
+            "output": "BOMCategorizerSetup.exe",
+            "description": "Tkinter GUI (стабильная версия)"
+        },
+        "2": {
+            "name": "Modern Edition",
+            "version": modern_version,
+            "app_file": "app_qt.py",
+            "config": "config_qt.json",
+            "config_template": "config/config_qt.json.template",
+            "iss_file": "deployment/installer_qt.iss",
+            "output": "BOMCategorizerModernSetup.exe",
+            "description": "PySide6 GUI (современный дизайн + экспериментальные функции)"
+        }
     }
-}
 
 # Файлы для копирования (в корне проекта)
 FILES_TO_COPY = [
@@ -295,6 +313,7 @@ def run_inno_setup_edition(iss_file, output_file):
 
 def select_edition():
     """Диалог выбора версии для сборки"""
+    EDITIONS = get_editions()
     print("\n" + "="*60)
     print("  ВЫБЕРИТЕ ВЕРСИЮ ДЛЯ СБОРКИ:")
     print("="*60)
