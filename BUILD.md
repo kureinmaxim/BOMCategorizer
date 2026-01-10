@@ -2,9 +2,18 @@
 
 Этот документ описывает полный цикл подготовки релиза: от обновления версии до создания инсталляторов.
 
-> **Быстрый старт:**
+> **Быстрый старт (Makefile):**
+> ```bash
+> make help              # Показать все доступные команды
+> make version-status    # Проверить текущие версии
+> make version-sync      # Синхронизировать версии
+> make build-macos       # Собрать macOS DMG
+> make run-qt            # Запустить Modern Edition
+> ```
+>
+> **Альтернативный способ (без Makefile):**
 > *   **Windows:** `python deployment/build_installer.py`
-> *   **macOS:** `./deployment/build_macos.sh`
+> *   **macOS:** `./deployment/build_macos.sh` (не `/deployment/...` — это разные пути!)
 > *   **Версии:** `python3 tools/update_version.py status`
 >
 > ⚠️ **macOS:** Используйте `python3` вместо `python` для всех команд.
@@ -91,17 +100,27 @@ python deployment/build_installer.py
 
 Для сборки используется скрипт `deployment/build_macos.sh`, который создает `.dmg` образ.
 
-**Запуск:**
+**Запуск (рекомендуется):**
 ```bash
+make build-macos
+```
+
+**Или напрямую:**
+```bash
+# Важно: используйте ./ в начале (относительный путь)
 ./deployment/build_macos.sh
+
+# ❌ НЕ используйте абсолютный путь:
+# /deployment/build_macos.sh  — это ошибка!
 ```
 
 **Процесс:**
-1.  Скрипт спросит версию.
-2.  Запустит `py2app` для создания `.app` бандла.
-3.  Упакует `.app` в `.dmg` образ.
+1.  Скрипт автоматически синхронизирует версии.
+2.  Спросит, какую версию собирать (Standard/Modern).
+3.  Запустит `py2app` для создания `.app` бандла.
+4.  Упакует `.app` в `.dmg` образ.
 
-> **Результат:** `BOMCategorizer-4.5.0-macOS-Modern.dmg`
+> **Результат:** `BOMCategorizer-5.5.1-macOS-Modern.dmg`
 
 ---
 

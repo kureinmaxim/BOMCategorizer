@@ -69,20 +69,31 @@ echo -e "${BLUE}📦 DMG: ${DMG_NAME}.dmg${NC}"
 echo ""
 
 # Синхронизация локального конфига из шаблона перед сборкой
-echo -e "${BLUE}🔄 Синхронизация конфига из шаблона...${NC}"
-if [ ! -f "${CONFIG_FILE}" ]; then
-    # Если конфига нет - создаем из шаблона
-    if [ -f "config/${CONFIG_FILE}.template" ]; then
-        cp "config/${CONFIG_FILE}.template" "${CONFIG_FILE}"
-        echo -e "${GREEN}  ✓ Создан ${CONFIG_FILE} из шаблона${NC}"
-    else
-        echo -e "${YELLOW}  ⚠️  Шаблон не найден: config/${CONFIG_FILE}.template${NC}"
-    fi
+echo -e "${BLUE}🔄 Синхронизация версий перед сборкой...${NC}"
+
+# Принудительная синхронизация всех версий
+echo -e "${YELLOW}  Запуск tools/update_version.py sync...${NC}"
+if python3 tools/update_version.py sync; then
+    echo -e "${GREEN}  ✓ Версии синхронизированы${NC}"
+else
+    echo -e "${RED}  ❌ Ошибка синхронизации версий!${NC}"
+    echo -e "${RED}  Проверьте tools/update_version.py вручную${NC}"
+    exit 1
 fi
 
-# Синхронизируем версию через update_version.py
-python3 tools/update_version.py sync 2>&1 | grep -E "(config_qt.json|config.json|Синхронизация)" || true
-echo -e "${GREEN}  ✓ Конфиг синхронизирован${NC}"
+# Проверка версий после синхронизации
+echo ""
+echo -e "${BLUE}📊 Проверка версий после синхронизации:${NC}"
+if [ "$EDITION" = "Standard" ]; then
+    SYNCED_VERSION=$(python3 -c "import json; print(json.load(open('config/config.json.template'))['app_info']['version'])" 2>/dev/null)
+else
+    SYNCED_VERSION=$(python3 -c "import json; print(json.load(open('config/config_qt.json.template'))['app_info']['version'])" 2>/dev/null)
+fi
+echo -e "${GREEN}  ✓ Версия для сборки: ${SYNCED_VERSION}${NC}"
+VERSION="${SYNCED_VERSION}"
+DMG_NAME="BOMCategorizer-${VERSION}-macOS-${EDITION// /-}"
+echo -e "${BLUE}  📦 DMG файл: ${DMG_NAME}.dmg${NC}"
+echo ""
 
 # Проверка виртуального окружения
 if [ ! -d "venv" ]; then
