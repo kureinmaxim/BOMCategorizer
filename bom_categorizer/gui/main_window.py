@@ -1653,7 +1653,7 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             if current_idx != idx:
                                 wb.move_sheet(ws, offset=idx - current_idx)
                     
-                    # === Перенос SOURCES в SUMMARY и удаление листа SOURCES ===
+                    # === Перенос SOURCES из листа SOURCES в SUMMARY и удаление листа SOURCES ===
                     sources_sheet_name = None
                     for name in wb.sheetnames:
                         if name.upper() == 'SOURCES':
@@ -1661,11 +1661,10 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             break
                     
                     if sources_sheet_name:
-                        # SOURCES уже записываются в excel_writer.py после строки ИТОГО
-                        # с правильным множителем (source_multiplier)
-                        # Здесь только удаляем отдельный лист SOURCES
+                        # SOURCES уже записываются в SUMMARY через excel_writer.py (после строки ИТОГО).
+                        # Здесь удаляем отдельный лист SOURCES, чтобы не дублировать.
                         del wb[sources_sheet_name]
-                        self.log_text.append(f"   📋 Лист SOURCES удален (данные в SUMMARY)")
+                        self.log_text.append(f"   📋 Лист SOURCES удален (данные уже в SUMMARY)")
                     
                     wb.save(output_path)
                     
@@ -2007,54 +2006,52 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             df_un_cleaned = df_un.drop(index=list(set(indices_to_drop)))
                             all_sheets['Не распределено'] = df_un_cleaned
                             
-                            # Собираем источники ДО перезаписи файла
-                            import re as re_module
-                            source_multipliers = {}
+                            # Читаем СУЩЕСТВУЮЩИЕ SOURCES из файла ДО перезаписи
+                            # ВАЖНО: если SOURCES встречается несколько раз — берем ПОСЛЕДНЮЮ строку (обычно она полная).
+                            existing_sources = []
+                            try:
+                                from openpyxl import load_workbook as load_wb_pre
+                                wb_pre = load_wb_pre(output_file)
+                                if 'SUMMARY' in wb_pre.sheetnames:
+                                    ws_pre = wb_pre['SUMMARY']
+                                    for row_idx in range(1, ws_pre.max_row + 1):
+                                        cell_val = ws_pre.cell(row=row_idx, column=1).value
+                                        if cell_val and str(cell_val).strip().upper() == 'SOURCES:':
+                                            # Читаем все источники из этой строки
+                                            # (перезаписываем existing_sources — так мы оставим последнюю найденную строку)
+                                            row_sources = []
+                                            col = 2
+                                            while col <= ws_pre.max_column:
+                                                val = ws_pre.cell(row=row_idx, column=col).value
+                                                if val:
+                                                    row_sources.append(str(val))
+                                                col += 1
+                                            if row_sources:
+                                                existing_sources = row_sources
+                                wb_pre.close()
+                            except Exception as e:
+                                print(f"[WARNING] Не удалось прочитать существующие SOURCES: {e}")
                             
-                            def extract_source_names(source_value):
-                                """Извлекает имена файлов из значения source_file/Источник"""
-                                if not source_value or pd.isna(source_value):
-                                    return []
-                                clean = str(source_value)
-                                clean = re_module.sub(r',\s*п/п\s*\d+', '', clean)
-                                clean = re_module.sub(r'\s+Лист_\d+', '', clean)
-                                while '(' in clean:
-                                    prev = clean
-                                    clean = re_module.sub(r'\s*\([^)]*\)', '', clean)
-                                    if prev == clean:
-                                        break
-                                clean = clean.strip().rstrip(',').strip()
-                                results = []
-                                for part in clean.split(','):
-                                    part = part.strip()
-                                    if part and not part.lower().startswith('п/п'):
-                                        base = os.path.splitext(os.path.basename(part))[0]
-                                        if base:
-                                            results.append(base)
-                                return results
-                            
-                            # Собираем источники из всех листов (кроме SUMMARY)
-                            for sheet_name_src, df_src in all_sheets.items():
-                                if sheet_name_src == 'SUMMARY':
-                                    continue
-                                for col in ['source_file', 'Источник']:
-                                    if col in df_src.columns:
-                                        for idx, row in df_src.iterrows():
-                                            val = row.get(col)
-                                            mult = 1
-                                            if 'source_multiplier' in row.index and pd.notna(row.get('source_multiplier')):
-                                                try:
-                                                    mult = int(row['source_multiplier'])
-                                                except:
-                                                    pass
-                                            for name in extract_source_names(val):
-                                                norm = name.lower().strip()
-                                                if norm not in source_multipliers:
-                                                    source_multipliers[norm] = [name, mult]
-                                                elif mult > source_multipliers[norm][1]:
-                                                    source_multipliers[norm][1] = mult
-                                        break
-                            
+                            # Удаляем строк(и) SOURCES из SUMMARY перед перезаписью через pandas.
+                            # Иначе pandas "обрежет" источники (часть уйдет в Unnamed колонки),
+                            # и после добавления существующих SOURCES получится дубль: неполная + полная.
+                            if 'SUMMARY' in all_sheets:
+                                try:
+                                    df_summary = all_sheets['SUMMARY']
+                                    if df_summary is not None and not df_summary.empty:
+                                        first_col = df_summary.columns[0]
+                                        mask_sources = (
+                                            df_summary[first_col]
+                                            .astype(str)
+                                            .str.strip()
+                                            .str.upper()
+                                            .eq('SOURCES:')
+                                        )
+                                        if mask_sources.any():
+                                            all_sheets['SUMMARY'] = df_summary.loc[~mask_sources].copy()
+                                except Exception as e:
+                                    print(f"[WARNING] Не удалось удалить SOURCES из SUMMARY перед записью: {e}")
+
                             # Сохраняем обновленный файл с форматированием
                             with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
                                 for sheet_name, df in all_sheets.items():
@@ -2066,10 +2063,11 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                                 # Применяем стили (ширина столбцов, границы, выравнивание)
                                 apply_excel_styles(writer)
                             
-                            # Добавляем SOURCES в SUMMARY
-                            if source_multipliers:
+                            # Добавляем SOURCES в SUMMARY (используем существующие если есть)
+                            if existing_sources:
                                 from openpyxl import load_workbook
                                 from openpyxl.styles import Font, Alignment
+                                from openpyxl.utils import get_column_letter
                                 
                                 wb = load_workbook(output_file)
                                 if 'SUMMARY' in wb.sheetnames:
@@ -2082,28 +2080,23 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                                     # Заголовок SOURCES
                                     bold_font = Font(bold=True)
                                     ws.cell(row=sources_row, column=1, value='SOURCES:').font = bold_font
-                                    ws.cell(row=sources_row, column=1).alignment = Alignment(horizontal='left', vertical='center')
+                                    ws.cell(row=sources_row, column=1).alignment = Alignment(horizontal='center', vertical='center')
                                     
-                                    # Записываем источники
-                                    sorted_sources = sorted(source_multipliers.items(), key=lambda x: x[1][0].lower())
-                                    for i, (s_norm, (display_name, multiplier)) in enumerate(sorted_sources):
+                                    # Записываем существующие источники
+                                    for i, cell_value in enumerate(existing_sources):
                                         col = 2 + i
-                                        if multiplier > 1:
-                                            cell_value = f"{display_name} ({multiplier} шт.)"
-                                        else:
-                                            cell_value = display_name
                                         cell = ws.cell(row=sources_row, column=col, value=cell_value)
-                                        cell.alignment = Alignment(horizontal='left', vertical='center')
+                                        cell.alignment = Alignment(horizontal='center', vertical='center')
                                         
                                         # Устанавливаем ширину колонки по содержимому
-                                        from openpyxl.utils import get_column_letter
                                         col_letter = get_column_letter(col)
                                         current_width = ws.column_dimensions[col_letter].width or 0
-                                        new_width = len(cell_value) + 2
+                                        new_width = len(str(cell_value)) + 2
                                         if new_width > current_width:
                                             ws.column_dimensions[col_letter].width = new_width
                                     
                                     wb.save(output_file)
+                                    print(f"[SOURCES] Восстановлено {len(existing_sources)} источников после классификации")
                             
                             self.log_text.append(f"✅ Перемещено в категории: {moved_count} строк\n")
                             self.log_text.append(f"💾 Файл обновлен: {output_file}\n")

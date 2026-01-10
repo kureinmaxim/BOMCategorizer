@@ -368,7 +368,7 @@ class PDFExporter:
         source_files = []
         seen_normalized = set()
         
-        # Сначала пробуем прочитать из SUMMARY (колонка G)
+        # Сначала пробуем прочитать из SUMMARY
         summary_sheet = None
         for name in wb.sheetnames:
             if name.upper() == 'SUMMARY':
@@ -380,30 +380,39 @@ class PDFExporter:
             # Ищем заголовок 'SOURCES:'
             found_sources = False
             
-            # 1. Проверяем Row 1 Col G (современный формат после ТРУ)
-            header_g1 = str(summary_sheet.cell(row=1, column=7).value).strip()
-            if header_g1.upper() == 'SOURCES:':
-                col = 8
-                while col <= summary_sheet.max_column:
-                    val = summary_sheet.cell(row=1, column=col).value
-                    if not val: break
-                    source_files.append(str(val))
-                    col += 1
-                found_sources = True
+            # 1. Проверяем Row 1 Col G (старый формат после ТРУ) - ПРОПУСКАЕМ если значение None
+            cell_g1 = summary_sheet.cell(row=1, column=7).value
+            if cell_g1 is not None:
+                header_g1 = str(cell_g1).strip()
+                if header_g1.upper() == 'SOURCES:':
+                    col = 8
+                    while col <= summary_sheet.max_column:
+                        val = summary_sheet.cell(row=1, column=col).value
+                        if not val: break
+                        source_files.append(str(val))
+                        col += 1
+                    found_sources = True
+                    print(f"[PDF] SOURCES найдены в Row 1 Col G: {source_files}")
             
             # 2. Ищем в колонке A (стандартный формат в конце SUMMARY)
+            # ВАЖНО: если SOURCES встречается несколько раз — берем ПОСЛЕДНЮЮ строку (обычно она полная).
             if not found_sources:
                 for row_idx in range(1, summary_sheet.max_row + 1):
-                    cell_val = str(summary_sheet.cell(row=row_idx, column=1).value).strip()
-                    if cell_val.upper() == 'SOURCES:':
+                    cell_val = summary_sheet.cell(row=row_idx, column=1).value
+                    if cell_val is None:
+                        continue
+                    cell_str = str(cell_val).strip()
+                    if cell_str.upper() == 'SOURCES:':
+                        source_files = []  # очищаем — оставляем последнюю найденную строку
                         col = 2
                         while col <= summary_sheet.max_column:
                             val = summary_sheet.cell(row=row_idx, column=col).value
-                            if not val: break
-                            source_files.append(str(val))
+                            if val:
+                                source_files.append(str(val))
                             col += 1
                         found_sources = True
-                        break
+                        print(f"[PDF] SOURCES найдены в Row {row_idx} Col A: {source_files}")
+                        # не break — продолжаем искать, чтобы взять последнюю (полную) строку
             
             # 3. Fallback: старый формат (Row 2 Col G)
             if not found_sources:
@@ -1058,11 +1067,11 @@ class PDFExporter:
         
         processed_sheets = []
         
-        # Читаем SOURCES из SUMMARY (колонка G) или из отдельного листа
+        # Читаем SOURCES из SUMMARY (колонка A после ИТОГО) или из отдельного листа
         source_files = []
         seen_normalized = set()
         
-        # Сначала пробуем из SUMMARY (колонка G)
+        # Ищем SUMMARY
         summary_sheet = None
         for name in wb.sheetnames:
             if name.upper() == 'SUMMARY':
@@ -1070,17 +1079,23 @@ class PDFExporter:
                 break
         
         if summary_sheet:
-            sources_cell = summary_sheet.cell(row=2, column=7).value
-            if sources_cell:
-                for part in str(sources_cell).split(','):
-                    part = part.strip()
-                    if not part:
-                        continue
-                    base_name = os.path.splitext(part)[0]
-                    s_norm = base_name.lower().strip()
-                    if base_name and s_norm not in seen_normalized:
-                        source_files.append(base_name)
-                        seen_normalized.add(s_norm)
+            # Ищем SOURCES в колонке A (современный формат после ИТОГО)
+            for row_idx in range(1, summary_sheet.max_row + 1):
+                cell_val = summary_sheet.cell(row=row_idx, column=1).value
+                if cell_val is None:
+                    continue
+                cell_str = str(cell_val).strip()
+                if cell_str.upper() == 'SOURCES:':
+                    # Берём последнюю найденную строку SOURCES (полную)
+                    source_files = []  # Очищаем предыдущие
+                    col = 2
+                    while col <= summary_sheet.max_column:
+                        val = summary_sheet.cell(row=row_idx, column=col).value
+                        if val:
+                            source_files.append(str(val))
+                        col += 1
+                    print(f"[PDF] SOURCES найдены в Row {row_idx}: {source_files}")
+                    # Продолжаем искать - берём последнюю (полную) строку
         
         # Fallback: из отдельного листа SOURCES
         if not source_files:

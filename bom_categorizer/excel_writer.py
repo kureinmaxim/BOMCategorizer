@@ -870,11 +870,11 @@ def write_categorized_excel(
                         source_multipliers[norm] = [name, mult]
             break
     
-    # 2. Дополнительно из outputs
+    # 2. Дополнительно из outputs (ищем в нескольких колонках)
     for part_df in outputs.values():
         if part_df.empty:
             continue
-        for col in ['source_file', 'Источник']:
+        for col in ['source_file', 'Источник', 'источник']:
             if col in part_df.columns:
                 for idx, row in part_df.iterrows():
                     val = row.get(col)
@@ -886,6 +886,32 @@ def write_categorized_excel(
                         elif mult > source_multipliers[norm][1]:
                             source_multipliers[norm][1] = mult
                 break
+    
+    # 3. Если source_multipliers всё ещё пуст, пробуем собрать из имён входных файлов
+    # через колонку Источник в outputs (может содержать полный путь)
+    if not source_multipliers:
+        for part_df in outputs.values():
+            if part_df.empty:
+                continue
+            for col in part_df.columns:
+                col_lower = str(col).lower()
+                if 'источник' in col_lower or 'source' in col_lower:
+                    for val in part_df[col].dropna().unique():
+                        val_str = str(val).strip()
+                        if val_str:
+                            # Извлекаем имя файла
+                            for name in extract_file_names_for_sources(val_str):
+                                norm = name.lower().strip()
+                                if norm and norm not in source_multipliers:
+                                    source_multipliers[norm] = [name, 1]
+    
+    # Отладка: выводим найденные источники
+    if source_multipliers:
+        print(f"[SOURCES] Найдено источников: {len(source_multipliers)}")
+        for norm, (name, mult) in source_multipliers.items():
+            print(f"   - {name}" + (f" ({mult} шт.)" if mult > 1 else ""))
+    else:
+        print("[SOURCES] Источники не найдены в данных")
     
     # Служебные колонки, которые не должны записываться в Excel
     SERVICE_COLUMNS = ['source_multiplier']
@@ -986,9 +1012,17 @@ def write_categorized_excel(
         # Записываем SUMMARY лист
         if summary_rows:
             from openpyxl import load_workbook
-            from openpyxl.styles import Font, Alignment
+            from openpyxl.styles import Font, Alignment, Border, Side
             
             wb = load_workbook(output_xlsx)
+            
+            # Стиль границ
+            thin_border = Border(
+                left=Side(style='thin', color='000000'),
+                right=Side(style='thin', color='000000'),
+                top=Side(style='thin', color='000000'),
+                bottom=Side(style='thin', color='000000')
+            )
             
             # Создаем DataFrame для SUMMARY
             summary_df = pd.DataFrame(summary_rows)
@@ -1000,17 +1034,19 @@ def write_categorized_excel(
             # Создаем новый лист SUMMARY
             ws = wb.create_sheet("SUMMARY", 0)  # Вставляем в начало
             
-            # Записываем заголовки с жирным шрифтом
+            # Записываем заголовки с жирным шрифтом и границами
             header_font = Font(bold=True)
             for col_idx, col_name in enumerate(summary_df.columns, 1):
                 cell = ws.cell(row=1, column=col_idx, value=col_name)
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal='center', vertical='center')
+                cell.border = thin_border
             
-            # Записываем данные
+            # Записываем данные с границами
             for row_idx, row_data in enumerate(summary_df.values, 2):
                 for col_idx, value in enumerate(row_data, 1):
                     cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                    cell.border = thin_border
                     # Центрируем все ячейки, кроме "Категория"
                     if col_idx == 2:  # Колонка "Категория"
                         cell.alignment = Alignment(horizontal='left', vertical='center')
@@ -1026,18 +1062,31 @@ def write_categorized_excel(
             # Пустая строка перед ИТОГО
             total_row_idx += 1
             
-            # Записываем ИТОГО
+            # Записываем ИТОГО с границами
             bold_font = Font(bold=True)
-            ws.cell(row=total_row_idx, column=1, value='').font = bold_font
-            ws.cell(row=total_row_idx, column=2, value='ИТОГО:').font = bold_font
-            ws.cell(row=total_row_idx, column=2).alignment = Alignment(horizontal='right', vertical='center')
-            ws.cell(row=total_row_idx, column=3, value=grand_total_positions).font = bold_font
-            ws.cell(row=total_row_idx, column=3).alignment = Alignment(horizontal='center', vertical='center')
-            ws.cell(row=total_row_idx, column=4, value=grand_total_qty).font = bold_font
-            ws.cell(row=total_row_idx, column=4).alignment = Alignment(horizontal='center', vertical='center')
-            if grand_total_cost > 0:
-                ws.cell(row=total_row_idx, column=5, value=grand_total_cost).font = bold_font
-                ws.cell(row=total_row_idx, column=5).alignment = Alignment(horizontal='center', vertical='center')
+            cell = ws.cell(row=total_row_idx, column=1, value='')
+            cell.font = bold_font
+            cell.border = thin_border
+            
+            cell = ws.cell(row=total_row_idx, column=2, value='ИТОГО:')
+            cell.font = bold_font
+            cell.alignment = Alignment(horizontal='right', vertical='center')
+            cell.border = thin_border
+            
+            cell = ws.cell(row=total_row_idx, column=3, value=grand_total_positions)
+            cell.font = bold_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = thin_border
+            
+            cell = ws.cell(row=total_row_idx, column=4, value=grand_total_qty)
+            cell.font = bold_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = thin_border
+            
+            cell = ws.cell(row=total_row_idx, column=5, value=grand_total_cost if grand_total_cost > 0 else '')
+            cell.font = bold_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = thin_border
             
             # Добавляем SOURCES в конец SUMMARY
             if source_multipliers:
@@ -1045,7 +1094,7 @@ def write_categorized_excel(
                 
                 # Заголовок SOURCES
                 ws.cell(row=sources_row_idx, column=1, value='SOURCES:').font = bold_font
-                ws.cell(row=sources_row_idx, column=1).alignment = Alignment(horizontal='left', vertical='center')
+                ws.cell(row=sources_row_idx, column=1).alignment = Alignment(horizontal='center', vertical='center')
                 
                 # Сортируем по имени и записываем каждый источник
                 sorted_sources = sorted(source_multipliers.items(), key=lambda x: x[1][0].lower())
@@ -1059,7 +1108,7 @@ def write_categorized_excel(
                         cell_value = display_name
                     
                     cell = ws.cell(row=sources_row_idx, column=col, value=cell_value)
-                    cell.alignment = Alignment(horizontal='left', vertical='center')
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
                     # Автоширина для колонки (приблизительная)
                     ws.column_dimensions[cell.column_letter].width = max(
                         ws.column_dimensions[cell.column_letter].width or 0, 
