@@ -1566,6 +1566,62 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     
                     ostatki_df = _concat_parts(ostatki_parts)
                     zapas_df = _concat_parts(zapas_parts)
+
+                    # Нормализуем плоские отчёты для печати:
+                    # - убираем колонку "Стоимость" (не нужна в *_ostatki/_zapas)
+                    # - убираем служебные колонки вида "_..."
+                    # - склеиваем "ТУ" -> "ТУ/Производитель" (чтобы не было дублирования)
+                    def _normalize_flat_report_df(df: pd.DataFrame) -> pd.DataFrame:
+                        if df is None or df.empty:
+                            return pd.DataFrame()
+
+                        out = df.copy()
+
+                        # drop service/internal columns
+                        for c in list(out.columns):
+                            if str(c).strip().startswith('_'):
+                                out.drop(columns=[c], inplace=True, errors='ignore')
+
+                        # drop cost columns
+                        for c in list(out.columns):
+                            if 'стоимость' in str(c).strip().lower():
+                                out.drop(columns=[c], inplace=True, errors='ignore')
+
+                        # normalize common column names
+                        if 'Наименование ИВП' not in out.columns and 'Наименование' in out.columns:
+                            out.rename(columns={'Наименование': 'Наименование ИВП'}, inplace=True)
+
+                        # merge TU column into TU/Производитель
+                        if 'ТУ/Производитель' in out.columns and 'ТУ' in out.columns:
+                            try:
+                                a = out['ТУ/Производитель'].astype(str).str.strip()
+                                b = out['ТУ'].astype(str).str.strip()
+                                mask = a.eq('') & b.ne('')
+                                out.loc[mask, 'ТУ/Производитель'] = out.loc[mask, 'ТУ']
+                            except Exception:
+                                pass
+                            out.drop(columns=['ТУ'], inplace=True, errors='ignore')
+                        elif 'ТУ' in out.columns and 'ТУ/Производитель' not in out.columns:
+                            out.rename(columns={'ТУ': 'ТУ/Производитель'}, inplace=True)
+
+                        # prefer stable column order
+                        preferred = [
+                            '№ п/п', '№',
+                            'Наименование ИВП',
+                            'ТУ/Производитель',
+                            'шт.', 'шт',
+                            'КОД ERP(МР)', 'Код ERP',
+                            'Источник',
+                            'Примечание',
+                            '№ ТРУ',
+                        ]
+                        ordered = [c for c in preferred if c in out.columns]
+                        rest = [c for c in out.columns if c not in ordered]
+                        out = out[ordered + rest]
+                        return out
+
+                    ostatki_df = _normalize_flat_report_df(ostatki_df)
+                    zapas_df = _normalize_flat_report_df(zapas_df)
                     
                     ostatki_path = os.path.join(output_dir, f"{base_name}_ostatki.xlsx")
                     zapas_path = os.path.join(output_dir, f"{base_name}_zapas.xlsx")
@@ -1579,6 +1635,12 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             wb_o = load_workbook(ostatki_path)
                             ws_o = wb_o['Остатки']
                             apply_merge_styles(worksheet=ws_o, merged_rows=set(), name_col_idx=2, qty_col_idx=4, header_row=1)
+                            # Чуть корректируем ширины именно для "Остатки" (чтобы 3 цифры влезали без переноса)
+                            try:
+                                ws_o.column_dimensions['A'].width = max(ws_o.column_dimensions['A'].width or 0, 8)
+                                ws_o.column_dimensions['B'].width = max(ws_o.column_dimensions['B'].width or 0, 65)
+                            except Exception:
+                                pass
                             wb_o.save(ostatki_path)
                         except Exception:
                             pass
@@ -1605,6 +1667,12 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             wb_z = load_workbook(zapas_path)
                             ws_z = wb_z['Запас']
                             apply_merge_styles(worksheet=ws_z, merged_rows=set(), name_col_idx=2, qty_col_idx=4, header_row=1)
+                            # Чуть корректируем ширины именно для "Запас" (чтобы 3 цифры влезали без переноса)
+                            try:
+                                ws_z.column_dimensions['A'].width = max(ws_z.column_dimensions['A'].width or 0, 8)
+                                ws_z.column_dimensions['B'].width = max(ws_z.column_dimensions['B'].width or 0, 65)
+                            except Exception:
+                                pass
                             wb_z.save(zapas_path)
                         except Exception:
                             pass

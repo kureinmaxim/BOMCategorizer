@@ -687,10 +687,65 @@ class PDFExporter:
         # Определяем ширину колонок
         num_cols = len(data[0]) if data else 0
         page_width = self.page_size[0] - 20*mm  # Вычитаем отступы
+
+        # Спец-формат: плоские отчёты merge (_ostatki/_zapas) — делаем № шире (до 3 цифр без переноса),
+        # "Наименование" шире, и т.п. Стоимость в этих файлах отсутствует.
+        def _is_flat_merge_report() -> bool:
+            try:
+                title = (sheet_name or (sheet.title if sheet else '') or '').strip().lower()
+                if title in ['остатки', 'запас']:
+                    return True
+            except Exception:
+                pass
+            return False
+
+        def _header_cells() -> List[str]:
+            if not sheet or not hasattr(sheet, 'iter_rows'):
+                return []
+            try:
+                vals = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True))
+                return [str(v).strip().lower() if v is not None else '' for v in vals]
+            except Exception:
+                return []
+
+        flat_report = _is_flat_merge_report()
+        headers = _header_cells()
+        has_cost = any('стоимость' in h for h in headers)
+        has_tru = any('№ тру' in h or h == 'тру' for h in headers)
+        has_erp = any('код' in h or 'erp' in h for h in headers)
         
         # Индивидуальные ширины колонок в зависимости от содержимого
         # Структура BOM: №, Наименование ИВП, ТУ/Производитель, шт., Код ERP, Источник, Примечание, № ТРУ, Стоимость
-        if num_cols == 9:
+        if flat_report and has_tru and not has_cost:
+            # Плоские отчёты "Остатки/Запас" (без стоимости)
+            # Под A4 landscape: 277mm доступно
+            if num_cols == 8:
+                # №, Наименование, ТУ/Производитель, шт., Код ERP, Источник, Примечание, № ТРУ
+                col_widths = [
+                    9*mm,    # № (до 3 цифр без переноса)
+                    75*mm,   # Наименование — шире
+                    42*mm,   # ТУ/Производитель
+                    7*mm,    # шт.
+                    18*mm,   # Код ERP
+                    53*mm,   # Источник
+                    51*mm,   # Примечание
+                    22*mm    # № ТРУ
+                ]
+            elif num_cols == 7:
+                # Иногда нет одной из служебных колонок (напр. "Код ERP")
+                col_widths = [
+                    9*mm,    # №
+                    85*mm,   # Наименование
+                    45*mm,   # ТУ/Производитель
+                    7*mm,    # шт.
+                    60*mm,   # Источник
+                    55*mm,   # Примечание
+                    16*mm    # № ТРУ
+                ]
+            else:
+                col_width = page_width / num_cols if num_cols > 0 else 50*mm
+                col_widths = [col_width] * num_cols
+        elif num_cols == 9:
             # 9 колонок — оптимизировано для A4 landscape (277mm доступно)
             # Все заголовки должны помещаться в одну строку
             # Сумма: 6+45+33+8+16+50+45+25+24 = 252mm
