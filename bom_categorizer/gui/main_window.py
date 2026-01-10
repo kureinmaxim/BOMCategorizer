@@ -1260,8 +1260,22 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
         self.log_text.append(f"{'='*60}\n")
         self.log_text.append(f"📋 BOM файлов: {len(self.input_files)}")
         self.log_text.append(f"📋 ТРУ файлов: {len(self.tru_rkm_files)}\n")
-        
+
+        merge_progress = None
         try:
+            # Прогресс-окно: чтобы было видно, что приложение работает (и можно отменить между этапами)
+            from PySide6.QtWidgets import QProgressDialog, QApplication
+            from PySide6.QtCore import Qt
+
+            merge_progress = QProgressDialog("Подготовка объединения BOM + ТРУ...", "Отмена", 0, 0, self)
+            merge_progress.setWindowTitle("BOM + ТРУ")
+            merge_progress.setWindowModality(Qt.WindowModal)
+            merge_progress.setMinimumDuration(0)
+            merge_progress.setAutoClose(False)
+            merge_progress.setValue(0)
+            merge_progress.show()
+            QApplication.processEvents()
+
             # Для режима BOM+ТРУ используем ТОЛЬКО заранее обработанные ТРУ файлы *_tpy.xlsx
             # (в них стабильная структура колонок; исходные .xls могут давать ложные совпадения).
             invalid_tru = []
@@ -1282,12 +1296,27 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                 self.log_text.append("⚠️ Объединение остановлено: в списке ТРУ есть не обработанные файлы (не *_tpy.xlsx).")
                 for f in invalid_tru:
                     self.log_text.append(f"   • {f}")
+                if merge_progress:
+                    merge_progress.close()
                 return
 
             # 1. Читаем ТРУ файлы
             self.log_text.append("📖 Чтение ТРУ файлов...")
+            if merge_progress:
+                merge_progress.setRange(0, max(1, len(self.tru_rkm_files)))
+                merge_progress.setValue(0)
+                merge_progress.setLabelText("Чтение ТРУ файлов...")
+                QApplication.processEvents()
             tru_dfs = []
-            for tru_path in self.tru_rkm_files:
+            for i, tru_path in enumerate(self.tru_rkm_files, start=1):
+                if merge_progress and merge_progress.wasCanceled():
+                    merge_progress.close()
+                    self.log_text.append("⛔ Объединение отменено пользователем.")
+                    return
+                if merge_progress:
+                    merge_progress.setLabelText(f"Чтение ТРУ: {os.path.basename(tru_path)}")
+                    merge_progress.setValue(i)
+                    QApplication.processEvents()
                 tru_df = _read_tru_file(tru_path)
                 if tru_df is not None and not tru_df.empty:
                     tru_dfs.append(tru_df)
@@ -1297,13 +1326,27 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
             
             if not tru_dfs:
                 QMessageBox.warning(self, "Предупреждение", "Не удалось прочитать ни одного ТРУ файла")
+                if merge_progress:
+                    merge_progress.close()
                 return
             
             # 2. Читаем BOM файл(ы)
             self.log_text.append("\n📖 Чтение BOM файлов...")
+            if merge_progress:
+                merge_progress.setRange(0, 0)  # indeterminate пока не знаем число листов
+                merge_progress.setValue(0)
+                merge_progress.setLabelText("Чтение BOM файлов...")
+                QApplication.processEvents()
             
             for bom_path in list(self.input_files.keys()):
+                if merge_progress and merge_progress.wasCanceled():
+                    merge_progress.close()
+                    self.log_text.append("⛔ Объединение отменено пользователем.")
+                    return
                 self.log_text.append(f"   📄 {os.path.basename(bom_path)}")
+                if merge_progress:
+                    merge_progress.setLabelText(f"Чтение BOM: {os.path.basename(bom_path)}")
+                    QApplication.processEvents()
                 
                 # Определяем формат файла
                 ext = os.path.splitext(bom_path)[1].lower()
@@ -1314,6 +1357,16 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         all_sheets = pd.read_excel(bom_path, sheet_name=None, engine='openpyxl')
                     except:
                         all_sheets = pd.read_excel(bom_path, sheet_name=None)
+
+                    # Для этого BOM файла включаем шаговый прогресс
+                    if merge_progress:
+                        # +8 примерно на сохранение/отчеты/форматирование/PDF
+                        total_steps = max(10, len(all_sheets) + 8)
+                        merge_progress.setRange(0, total_steps)
+                        merge_progress.setValue(0)
+                        merge_progress.setLabelText("Обработка листов...")
+                        QApplication.processEvents()
+                        step = 0
                     
                     # Ищем колонку с наименованием
                     bom_name_col = None
@@ -1333,6 +1386,15 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     zapas_parts = []    # List[pd.DataFrame]
                     
                     for sheet_name, df in all_sheets.items():
+                        if merge_progress and merge_progress.wasCanceled():
+                            merge_progress.close()
+                            self.log_text.append("⛔ Объединение отменено пользователем.")
+                            return
+                        if merge_progress:
+                            step = min(step + 1, total_steps)
+                            merge_progress.setValue(step)
+                            merge_progress.setLabelText(f"Merge: {os.path.basename(bom_path)} → {sheet_name}")
+                            QApplication.processEvents()
                         # Ищем колонки
                         for col in df.columns:
                             col_lower = str(col).lower()
@@ -1382,6 +1444,11 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     
                     # 3. Генерируем отчет о несопоставленных ТРУ (один раз для всех листов)
                     from ..tru_merger import generate_unmatched_report
+                    if merge_progress:
+                        step = min(step + 1, total_steps)
+                        merge_progress.setValue(step)
+                        merge_progress.setLabelText("Отчёт: несопоставленные ТРУ...")
+                        QApplication.processEvents()
                     unmatched_tru = generate_unmatched_report(
                         tru_dfs=tru_dfs,
                         used_tru_indices=all_used_tru_indices
@@ -1478,6 +1545,11 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     output_path = os.path.join(output_dir, f"{base_name}_тру.xlsx")
                     
                     self.log_text.append(f"\n💾 Сохранение: {os.path.basename(output_path)}")
+                    if merge_progress:
+                        step = min(step + 1, total_steps)
+                        merge_progress.setValue(step)
+                        merge_progress.setLabelText(f"Сохранение: {os.path.basename(output_path)}")
+                        QApplication.processEvents()
                     
                     # Записываем в Excel
                     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
@@ -1516,6 +1588,11 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         try:
                             from ..pdf_exporter import export_bom_to_pdf
                             ostatki_pdf = os.path.splitext(ostatki_path)[0] + ".pdf"
+                            if merge_progress:
+                                step = min(step + 1, total_steps)
+                                merge_progress.setValue(step)
+                                merge_progress.setLabelText(f"PDF: {os.path.basename(ostatki_pdf)}")
+                                QApplication.processEvents()
                             export_bom_to_pdf(ostatki_path, ostatki_pdf, with_summary=False)
                             self.log_text.append(f"🖨️ PDF (остатки): {os.path.basename(ostatki_pdf)}")
                         except Exception as e:
@@ -1537,12 +1614,22 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         try:
                             from ..pdf_exporter import export_bom_to_pdf
                             zapas_pdf = os.path.splitext(zapas_path)[0] + ".pdf"
+                            if merge_progress:
+                                step = min(step + 1, total_steps)
+                                merge_progress.setValue(step)
+                                merge_progress.setLabelText(f"PDF: {os.path.basename(zapas_pdf)}")
+                                QApplication.processEvents()
                             export_bom_to_pdf(zapas_path, zapas_pdf, with_summary=False)
                             self.log_text.append(f"🖨️ PDF (запас): {os.path.basename(zapas_pdf)}")
                         except Exception as e:
                             self.log_text.append(f"⚠️ Не удалось создать PDF для запаса: {e}")
                     
                     # 4. Применяем стили к изменённым строкам
+                    if merge_progress:
+                        step = min(step + 1, total_steps)
+                        merge_progress.setValue(step)
+                        merge_progress.setLabelText("Форматирование результата...")
+                        QApplication.processEvents()
                     wb = load_workbook(output_path)
                     
                     # Проходим по ВСЕМ листам в merged_sheets, а не только по тем где были объединения
@@ -1790,6 +1877,8 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     self.log_text.append(f"   ⚠️ Формат {ext} пока не поддерживается для объединения")
             
             # Показываем диалог завершения
+            if merge_progress:
+                merge_progress.close()
             unmatched_msg = ""
             if unmatched_count > 0:
                 unmatched_msg = f"\nНесопоставленных элементов: {unmatched_count}\n(см. лист 'Несопоставленные ТРУ')"
@@ -1809,6 +1898,11 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
             import traceback
             error_msg = f"Ошибка при объединении: {str(e)}\n\n{traceback.format_exc()}"
             self.log_text.append(f"\n❌ {error_msg}")
+            try:
+                if merge_progress:
+                    merge_progress.close()
+            except Exception:
+                pass
             QMessageBox.critical(self, "Ошибка", error_msg)
     
     def start_bom_processing(self):
