@@ -713,77 +713,9 @@ class PDFExporter:
         has_cost = any('стоимость' in h for h in headers)
         has_tru = any('№ тру' in h or h == 'тру' for h in headers)
         has_erp = any('код' in h or 'erp' in h for h in headers)
-        
-        # Индивидуальные ширины колонок в зависимости от содержимого
-        # Структура BOM: №, Наименование ИВП, ТУ/Производитель, шт., Код ERP, Источник, Примечание, № ТРУ, Стоимость
-        if flat_report and has_tru and not has_cost:
-            # Плоские отчёты "Остатки/Запас" (без стоимости)
-            # Под A4 landscape: 277mm доступно
-            if num_cols == 8:
-                # №, Наименование, ТУ/Производитель, шт., Код ERP, Источник, Примечание, № ТРУ
-                col_widths = [
-                    9*mm,    # № (до 3 цифр без переноса)
-                    75*mm,   # Наименование — шире
-                    42*mm,   # ТУ/Производитель
-                    7*mm,    # шт.
-                    18*mm,   # Код ERP
-                    53*mm,   # Источник
-                    51*mm,   # Примечание
-                    22*mm    # № ТРУ
-                ]
-            elif num_cols == 7:
-                # Иногда нет одной из служебных колонок (напр. "Код ERP")
-                col_widths = [
-                    9*mm,    # №
-                    85*mm,   # Наименование
-                    45*mm,   # ТУ/Производитель
-                    7*mm,    # шт.
-                    60*mm,   # Источник
-                    55*mm,   # Примечание
-                    16*mm    # № ТРУ
-                ]
-            else:
-                col_width = page_width / num_cols if num_cols > 0 else 50*mm
-                col_widths = [col_width] * num_cols
-        elif num_cols == 9:
-            # 9 колонок — оптимизировано для A4 landscape (277mm доступно)
-            # Все заголовки должны помещаться в одну строку
-            # Сумма: 6+45+33+8+16+50+45+25+24 = 252mm
-            col_widths = [
-                6*mm,    # 1. № (минимальная)
-                45*mm,   # 2. Наименование ИВП
-                33*mm,   # 3. ТУ/Производитель
-                8*mm,    # 4. шт. (минимальная)
-                16*mm,   # 5. Код ERP (минимум для 8-значных значений)
-                50*mm,   # 6. Источник
-                45*mm,   # 7. Примечание
-                25*mm,   # 8. № ТРУ
-                24*mm    # 9. Стоимость (в одну строку)
-            ]
-        elif num_cols == 8:
-            # 8 колонок (без КОД ERP или другой колонки)
-            # Скорректировано: ТУ +10%, шт -50%, № -70%, № ТРУ -20%, Стоимость -40%
-            col_widths = [
-                6*mm,    # 1. № (было 10mm, -70%)
-                60*mm,   # 2. Наименование ИВП
-                44*mm,   # 3. ТУ/Производитель (+10%)
-                6*mm,    # 4. шт. (было 10mm, -50%)
-                50*mm,   # 5. Источник
-                45*mm,   # 6. Примечание
-                22*mm,   # 7. № ТРУ (было 23mm, -20%)
-                12*mm    # 8. Стоимость (было 16mm, -40%)
-            ]
-        elif num_cols == 7:
-            # Если 7 колонок (без стоимости или другого поля)
-            col_widths = [
-                8*mm,    # № п/п
-                65*mm,   # Наименование ИВП
-                50*mm,   # ТУ
-                50*mm,   # Источник
-                10*mm,   # шт.
-                50*mm,   # Примечание
-                18*mm    # № ТРУ
-            ]
+
+        # ВАЖНО: ниже ширины назначаются ЕДИНЫМ блоком (после определения is_rkm),
+        # чтобы не было конфликтов/перезаписи логики.
         is_rkm = False
         # Проверяем заголовки напрямую через openpyxl лист для надежности
         if sheet and hasattr(sheet, 'iter_rows'):
@@ -803,7 +735,116 @@ class PDFExporter:
         page_width = self.page_size[0] - 20*mm  # Вычитаем отступы (всего 277mm для A4 landscape)
         
         # Индивидуальные ширины колонок в зависимости от содержимого
-        if is_rkm:
+        def _compute_flat_merge_widths(headers_norm: List[str]) -> List[float]:
+            """
+            Ширины для листов "Остатки/Запас" считаем ПО ЗАГОЛОВКАМ, а не по позиции.
+            Так гарантируем, что:
+            - "шт." и "№ ТРУ" не переносятся
+            - "Код ERP" не становится самым широким
+            - свободное место уходит в "Наименование/Источник/Примечание"
+            """
+            if not headers_norm:
+                return []
+
+            # base widths (mm) — с небольшим "запасом" чтобы заголовки помещались в одну строку
+            def _key(h: str) -> str:
+                hh = (h or '').strip().lower()
+                if hh in ['№', '№ п/п', 'n']:
+                    return 'no'
+                if 'наименование' in hh:
+                    return 'name'
+                if 'ту/производ' in hh or hh == 'ту' or hh == 'ту/производитель':
+                    return 'tu'
+                if hh in ['шт.', 'шт', 'qty', 'количество', 'кол-во', 'кол.']:
+                    return 'qty'
+                if 'код' in hh or 'erp' in hh:
+                    return 'erp'
+                if 'источник' in hh:
+                    return 'src'
+                if 'примеч' in hh:
+                    return 'note'
+                if '№ тру' in hh or hh == 'тру':
+                    return 'tru'
+                return 'other'
+
+            base_mm = {
+                'no': 10,
+                'name': 90,
+                'tu': 52,
+                'qty': 10,   # чтобы "шт." не ломалось на "ш\nт."
+                'erp': 24,
+                'src': 64,
+                'note': 62,  # может переноситься — но ширина нужна чтобы заголовок был в одну строку
+                'tru': 26,   # чтобы "№ ТРУ" не ломалось на 2 строки
+                'other': 25,
+            }
+            min_mm = {
+                'no': 10,
+                'name': 70,
+                'tu': 42,
+                'qty': 10,
+                'erp': 22,
+                'src': 50,
+                'note': 45,
+                'tru': 24,
+                'other': 18,
+            }
+
+            keys = [_key(h) for h in headers_norm[:num_cols]]
+            widths = [base_mm.get(k, 25) * mm for k in keys]
+            mins = [min_mm.get(k, 18) * mm for k in keys]
+
+            # распределение свободного места
+            total = sum(widths)
+            if total < page_width:
+                extra = page_width - total
+                # Отдаём больше "Наименованию" и "Источнику", чуть меньше "Примечанию"/"ТУ"
+                weights = []
+                for k in keys:
+                    if k == 'name':
+                        weights.append(3.0)
+                    elif k == 'src':
+                        weights.append(2.2)
+                    elif k == 'note':
+                        weights.append(1.8)
+                    elif k == 'tu':
+                        weights.append(1.4)
+                    else:
+                        weights.append(0.6)
+                wsum = sum(weights) or 1.0
+                for i in range(len(widths)):
+                    widths[i] += extra * (weights[i] / wsum)
+                return widths
+
+            # если не влезли — ужимаем только гибкие колонки (name/src/note/tu/other) до минимальных
+            if total > page_width:
+                over = total - page_width
+                flex = [i for i, k in enumerate(keys) if k in ['name', 'src', 'note', 'tu', 'other']]
+                # сколько можно сжать без нарушения минималок
+                shrink_cap = sum(max(0.0, widths[i] - mins[i]) for i in flex)
+                if shrink_cap <= 0:
+                    # fallback: равномерно масштабируем всё
+                    scale = page_width / total
+                    return [w * scale for w in widths]
+                for i in flex:
+                    cap = max(0.0, widths[i] - mins[i])
+                    if cap <= 0:
+                        continue
+                    delta = over * (cap / shrink_cap)
+                    widths[i] = max(mins[i], widths[i] - delta)
+                return widths
+
+            return widths
+
+        if (not is_rkm) and flat_report and not has_cost:
+            # Остатки/Запас: ширины по заголовкам (устраняет баг с "Код ERP самый широкий")
+            computed = _compute_flat_merge_widths(headers)
+            if computed:
+                col_widths = computed
+            else:
+                col_width = page_width / num_cols if num_cols > 0 else 50*mm
+                col_widths = [col_width] * num_cols
+        elif is_rkm:
             if num_cols == 7:
                 # РКМ с колонкой "шт."
                 # №, Наименование, шт., Цена, Стоимость, Документы, Поставщик
