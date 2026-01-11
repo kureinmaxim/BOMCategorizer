@@ -42,6 +42,7 @@ offline-packages-linux/
 *.swo
 *~
 .DS_Store
+BOMCategorizer.code-workspace
 
 # Project specific
 # Executable files (too large for GitHub)
