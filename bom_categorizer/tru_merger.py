@@ -24,6 +24,45 @@ MERGED_NAME_FONT = Font(color='1a237e', bold=False)  # Тёмно-синий
 OLD_QTY_FONT = Font(color='FF0000')  # Красный для старого количества
 
 
+def normalize_erp_code_from_artikul(value) -> str:
+    """
+    Нормализует значение из колонки 'Артикул' в строковый ERP-код.
+    Важно: в исходных данных иногда встречаются текстовые значения (например, повтор заголовка 'Артикул'),
+    поэтому функция должна быть максимально безопасной и не выбрасывать исключения.
+
+    Правила:
+    - пусто/NaN -> ''
+    - 'Артикул' -> '' (повтор заголовка)
+    - '000123' -> '000123' (сохраняем ведущие нули)
+    - '123.0' / '123,0' -> '123'
+    - 'арт. 12345' -> '12345' (fallback на цифры)
+    """
+    if value is None or pd.isna(value):
+        return ''
+
+    s = str(value).strip()
+    if not s:
+        return ''
+
+    if s.lower() == 'артикул':
+        return ''
+
+    # если уже чистые цифры — возвращаем как есть (сохраняем ведущие нули)
+    if s.isdigit():
+        return s
+
+    # пробуем распарсить как число (поддержка запятой и NBSP)
+    s_num = s.replace('\u00A0', '').replace(' ', '').replace(',', '.')
+    try:
+        f = float(s_num)
+        if pd.isna(f):
+            return ''
+        return str(int(f))
+    except Exception:
+        m = re.search(r'\d+', s_num)
+        return m.group(0) if m else ''
+
+
 def normalize_for_matching(text: str) -> str:
     """
     Нормализует строку для сопоставления:
@@ -504,10 +543,112 @@ def merge_tru_into_bom(
     combined_tru = pd.concat(tru_dfs, ignore_index=True)
     
     if combined_tru.empty:
-        return result_df, merged_indices, pd.DataFrame()
+        return result_df, merged_indices, set()
     
     # Отслеживаем использованные индексы ТРУ
     used_tru_indices: Set[int] = set()
+
+    # --- Подготовка: группировка строк ТРУ по ключу, чтобы корректно суммировать позиции,
+    # которые встречаются в нескольких ТРУ (иначе лишнее уйдёт в *_ostatki).
+    if tru_article_col in combined_tru.columns:
+        combined_tru['_erp_code_norm'] = combined_tru[tru_article_col].map(normalize_erp_code_from_artikul)
+    else:
+        combined_tru['_erp_code_norm'] = ''
+
+    if tru_name_col in combined_tru.columns:
+        combined_tru['_pure_code'] = combined_tru[tru_name_col].map(lambda v: extract_pure_code(v))
+    else:
+        combined_tru['_pure_code'] = ''
+
+    code_groups: Dict[str, List[int]] = {}
+    pure_groups: Dict[str, List[int]] = {}
+    try:
+        for k, idxs in combined_tru.groupby('_erp_code_norm').groups.items():
+            if k and str(k).strip():
+                code_groups[str(k)] = list(idxs)
+    except Exception:
+        code_groups = {}
+    try:
+        for k, idxs in combined_tru.groupby('_pure_code').groups.items():
+            if k and str(k).strip():
+                pure_groups[str(k)] = list(idxs)
+    except Exception:
+        pure_groups = {}
+
+    def _safe_float(v) -> float:
+        if v is None or pd.isna(v):
+            return 0.0
+        if isinstance(v, (int, float)):
+            try:
+                return float(v)
+            except Exception:
+                return 0.0
+        s = str(v).strip()
+        if not s:
+            return 0.0
+        # если формат "15 (10)" -> берём первое число
+        m = re.match(r'^\s*(\d+(?:[.,]\d+)?)', s)
+        if m:
+            s = m.group(1)
+        s = s.replace('\u00A0', '').replace(' ', '').replace(',', '.')
+        try:
+            return float(s)
+        except Exception:
+            return 0.0
+
+    def _aggregate_tru_block(tru_indices: List[int], required_code: Optional[str]) -> Tuple[pd.DataFrame, float, float, str]:
+        """
+        Возвращает (df_block, total_qty, total_cost, joined_tru_numbers)
+        """
+        if not tru_indices:
+            return combined_tru.iloc[0:0], 0.0, 0.0, ''
+        block = combined_tru.loc[tru_indices]
+
+        # Если требуется конкретный код (ГВАТ/АМФИ/ИГНД/ДЕ...), оставляем только строки, где он присутствует
+        if required_code:
+            req = str(required_code).strip().lower().replace(' ', '')
+            try:
+                name_series = block.get(tru_name_col, pd.Series([''] * len(block), index=block.index))
+                keep = name_series.astype(str).str.lower().str.replace(' ', '', regex=False).str.contains(req, na=False)
+                block = block.loc[keep]
+            except Exception:
+                pass
+
+        # qty
+        qty_total = 0.0
+        if tru_qty_col in block.columns:
+            qty_total = float(block[tru_qty_col].map(_safe_float).sum())
+        elif 'Количество' in block.columns:
+            qty_total = float(block['Количество'].map(_safe_float).sum())
+
+        # cost: sum explicit costs when present; otherwise qty*price per row
+        cost_total = 0.0
+        for _, r in block.iterrows():
+            c_val = None
+            if tru_cost_col in r.index:
+                c_val = r.get(tru_cost_col, None)
+            elif 'Стоимость' in r.index:
+                c_val = r.get('Стоимость', None)
+            c_num = _safe_float(c_val)
+            if c_num > 0:
+                cost_total += c_num
+                continue
+            q = _safe_float(r.get(tru_qty_col, r.get('Количество', None)))
+            p = _safe_float(r.get('Цена', None))
+            if q > 0 and p > 0:
+                cost_total += q * p
+
+        # joined TRU numbers
+        tru_nums = ''
+        if '_tru_number' in block.columns:
+            try:
+                vals = [str(v).strip() for v in block['_tru_number'].tolist() if v and not pd.isna(v) and str(v).strip()]
+                uniq = sorted(set(vals))
+                tru_nums = '; '.join(uniq)
+            except Exception:
+                tru_nums = ''
+
+        return block, qty_total, cost_total, tru_nums
     
     # Убедимся что нужные колонки существуют в BOM
     if 'КОД ERP(МР)' not in result_df.columns:
@@ -560,23 +701,51 @@ def merge_tru_into_bom(
         merged_indices.add(idx)
         
         # Запоминаем индекс использованной строки ТРУ
-        if tru_match.name is not None:
+        # (важно: если позиция встречается в нескольких ТРУ, помечаем использованными ВСЕ такие строки,
+        # иначе "хвост" попадёт в *_zapas и/или создаст ложные *_ostatki по количеству)
+        matched_tru_block = None
+        tru_qty_num_agg = None
+        tru_cost_agg = None
+        tru_nums_joined = None
+
+        match_norm_code = ''
+        try:
+            if tru_article_col in tru_match.index:
+                match_norm_code = normalize_erp_code_from_artikul(tru_match.get(tru_article_col, None))
+        except Exception:
+            match_norm_code = ''
+
+        match_pure_code = ''
+        try:
+            if tru_match.name is not None and '_pure_code' in combined_tru.columns:
+                match_pure_code = str(combined_tru.at[tru_match.name, '_pure_code'] or '').strip()
+            elif tru_name_col in tru_match.index:
+                match_pure_code = str(extract_pure_code(tru_match.get(tru_name_col, '')) or '').strip()
+        except Exception:
+            match_pure_code = ''
+
+        group_indices: List[int] = []
+        if match_norm_code and match_norm_code in code_groups:
+            group_indices = code_groups.get(match_norm_code, [])
+        elif match_pure_code and match_pure_code in pure_groups:
+            group_indices = pure_groups.get(match_pure_code, [])
+        elif tru_match.name is not None:
+            group_indices = [tru_match.name]
+
+        matched_tru_block, tru_qty_num_agg, tru_cost_agg, tru_nums_joined = _aggregate_tru_block(group_indices, required_code)
+        if matched_tru_block is not None and not matched_tru_block.empty:
+            used_tru_indices.update(set(matched_tru_block.index))
+        elif tru_match.name is not None:
             used_tru_indices.add(tru_match.name)
         
         # 1. КОД ERP(МР) ← Артикул (без .0)
         if tru_article_col in tru_match.index:
-            article = tru_match[tru_article_col]
-            if article and not pd.isna(article):
-                # Убираем .0 для целых чисел
-                try:
-                    article_num = float(article)
-                    if article_num == int(article_num):
-                        article = str(int(article_num))
-                    else:
-                        article = str(article)
-                except (ValueError, TypeError):
-                    article = str(article)
-                result_df.at[idx, 'КОД ERP(МР)'] = article.strip()
+            article = tru_match.get(tru_article_col, None)
+            norm_code = normalize_erp_code_from_artikul(article)
+            if norm_code:
+                result_df.at[idx, 'КОД ERP(МР)'] = norm_code
+            elif article and not pd.isna(article):
+                result_df.at[idx, 'КОД ERP(МР)'] = str(article).strip()
         
         # 2. Стоимость ← Стоимость из ТРУ (или вычисляем как Количество × Цена)
         # Ищем колонку стоимости в tru_match
@@ -603,7 +772,13 @@ def merge_tru_into_bom(
             except (ValueError, TypeError):
                 pass
         
-        if cost_value is not None and not pd.isna(cost_value):
+        # Если есть агрегированная стоимость по нескольким ТРУ — используем её
+        if tru_cost_agg is not None and isinstance(tru_cost_agg, (int, float)) and tru_cost_agg > 0:
+            try:
+                result_df.at[idx, 'Стоимость'] = int(round(float(tru_cost_agg)))
+            except Exception:
+                result_df.at[idx, 'Стоимость'] = tru_cost_agg
+        elif cost_value is not None and not pd.isna(cost_value):
             try:
                 cost_num = int(round(float(cost_value)))  # Округляем до целого
                 result_df.at[idx, 'Стоимость'] = cost_num
@@ -611,20 +786,27 @@ def merge_tru_into_bom(
                 result_df.at[idx, 'Стоимость'] = cost_value
         
         # 3. № ТРУ ← из имени файла
-        if '_tru_number' in tru_match.index:
+        # Если позиция найдена сразу в нескольких ТРУ — сохраняем все номера
+        if tru_nums_joined:
+            result_df.at[idx, '№ ТРУ'] = tru_nums_joined
+        elif '_tru_number' in tru_match.index:
             tru_num = tru_match['_tru_number']
             if tru_num and not pd.isna(tru_num):
                 result_df.at[idx, '№ ТРУ'] = str(tru_num)
         
         # 4. Количество: TRU_qty (BOM_qty) если разное
-        if tru_qty_col in tru_match.index and bom_qty_col in result_df.columns:
-            tru_qty = tru_match[tru_qty_col]
+        if bom_qty_col in result_df.columns:
+            tru_qty = None
+            if tru_qty_num_agg is not None and isinstance(tru_qty_num_agg, (int, float)) and tru_qty_num_agg > 0:
+                tru_qty = tru_qty_num_agg
+            elif tru_qty_col in tru_match.index:
+                tru_qty = tru_match[tru_qty_col]
             bom_qty = bom_row.get(bom_qty_col, '')
             
             if tru_qty and not pd.isna(tru_qty):
                 try:
-                    tru_qty_num = float(tru_qty)
-                    bom_qty_num = float(bom_qty) if bom_qty and not pd.isna(bom_qty) else 0
+                    tru_qty_num = _safe_float(tru_qty)
+                    bom_qty_num = _safe_float(bom_qty) if bom_qty and not pd.isna(bom_qty) else 0
                     
                     if tru_qty_num != bom_qty_num and bom_qty_num > 0:
                         # Формат: "15 (10)" где 15 — из ТРУ, 10 — исходное
@@ -652,7 +834,7 @@ def merge_tru_into_bom(
         
         # Если после фильтрации ничего не осталось
         if unmatched_raw.empty:
-            return result_df, merged_indices, pd.DataFrame()
+            return result_df, merged_indices, used_tru_indices
         
         # Известные производители для извлечения
         known_manufacturers = [
@@ -758,40 +940,6 @@ def generate_unmatched_report(
                 return mfr, clean_name_mfr(name_str, mfr)
         return '', name
 
-    def artikul_to_erp_code(value) -> str:
-        """
-        Нормализует значение из колонки 'Артикул' в строковый ERP-код.
-        Важно: в исходных данных иногда встречаются текстовые значения (например, повтор заголовка 'Артикул'),
-        поэтому функция должна быть максимально безопасной и не выбрасывать исключения.
-        """
-        if value is None or pd.isna(value):
-            return ''
-
-        s = str(value).strip()
-        if not s:
-            return ''
-
-        # Частый кейс: "повторившаяся шапка" в середине данных
-        if s.lower() == 'артикул':
-            return ''
-
-        # Если уже чистые цифры — оставляем как есть (сохраняем ведущие нули)
-        if s.isdigit():
-            return s
-
-        # Пробуем распарсить как число (поддержка запятой как разделителя)
-        s_num = s.replace('\u00A0', '').replace(' ', '').replace(',', '.')
-        try:
-            f = float(s_num)
-            if pd.isna(f):
-                return ''
-            # По исторической логике: int(float(x)) (удаляем .0 и дробную часть)
-            return str(int(f))
-        except Exception:
-            # Фолбэк: вытаскиваем первую последовательность цифр
-            m = re.search(r'\d+', s_num)
-            return m.group(0) if m else ''
-
     # Объединяем ТРУ файлы
     dfs = []
     for df in tru_dfs:
@@ -830,7 +978,7 @@ def generate_unmatched_report(
         
         # Обработка артикула (КОД ERP)
         if 'Артикул' in unmatched_raw.columns:
-            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].map(artikul_to_erp_code)
+            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].map(normalize_erp_code_from_artikul)
         else:
             unmatched_tru['КОД ERP(МР)'] = ''
             

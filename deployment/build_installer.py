@@ -18,6 +18,8 @@ import subprocess
 import sys
 import json
 import re
+from datetime import datetime
+from typing import Optional, Tuple
 
 # Конфигурация
 TEMP_DIR = "temp_installer"
@@ -46,15 +48,84 @@ def read_version_from_config(config_file):
         return "Unknown"
 
 
+def _parse_semver(v: str):
+    """
+    Парсит X.Y.Z -> (X,Y,Z) или None если формат не поддерживается.
+    """
+    if not isinstance(v, str):
+        return None
+    m = re.match(r'^\s*(\d+)\.(\d+)\.(\d+)\s*$', v)
+    if not m:
+        return None
+    return int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+
+def _load_json(path: str) -> Optional[dict]:
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"⚠️  Ошибка чтения JSON {path}: {e}")
+        return None
+
+
+def _choose_build_app_info(template_path: str, local_path: str) -> Tuple[dict, str]:
+    """
+    Возвращает (sanitized_config_for_installer, chosen_version).
+
+    Правило:
+    - за основу берём шаблон (без ключей),
+    - но если в локальном config версия отличается и выглядит как semver —
+      используем её для сборки и подставляем в app_info в копию шаблона.
+
+    Это убирает рассинхрон: установленное приложение показывает версию из config_qt.json,
+    а сборка раньше печатала версию из config_qt.json.template.
+    """
+    template_cfg = _load_json(template_path) or {}
+    local_cfg = _load_json(local_path) or {}
+
+    tpl_ver = (template_cfg.get("app_info") or {}).get("version", "Unknown")
+    loc_ver = (local_cfg.get("app_info") or {}).get("version", "Unknown")
+
+    chosen_ver = tpl_ver
+    if loc_ver != "Unknown" and _parse_semver(loc_ver):
+        if tpl_ver == "Unknown" or loc_ver != tpl_ver:
+            chosen_ver = loc_ver
+
+    # Берём шаблон как основу (чтобы не утащить секреты), но синхронизируем app_info поля
+    sanitized = json.loads(json.dumps(template_cfg)) if template_cfg else {"app_info": {}}
+    if "app_info" not in sanitized or not isinstance(sanitized["app_info"], dict):
+        sanitized["app_info"] = {}
+
+    # version
+    sanitized["app_info"]["version"] = chosen_ver
+
+    # даты: стараемся взять из локального конфига (если есть), иначе — из шаблона/сегодня
+    loc_app = local_cfg.get("app_info") or {}
+    tpl_app = template_cfg.get("app_info") or {}
+    sanitized["app_info"]["release_date"] = loc_app.get("release_date") or tpl_app.get("release_date") or datetime.now().strftime("%d.%m.%Y")
+    sanitized["app_info"]["last_updated"] = loc_app.get("last_updated") or tpl_app.get("last_updated") or datetime.now().strftime("%Y-%m-%d")
+
+    if chosen_ver != tpl_ver and tpl_ver != "Unknown":
+        # Keep ASCII-only: Windows consoles may use cp1251 and choke/garble Unicode
+        print(f"[INFO] Build version from {local_path}: {tpl_ver} -> {chosen_ver} (template: {template_path})")
+
+    return sanitized, chosen_ver
+
+
 def get_editions():
     """
     Возвращает словарь редакций для меню.
 
-    Источник правды по версии — ТОЛЬКО шаблоны config/*.template.
-    Это исключает ситуацию, когда версия "понижается" из-за старого локального config_qt.json.
+    По умолчанию версия берётся из шаблонов config/*.template (они безопасны для инсталлятора),
+    но если локальный config (config.json/config_qt.json) имеет другую semver-версию,
+    то для сборки используем локальную версию, чтобы инсталлятор и установленное приложение
+    показывали одинаковую версию.
     """
-    standard_version = read_version_from_config("config/config.json.template")
-    modern_version = read_version_from_config("config/config_qt.json.template")
+    _, standard_version = _choose_build_app_info("config/config.json.template", "config.json")
+    _, modern_version = _choose_build_app_info("config/config_qt.json.template", "config_qt.json")
 
     return {
         "1": {
@@ -353,10 +424,20 @@ def main():
     # Это гарантирует, что ваши настроенные ключи НЕ попадут в инсталлятор
     template_config = edition.get('config_template', f"config/{edition['config']}.template")
     
-    print(f"\nКопирую шаблон {template_config} -> config.json (без ваших ключей)...")
+    print(f"\nГотовлю config.json для инсталлятора на основе шаблона {template_config} (без ваших ключей)...")
     if os.path.exists(template_config):
-        shutil.copy2(template_config, os.path.join(TEMP_DIR, 'config.json'))
-        print(f"[OK] {template_config} -> config.json (чистый шаблон)")
+        # Берём шаблон и синхронизируем в нём app_info под версию, которую показывают локальные config
+        # (чтобы не было ситуации: установлено v5.5.4, а сборка печатает v5.5.3).
+        sanitized_cfg, chosen_ver = _choose_build_app_info(template_config, edition['config'])
+        out_path = os.path.join(TEMP_DIR, 'config.json')
+        try:
+            with open(out_path, 'w', encoding='utf-8') as f:
+                json.dump(sanitized_cfg, f, ensure_ascii=False, indent=2)
+                f.write('\n')
+            print(f"[OK] {template_config} -> config.json (чистый шаблон, v{chosen_ver})")
+        except Exception as e:
+            print(f"[ERROR] Не удалось записать {out_path}: {e}")
+            return 1
     elif os.path.exists(edition['config']):
         # Fallback: если шаблона нет, используем текущий конфиг
         print(f"[WARN] Шаблон {template_config} не найден, использую {edition['config']}")
@@ -365,7 +446,7 @@ def main():
     else:
         print(f"[ERROR] Файл конфигурации не найден!")
         return 1
-    print(f"[OK] Конфигурация готова")
+    print(f"[OK] Конфигурация для инсталлятора готова")
     
     # Копируем правильный файл запуска
     print(f"Копирую {edition['app_file']} -> app.py...")
