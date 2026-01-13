@@ -95,6 +95,68 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
     Читает один ТРУ файл и возвращает сырой DataFrame с нужными колонками.
     Поддерживает форматы .xls и .xlsx, ищет колонки по названию.
     """
+    def _drop_tru_noise_rows(df_in: pd.DataFrame) -> pd.DataFrame:
+        """
+        Удаляет "мусорные" строки, которые иногда встречаются внутри ТРУ:
+        - повтор заголовков посередине таблицы (например, строка где Артикул='Артикул', Наименование='Наименование', ...)
+        - строки итогов (ИТОГО)
+
+        Это важно, т.к. такие строки потом ломают конвертацию типов и матчинг.
+        """
+        if df_in is None or df_in.empty:
+            return df_in
+
+        df = df_in.copy()
+
+        def norm(v) -> str:
+            if v is None or pd.isna(v):
+                return ""
+            return str(v).strip().lower()
+
+        # Список канонических заголовков, которые могут повторяться строкой данных
+        canon = {
+            'Артикул': 'артикул',
+            'Наименование': 'наименование',
+            'Количество': 'количество',
+            'Цена': 'цена',
+            'Стоимость': 'стоимость',
+            'Ответственные': 'ответственные',
+        }
+
+        # Предикат: строка похожа на повтор заголовков
+        def is_header_repeat(row) -> bool:
+            hits = 0
+            for col, canon_name in canon.items():
+                if col in df.columns:
+                    if norm(row.get(col, "")) == canon_name:
+                        hits += 1
+            # Достаточно 2 совпадений, но если "Артикул" совпал — это почти наверняка заголовок
+            if 'Артикул' in df.columns and norm(row.get('Артикул', "")) == canon['Артикул']:
+                return True
+            return hits >= 2
+
+        # Предикат: строка итогов
+        def is_total_row(row) -> bool:
+            # ИТОГО может встречаться в разных колонках, чаще в Наименовании/Артикуле
+            for col in ['Артикул', 'Наименование']:
+                if col in df.columns and norm(row.get(col, "")).startswith('итого'):
+                    return True
+            return False
+
+        mask_repeat = df.apply(is_header_repeat, axis=1) if len(df) else pd.Series([], dtype=bool)
+        mask_total = df.apply(is_total_row, axis=1) if len(df) else pd.Series([], dtype=bool)
+
+        # Также удалим полностью пустые строки (все ключевые поля пустые)
+        key_cols = [c for c in ['Артикул', 'Наименование', 'Количество', 'Цена', 'Стоимость'] if c in df.columns]
+        if key_cols:
+            # applymap() deprecated in pandas 2.2+, use per-column Series.map instead
+            mask_blank = df[key_cols].apply(lambda s: s.map(lambda v: norm(v) == "")).all(axis=1)
+        else:
+            mask_blank = pd.Series([False] * len(df))
+
+        df = df.loc[~(mask_repeat | mask_total | mask_blank)].reset_index(drop=True)
+        return df
+
     try:
         ext = os.path.splitext(input_path)[1].lower()
         
@@ -169,8 +231,8 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
                 result_df['Стоимость'] = data_df.iloc[:, 9] if data_df.shape[1] > 9 else ''
                 result_df['_group_resp'] = data_df.iloc[:, 14].fillna('') if data_df.shape[1] > 14 else ''
                 result_df['_code_resp'] = data_df.iloc[:, 16].fillna('') if data_df.shape[1] > 16 else ''
-                
-                return result_df
+
+                return _drop_tru_noise_rows(result_df)
             else:
                 return None
         
@@ -183,8 +245,8 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
         result_df['Стоимость'] = df[col_mapping['Стоимость']] if 'Стоимость' in col_mapping else ''
         result_df['_group_resp'] = ''
         result_df['_code_resp'] = ''
-        
-        return result_df
+
+        return _drop_tru_noise_rows(result_df)
         
     except Exception as e:
         print(f"Ошибка чтения {input_path}: {e}")

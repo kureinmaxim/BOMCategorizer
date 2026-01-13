@@ -758,6 +758,40 @@ def generate_unmatched_report(
                 return mfr, clean_name_mfr(name_str, mfr)
         return '', name
 
+    def artikul_to_erp_code(value) -> str:
+        """
+        Нормализует значение из колонки 'Артикул' в строковый ERP-код.
+        Важно: в исходных данных иногда встречаются текстовые значения (например, повтор заголовка 'Артикул'),
+        поэтому функция должна быть максимально безопасной и не выбрасывать исключения.
+        """
+        if value is None or pd.isna(value):
+            return ''
+
+        s = str(value).strip()
+        if not s:
+            return ''
+
+        # Частый кейс: "повторившаяся шапка" в середине данных
+        if s.lower() == 'артикул':
+            return ''
+
+        # Если уже чистые цифры — оставляем как есть (сохраняем ведущие нули)
+        if s.isdigit():
+            return s
+
+        # Пробуем распарсить как число (поддержка запятой как разделителя)
+        s_num = s.replace('\u00A0', '').replace(' ', '').replace(',', '.')
+        try:
+            f = float(s_num)
+            if pd.isna(f):
+                return ''
+            # По исторической логике: int(float(x)) (удаляем .0 и дробную часть)
+            return str(int(f))
+        except Exception:
+            # Фолбэк: вытаскиваем первую последовательность цифр
+            m = re.search(r'\d+', s_num)
+            return m.group(0) if m else ''
+
     # Объединяем ТРУ файлы
     dfs = []
     for df in tru_dfs:
@@ -796,9 +830,7 @@ def generate_unmatched_report(
         
         # Обработка артикула (КОД ERP)
         if 'Артикул' in unmatched_raw.columns:
-            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].apply(
-                lambda x: str(int(float(x))) if pd.notna(x) and str(x).strip() != '' else ''
-            ).values
+            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].map(artikul_to_erp_code)
         else:
             unmatched_tru['КОД ERP(МР)'] = ''
             
@@ -955,8 +987,12 @@ def apply_merge_styles(
         'шт': 8,
         'код erp(мр)': 15,
         'код erp': 15,
-        'источник': 25,
-        'примечание': 25,
+        # Эти колонки часто содержат длинные значения (списки файлов/позиций),
+        # поэтому делаем шире, чтобы не резало при печати/PDF.
+        'источник': 40,
+        'примечание': 30,
+        'документы': 49,
+        'поставщик': 32,
         '№ тру': 20,
         'стоимость': 15
     }
@@ -977,5 +1013,5 @@ def apply_merge_styles(
                 if cell_val:
                     max_length = max(max_length, len(str(cell_val)))
             
-            adjusted_width = min(max_length + 2, 60)  # Max 60 символов
+            adjusted_width = min(max_length + 2, 80)  # Max 80 символов (для длинных "Документы/Источник")
             worksheet.column_dimensions[column_letter].width = max(adjusted_width, 8)  # Min 8

@@ -1622,6 +1622,36 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
 
                     ostatki_df = _normalize_flat_report_df(ostatki_df)
                     zapas_df = _normalize_flat_report_df(zapas_df)
+
+                    # === Фильтр "наши разработки" для *_ostatki / *_zapas ===
+                    # В остатки/запас не должны попадать позиции с нашими ТУ-кодами (ГВАТ/ИГНД/АМФИ/ДЕ),
+                    # т.к. они не закупаются по ТРУ и создают шум.
+                    def _drop_our_developments(df: pd.DataFrame) -> pd.DataFrame:
+                        if df is None or df.empty:
+                            return pd.DataFrame()
+                        out = df.copy()
+                        # Основной источник этих кодов — колонка ТУ/Производитель (или ТУ)
+                        candidates = []
+                        for c in ['ТУ/Производитель', 'ТУ', 'ту/производитель', 'ту']:
+                            if c in out.columns:
+                                candidates.append(c)
+                        if not candidates:
+                            return out
+                        # Важно: используем non-capturing group (?:...), чтобы pandas не ругался на match groups
+                        pat = r'\b(?:гват|амфи|игнд)\.\d+(?:\.\d+)+\b|\bде\s*\d+(?:\.\d+){0,3}\b'
+                        mask = False
+                        for c in candidates:
+                            try:
+                                m = out[c].astype(str).str.contains(pat, flags=re.IGNORECASE, regex=True, na=False)
+                                mask = m if mask is False else (mask | m)
+                            except Exception:
+                                continue
+                        if mask is False:
+                            return out
+                        return out.loc[~mask].reset_index(drop=True)
+
+                    ostatki_df = _drop_our_developments(ostatki_df)
+                    zapas_df = _drop_our_developments(zapas_df)
                     
                     ostatki_path = os.path.join(output_dir, f"{base_name}_ostatki.xlsx")
                     zapas_path = os.path.join(output_dir, f"{base_name}_zapas.xlsx")
