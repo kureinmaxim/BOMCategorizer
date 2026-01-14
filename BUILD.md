@@ -1,186 +1,221 @@
-# ⚙️ Инструкция по сборке и релизу
+# ⚙️ Сборка и релиз (BOM Categorizer)
 
-Этот документ описывает полный цикл подготовки релиза: от обновления версии до создания инсталляторов.
+Этот документ — **практический чек‑лист**: как поднять версию, синхронизировать файлы и собрать инсталляторы под Windows/macOS.
 
-> **Быстрый старт (Makefile):**
-> ```bash
-> make help              # Показать все доступные команды
-> make version-status    # Проверить текущие версии
-> make version-sync      # Синхронизировать версии
-> make build-macos       # Собрать macOS DMG
-> make run-qt            # Запустить Modern Edition
-> ```
->
-> **Альтернативный способ (без Makefile):**
-> *   **Windows:** `python deployment/build_installer.py`
-> *   **macOS:** `./deployment/build_macos.sh` (не `/deployment/...` — это разные пути!)
-> *   **Версии:** `python3 tools/update_version.py status`
->
-> ⚠️ **macOS:** Используйте `python3` вместо `python` для всех команд.
+> Подробная теория версионирования: `VERSION_MANAGEMENT.md`  
+> Создание GitHub релиза: `CREATE_GIT_RELEASE.md`
 
 ---
 
-## 🔄 1. Управление версиями (Versioning)
+## ✅ Быстрый старт
 
-В проекте используется **централизованная система версий**. 
-Единственный источник правды — это **шаблоны конфигурации**.
+### Через Makefile (если доступен)
 
-### 📂 Где хранятся версии?
-*   **Standard Edition:** `config/config.json.template`
-*   **Modern Edition:** `config/config_qt.json.template`
+```bash
+make help              # показать команды
+make version-status    # проверить версии
+make version-sync      # sync (локальные config/iss/build meta)
+make build-macos       # собрать macOS DMG
+make run-qt            # запустить Modern Edition (из репозитория)
+```
 
-> ⚠️ **Важно:** Никогда не меняйте версию вручную в локальных файлах `config.json` или `.iss`. Используйте утилиту `tools/update_version.py`.
+### Без Makefile
 
-### 🛠 Пошаговый процесс обновления
+- **Windows**: `python deployment/build_installer.py`
+- **macOS**: `./deployment/build_macos.sh` (важно именно `./`, не `/deployment/...`)
+- **Версии**: `python tools/update_version.py status` / `python3 tools/update_version.py status`
 
-#### Шаг 1: Проверка текущего статуса
-Перед началом работы проверьте, синхронизированы ли версии.
+> ⚠️ **macOS:** используйте `python3` вместо `python`.
+
+---
+
+## 🔄 1) Управление версиями (Versioning)
+
+### Источник правды
+
+Версии хранятся **только** в шаблонах:
+- **Standard Edition**: `config/config.json.template`
+- **Modern Edition**: `config/config_qt.json.template`
+
+> ⚠️ Не меняйте версию вручную в `config.json` / `config_qt.json` / `*.iss`.  
+> Используйте `scripts/bump_version.py` или `tools/update_version.py`.
+
+---
+
+### Проверить статус версий
 
 ```bash
 # Windows
 python tools/update_version.py status
 
-# macOS / Linux
+# macOS/Linux
 python3 tools/update_version.py status
 ```
-*Если есть расхождения, скрипт предложит выполнить синхронизацию.*
-
-#### Шаг 2: Установка новой версии
-Используйте команду `set` для обновления версии. Скрипт автоматически обновит шаблоны, дату релиза и синхронизирует все файлы.
-
-```bash
-# Обновить только Modern Edition
-python3 tools/update_version.py set modern 4.5.0
-
-# Обновить только Standard Edition
-python3 tools/update_version.py set standard 3.5.0
-
-# Обновить обе версии сразу (рекомендуется для мажорных релизов)
-python3 tools/update_version.py set both 5.0.0
-```
-
-#### Шаг 3: Синхронизация (если нужно)
-Команда `set` делает это автоматически, но если вы скачали обновления из Git, выполните:
-
-```bash
-python3 tools/update_version.py sync
-```
-**Что делает sync:**
-1.  Обновляет локальные `config.json` / `config_qt.json` (не трогая ваши настройки).
-2.  Обновляет файлы инсталлятора `deployment/installer_clean.iss` и `deployment/installer_qt.iss`.
-3.  Обновляет захардкоженные версии в Python коде.
 
 ---
 
-## 📦 2. Сборка инсталляторов (Build)
+### Поднять/установить версию
 
-После того как версии обновлены, можно приступать к сборке.
+#### Вариант A (рекомендуется): `bump_version.py`
 
-### 🪟 Windows
+```bash
+# macOS/Linux
+python3 scripts/bump_version.py --bump patch
 
-Для сборки используется скрипт `deployment/build_installer.py`, который автоматически управляет компилятором Inno Setup.
+# Windows
+python scripts/bump_version.py --bump patch
+```
 
-**Запуск:**
+#### Вариант B: `update_version.py set`
+
+```bash
+# Modern Edition
+python3 tools/update_version.py set modern 5.5.3
+
+# Standard Edition
+python3 tools/update_version.py set standard 3.3.0
+
+# обе редакции
+python3 tools/update_version.py set both 5.0.0
+```
+
+---
+
+### Синхронизировать файлы перед сборкой
+
+Команда:
+
+```bash
+# Windows
+python tools/update_version.py sync
+
+# macOS/Linux
+python3 tools/update_version.py sync
+```
+
+Что делает `sync`:
+- обновляет **локальные** `config.json` / `config_qt.json` (только `app_info` / `app_id`, личные настройки не трогает)
+- обновляет `deployment/installer_clean.iss` и `deployment/installer_qt.iss`
+- обновляет захардкоженные fallback‑версии в коде (где применимо)
+- генерирует `bom_categorizer/_build_meta.json` (git/время сборки для UI “О приложении”, **не коммитится**)
+
+---
+
+## 📦 2) Сборка инсталляторов (Build)
+
+### 🪟 Windows (Inno Setup)
+
+Запуск:
+
 ```powershell
 python deployment/build_installer.py
 ```
 
-> 💡 **Примечание:** На Windows обычно работает команда `python`, но если нет — используйте `python3` или `py`.
+Что происходит:
+- выбор редакции (Standard / Modern)
+- сбор временной папки `temp_installer`
+- запуск Inno Setup Compiler
+- готовый `.exe` появляется в корне проекта
 
-**Процесс:**
-1.  Скрипт спросит, какую версию собирать (1 - Standard, 2 - Modern).
-2.  Создаст временную папку `temp_installer`.
-3.  Скопирует туда код, зависимости и документацию.
-4.  Запустит Inno Setup Compiler.
-5.  Готовый `.exe` появится в корне проекта.
+Результат:
+- `BOMCategorizerModernSetup.exe` или `BOMCategorizerSetup.exe`
 
-> **Результат:** `BOMCategorizerModernSetup.exe` или `BOMCategorizerSetup.exe`
+---
 
-### 🍎 macOS
+### 🍎 macOS (DMG + py2app)
 
-Для сборки используется скрипт `deployment/build_macos.sh`, который создает `.dmg` образ.
+Рекомендуемый запуск:
 
-**Запуск (рекомендуется):**
 ```bash
 make build-macos
 ```
 
-**Или напрямую:**
-```bash
-# Важно: используйте ./ в начале (относительный путь)
-./deployment/build_macos.sh
+Или напрямую:
 
-# ❌ НЕ используйте абсолютный путь:
-# /deployment/build_macos.sh  — это ошибка!
+```bash
+./deployment/build_macos.sh
 ```
 
-**Процесс:**
-1.  Скрипт автоматически синхронизирует версии.
-2.  Спросит, какую версию собирать (Standard/Modern).
-3.  Запустит `py2app` для создания `.app` бандла.
-4.  Упакует `.app` в `.dmg` образ.
+> ⚠️ Не используйте `/deployment/build_macos.sh` — это другой путь.
 
-> **Результат:** `BOMCategorizer-5.5.1-macOS-Modern.dmg`
+Что происходит:
+- выполняется `tools/update_version.py sync`
+- выбор редакции (Standard / Modern)
+- сборка `.app` через `py2app`
+- упаковка `.app` в `.dmg`
+
+Результат (пример):
+- `BOMCategorizer-X.Y.Z-macOS-Modern.dmg`
 
 ---
 
-## 🚀 3. Публикация (Release)
+## 🚀 3) Релиз (GitHub)
 
-Рекомендуемый workflow для создания релиза на GitHub:
+Рекомендуемый порядок:
 
-1.  **Подготовка:**
-    ```bash
-    python3 tools/update_version.py status  # Проверяем, что все чисто
-    ```
+1) **Проверка**
 
-2.  **Обновление:**
-    ```bash
-    python3 tools/update_version.py set modern 4.5.0
-    ```
+```bash
+python3 tools/update_version.py status
+```
 
-3.  **Сборка:**
-    ```bash
-    python deployment/build_installer.py  # Собираем Windows
-    ./deployment/build_macos.sh           # Собираем macOS (если есть Mac)
-    ```
+2) **Поднять версию** (`bump_version.py` или `update_version.py set`)
 
-4.  **Git Commit:**
-    ```bash
-    git add config/config_qt.json.template config/config.json.template
-    git add deployment/installer_qt.iss deployment/installer_clean.iss
-    git commit -m "Release: v4.5.0"
-    git tag v4.5.0
-    git push origin main --tags
-    ```
+3) **Синхронизация**
 
-5.  **GitHub Release:**
-    Загрузите созданные `.exe` и `.dmg` файлы в новый релиз на GitHub.
+```bash
+python3 tools/update_version.py sync
+```
+
+4) **Коммит + тег**
+
+```bash
+git add config/ deployment/ tools/ bom_categorizer/
+git commit -m "Release: vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags
+```
+
+5) **Сборка артефактов** (`.exe` / `.dmg`) и загрузка в GitHub Release  
+См. `CREATE_GIT_RELEASE.md`.
 
 ---
 
 ## 🐛 Устранение неполадок
 
-### ❌ Ошибка "Inno Setup не найден"
-Скрипт ищет компилятор в `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`.
-Если у вас другой путь, отредактируйте `deployment/build_installer.py`:
-```python
-INNO_SETUP_PATH = r"D:\Apps\Inno Setup 6\ISCC.exe"
+### ❌ Inno Setup не найден
+
+По умолчанию ожидается:
+- `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`
+
+Если путь другой — настройте его в `deployment/build_installer.py`.
+
+---
+
+### ❌ Ошибка с PySide6 / offline_packages
+
+Если сборка Modern Edition ругается на зависимости:
+- удалите `offline_packages`
+- повторите сборку (скрипт попробует скачать пакеты)
+
+Ручная загрузка (пример для Windows):
+
+```powershell
+pip download PySide6 -d offline_packages --platform win_amd64 --python-version 313 --only-binary=:all:
 ```
 
-### ❌ Ошибка "PySide6 не найден" в offline_packages
-Если при сборке Modern Edition возникает ошибка с зависимостями:
-1.  Удалите папку `offline_packages`.
-2.  Запустите сборку заново — скрипт попытается скачать пакеты.
-3.  Или скачайте вручную:
-    ```powershell
-    pip download PySide6 -d offline_packages --platform win_amd64 --python-version 313 --only-binary=:all:
-    ```
+---
 
-### ❌ Версии рассинхронизировались
-Если `status` показывает красные предупреждения:
-1.  Запустите `python3 tools/update_version.py sync`.
-2.  Это принудительно приведет все файлы к состоянию шаблонов.
+### ❌ Версии “разъехались”
 
-### ❌ Ошибка "command not found: python" (macOS)
-На macOS Python 3 доступен как `python3`, а не `python`.
-Замените `python` на `python3` во всех командах.
+```bash
+python3 tools/update_version.py status
+python3 tools/update_version.py sync
+```
+
+---
+
+### ❌ macOS: `command not found: python`
+
+На macOS используйте `python3`.
+

@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .main_window import BOMCategorizerMainWindow
 
 from ..component_database import get_database_stats, get_database_path
+from ..shared.app_metadata import get_app_meta_for_ui, format_app_tooltip
 
 
 def create_main_section(window: 'BOMCategorizerMainWindow') -> QGroupBox:
@@ -558,7 +559,19 @@ def create_footer(window: 'BOMCategorizerMainWindow') -> QWidget:
 
     dev_layout.addStretch()
 
-    date_label = QLabel(f"Дата: {window.cfg.get('app_info', {}).get('release_date', 'N/A')}")
+    # Дата/версия/сборка - кликабельный About (берем данные из шаблонов+build_meta,
+    # а не из пользовательского конфига, который может быть старым после обновлений)
+    from .main_window import get_config_path
+    meta = get_app_meta_for_ui(window.cfg, edition="modern")
+    hhmm = meta.get("build_hhmm")
+    version = meta.get("version", "dev")
+    release_date = meta.get("release_date", "N/A")
+    suffix = f" {hhmm}" if hhmm else ""
+    date_label = QLabel(f"Дата: {release_date}{suffix}  v{version}")
+    date_label.setStyleSheet("QLabel { color: #89b4fa; font-weight: bold; } QLabel:hover { color: #74c7ec; }")
+    date_label.setCursor(Qt.PointingHandCursor)
+    date_label.setToolTip(format_app_tooltip(meta, config_path=get_config_path()))
+    date_label.mousePressEvent = lambda event: window.on_show_app_info()
     dev_layout.addWidget(date_label)
 
     layout.addLayout(dev_layout)
@@ -604,7 +617,6 @@ def create_footer(window: 'BOMCategorizerMainWindow') -> QWidget:
 
     info_layout.addStretch()
 
-    from .main_window import get_config_path
     import platform
     config_path = get_config_path()
     db_path = get_database_path()

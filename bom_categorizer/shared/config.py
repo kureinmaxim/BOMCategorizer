@@ -140,7 +140,7 @@ def _get_fallback_config(config_name: str) -> dict:
     if "qt" in config_name:
         return {
             "app_info": {
-                "version": "5.4.6",
+                "version": "dev",
                 "edition": "Modern Edition",
                 "description": "BOM Categorizer Modern Edition"
             }
@@ -148,11 +148,118 @@ def _get_fallback_config(config_name: str) -> dict:
     else:
         return {
             "app_info": {
-                "version": "3.3.0",
+                "version": "dev",
                 "edition": "Standard",
                 "description": "BOM Categorizer"
             }
         }
+
+
+def _read_json_file(path: str) -> Optional[dict]:
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _get_bundle_resources_dir() -> Optional[str]:
+    """
+    Returns macOS .app bundle Resources directory when frozen.
+    """
+    try:
+        if getattr(sys, "frozen", False) and platform.system() == "Darwin":
+            # sys.executable -> .../Contents/MacOS/<binary>
+            return os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Resources")
+    except Exception:
+        pass
+    return None
+
+
+def _get_template_paths(edition: str) -> list[str]:
+    """
+    Returns possible locations of template config for given edition.
+    """
+    template_name = "config_qt.json.template" if edition == "modern" else "config.json.template"
+
+    paths: list[str] = []
+
+    # Dev mode (repo)
+    project_root = _find_project_root()
+    paths.append(os.path.join(project_root, "config", template_name))
+
+    # Frozen bundle (macOS)
+    resources_dir = _get_bundle_resources_dir()
+    if resources_dir:
+        paths.append(os.path.join(resources_dir, template_name))
+        paths.append(os.path.join(resources_dir, "config", template_name))
+
+    return paths
+
+
+def _load_template_config(edition: str) -> Optional[dict]:
+    for p in _get_template_paths(edition):
+        cfg = _read_json_file(p)
+        if cfg:
+            return cfg
+    return None
+
+
+def _sync_app_info_from_template(config: dict, template: dict, edition: str) -> bool:
+    """
+    Overwrites ONLY app metadata fields from template into config,
+    preserving user settings (ui/window/api_keys/etc).
+
+    Returns True if config was changed.
+    """
+    if not template:
+        return False
+
+    changed = False
+    cfg_app = config.get("app_info") if isinstance(config.get("app_info"), dict) else {}
+    tpl_app = template.get("app_info") if isinstance(template.get("app_info"), dict) else {}
+
+    # Authoritative keys
+    keys = [
+        "version",
+        "edition",
+        "description",
+        "description_en",
+        "developer",
+        "developer_en",
+        "release_date",
+        "last_updated",
+    ]
+
+    new_app = dict(cfg_app)
+    for k in keys:
+        if k in tpl_app and new_app.get(k) != tpl_app.get(k):
+            new_app[k] = tpl_app.get(k)
+            changed = True
+
+    if changed:
+        config["app_info"] = new_app
+
+    # Also sync APP_ID for Modern Edition for compatibility (doesn't touch keys themselves)
+    if edition == "modern":
+        tpl_app_id = (
+            (template.get("telegram_security") or {}).get("app_id")
+            or (template.get("api_keys") or {}).get("app_id")
+        )
+        if tpl_app_id:
+            for section_name in ("telegram_security", "api_keys"):
+                section = config.get(section_name)
+                if not isinstance(section, dict):
+                    section = {}
+                    config[section_name] = section
+                    changed = True
+                if section.get("app_id") != tpl_app_id:
+                    section["app_id"] = tpl_app_id
+                    changed = True
+
+    return changed
 
 
 def load_config(edition: str = "modern") -> dict:
@@ -171,7 +278,17 @@ def load_config(edition: str = "modern") -> dict:
     if os.path.exists(cfg_path):
         try:
             with open(cfg_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                cfg = json.load(f)
+
+            # Make app version/date unambiguous across machines:
+            # Always take app_info from template shipped with the app/repo,
+            # but keep user settings intact.
+            template_cfg = _load_template_config(edition)
+            if template_cfg and isinstance(cfg, dict):
+                if _sync_app_info_from_template(cfg, template_cfg, edition):
+                    save_config(cfg, edition)
+
+            return cfg
         except Exception:
             pass
     

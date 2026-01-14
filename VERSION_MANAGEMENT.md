@@ -17,12 +17,36 @@
 
 ## Обзор системы
 
-В проекте BOM Categorizer версии управляются **централизованно** через шаблоны конфигурационных файлов:
+В проекте BOM Categorizer версии управляются **централизованно** через шаблоны конфигурационных файлов.
+Цель системы — чтобы на любой машине (Windows/macOS) было **однозначно понятно**, какая версия запущена,
+и чтобы версия **никогда не “понижалась”** из‑за старых пользовательских настроек после обновления/переустановки.
 
 ✅ **Единый источник правды** — версия хранится только в шаблонах  
 ✅ **Две редакции** — Modern Edition (v5+) и Standard Edition (v3)  
 ✅ **Автоматическая синхронизация** — скрипты сборки читают из шаблонов  
 ✅ **Защита локальных настроек** — рабочие config файлы в `.gitignore`  
+
+### Как версия берётся при запуске (dev и installed)
+
+**Source of truth всегда один:** `config/*.template`.
+
+- **Dev (запуск из репозитория)**:
+  - `bom_categorizer/shared/config.py::load_config()` читает `config_qt.json` / `config.json` (локальные)
+  - затем **перезаписывает только `app_info` из шаблона** `config/*.template` (сохраняя ваши UI/API настройки)
+  - поэтому версия/дата в UI всегда соответствуют шаблону в репозитории.
+
+- **Installed (после установки .exe/.app)**:
+  - пользовательский конфиг хранится в профиле:
+    - **Windows**: `%APPDATA%\\BOMCategorizerModern\\config_qt.json`
+    - **macOS**: `~/Library/Application Support/BOMCategorizerModern/config_qt.json`
+  - этот файл может переживать переустановки, поэтому **`app_info` при запуске также синхронизируется из шаблона, упакованного в сборку**.
+  - итого: настройки пользователя сохраняются, а версия/дата приложения всегда актуальны для установленной сборки.
+
+### Build metadata (git/время сборки)
+
+Команда `python tools/update_version.py sync` генерирует `bom_categorizer/_build_meta.json` (не коммитится),
+который используется UI (“О приложении”, tooltip) для вывода:
+`generated_at`, `git describe/commit/branch`, `dirty`.
 
 ---
 
@@ -74,6 +98,7 @@ config/config.json.template      → Standard Edition (Tkinter)
 ❌ `config.json` — локальный файл (не в Git)  
 ❌ `config_qt.json` — локальный файл (не в Git)  
 ❌ `installer_qt.iss` — генерируется автоматически  
+❌ `bom_categorizer/_build_meta.json` — генерируется локально (для UI), не является источником версии
 
 ---
 
@@ -181,10 +206,6 @@ python3 tools/update_version.py status
 # For Windows
 python tools/update_version.py status
 
-python3 tools/update_version.py sync
-# For Windows
-python tools/update_version.py sync
-
 # Обновить Modern Edition
 python3 tools/update_version.py set modern 5.1.0
 # For Windows
@@ -200,7 +221,7 @@ python3 tools/update_version.py set both 5.0.0
 # For Windows
 python tools/update_version.py set both 5.0.0
 
-# Синхронизировать файлы сборки
+# Синхронизировать файлы сборки и локальные config (только app_info/app_id), + build meta для UI
 python3 tools/update_version.py sync
 # For Windows
 python tools/update_version.py sync

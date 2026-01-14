@@ -1,81 +1,126 @@
-# 🚀 Создание GitHub Релиза: Полное Руководство
+# 🚀 Создание GitHub релиза (BOM Categorizer) — чек‑лист
 
-Это пошаговое руководство по созданию релизов BOM Categorizer.
+Цель: выпустить **git tag** + **GitHub Release** + приложить артефакты (**Windows .exe**, **macOS .dmg**).
 
----
-
-## 📋 Общий процесс (Workflow)
-
-1. **Обновить версию:** Изменить `__version__` в `bom_categorizer/__init__.py`
-2. **Коммит изменений:** Закоммитить и запушить все изменения
-3. **Сборка:** Собрать `.exe` или `.dmg` файл
-4. **Релиз:** Создать релиз и загрузить файлы через GitHub CLI
+> **Важно:** версии в проекте хранятся **не** в `__init__.py`, а в шаблонах: `config/*.template`.  
+> Подробно — `VERSION_MANAGEMENT.md`.
 
 ---
 
-## 🔢 ШАГ 1: Обновление Версии
+## 📌 Источник версии (однозначно)
 
-### 1. Обновить версию в коде
+- **Modern Edition**: `config/config_qt.json.template`
+- **Standard Edition**: `config/config.json.template`
 
-Версия приложения хранится в файле `bom_categorizer/__init__.py`:
-
-```python
-__version__ = "5.1.3"  # Измените на нужную версию
-```
-
-### 2. Закоммитить изменения
-
-```bash
-# Добавить все изменения
-git add .
-
-# Коммит с описанием
-git commit -m "feat: Enhanced UI/UX with hotkeys, custom prompts, and improved settings dialog
-
-### New Features
-- Added keyboard shortcuts (Cmd+1/2/3, Cmd+F/P/A)
-- Enhanced Custom Prompt functionality
-- Set Telegram Bot as default AI provider
-
-### Bug Fixes
-- Fixed persistent stuck tooltip issue
-- Fixed port saving bug
-- Fixed Cmd+F hotkey
-
-Version: 5.1.3"
-
-# Отправить на GitHub
-git push origin feature/custom-encryption  # или main/master
-```
-
-### 3. Создать и отправить тег версии
-
-```bash
-# Создать тег
-git tag -a v5.1.3 -m "Release 5.1.3"
-
-# Отправить тег на сервер
-git push origin v5.1.3
-```
-
-> **Важно:** Номер тега должен совпадать с версией в `__init__.py`!
+Тег релиза **vX.Y.Z** должен соответствовать версии в соответствующем шаблоне.
 
 ---
 
-## 📦 ШАГ 2: Сборка Инсталлятора
+## ✅ Быстрый путь (90% случаев): Modern Edition
 
-### 🍎 macOS
+### 1) Поднять версию
 
 ```bash
-cd deployment
-bash build_macos.sh
+# macOS/Linux
+python3 scripts/bump_version.py --bump patch
+
+# Windows
+python scripts/bump_version.py --bump patch
 ```
 
-Скрипт предложит выбрать версию для сборки:
-- `[1]` Standard (Tkinter)
-- `[2]` Modern Edition (PySide6) ← **Выбирайте это для современной версии**
+### 2) Синхронизировать перед сборкой
 
-*Ожидаемый файл:* `BOMCategorizer-5.1.3-macOS-Modern.dmg` (в корне проекта)
+```bash
+# macOS/Linux
+python3 tools/update_version.py sync
+
+# Windows
+python tools/update_version.py sync
+```
+
+### 3) Проверить версии
+
+```bash
+# macOS/Linux
+python3 tools/update_version.py status
+
+# Windows
+python tools/update_version.py status
+```
+
+### 4) Коммит и тег
+
+```bash
+git add config/ deployment/ tools/ bom_categorizer/
+git commit -m "Release: vX.Y.Z"
+git tag vX.Y.Z
+git push origin main --tags
+```
+
+### 5) Сборка
+
+- **Windows**:
+
+```powershell
+python deployment/build_installer.py
+```
+
+- **macOS**:
+
+```bash
+make build-macos
+# или напрямую:
+./deployment/build_macos.sh
+```
+
+---
+
+## 🔢 Обновление версии (Modern / Standard / Both)
+
+### Вариант A (рекомендуется): `scripts/bump_version.py`
+
+```bash
+# Modern (по умолчанию)
+python3 scripts/bump_version.py --bump patch
+
+# Standard
+python3 scripts/bump_version.py --bump patch --edition standard
+
+# Both
+python3 scripts/bump_version.py --bump patch --edition both
+```
+
+### Вариант B: `tools/update_version.py set`
+
+```bash
+# Modern
+python3 tools/update_version.py set modern X.Y.Z
+
+# Standard
+python3 tools/update_version.py set standard X.Y.Z
+
+# Both
+python3 tools/update_version.py set both X.Y.Z
+```
+
+---
+
+## 🔄 Что делает `sync` (и почему его надо запускать)
+
+Команда:
+
+```bash
+python3 tools/update_version.py sync
+```
+
+Делает:
+- приводит **локальные** `config.json` / `config_qt.json` к шаблонам (только `app_info` / `app_id`, ваши настройки не трогает)
+- синхронизирует `deployment/installer_clean.iss` и `deployment/installer_qt.iss`
+- генерирует `bom_categorizer/_build_meta.json` (git/время сборки для UI, **не коммитится**)
+
+---
+
+## 📦 Сборка артефактов
 
 ### 🪟 Windows
 
@@ -83,119 +128,84 @@ bash build_macos.sh
 python deployment/build_installer.py
 ```
 
-*Ожидаемый файл:* `BOMCategorizerModernSetup.exe`
+Ожидаемые файлы:
+- `BOMCategorizerModernSetup.exe` (Modern)
+- `BOMCategorizerSetup.exe` (Standard)
+
+### 🍎 macOS
+
+```bash
+make build-macos
+```
+
+Скрипт предложит выбрать редакцию (1/2).  
+Ожидаемый файл (пример): `BOMCategorizer-X.Y.Z-macOS-Modern.dmg`
 
 ---
 
-## 🚀 ШАГ 3: Создание Релиза и Загрузка Файлов
+## 🚀 GitHub Release (рекомендуется: GitHub CLI `gh`)
 
-### 🍎 Для macOS (Рекомендуется: GitHub CLI)
+### Установка и авторизация
 
-#### Установка GitHub CLI (если еще не установлен)
 ```bash
-brew install gh
-```
-
-#### Авторизация (один раз)
-```bash
+gh --version
 gh auth login
 ```
 
-#### Создание релиза и загрузка файла
+### Создать релиз и загрузить файл
 
 ```bash
-# Убедитесь что вы в корне проекта
-cd /Users/olgazaharova/Project/ProjectPython/BOMCategorizer
-
-# Создать релиз и загрузить DMG
-gh release create v5.1.3 \
-    BOMCategorizer-5.1.3-macOS-Modern.dmg \
-    --title "BOM Categorizer Modern Edition 5.1.3" \
-    --notes "См. список изменений в CHANGELOG или release notes"
+gh release create vX.Y.Z \
+  "BOMCategorizer-X.Y.Z-macOS-Modern.dmg" \
+  --title "BOM Categorizer Modern Edition X.Y.Z" \
+  --notes "Release notes here"
 ```
 
-#### Загрузка файла в существующий релиз
-
-Если релиз уже создан и нужно только обновить файл:
+### Обновить файл в существующем релизе
 
 ```bash
-gh release upload v5.1.3 BOMCategorizer-5.1.3-macOS-Modern.dmg --clobber
+gh release upload vX.Y.Z "BOMCategorizer-X.Y.Z-macOS-Modern.dmg" --clobber
 ```
 
-Флаг `--clobber` заменит существующий файл.
-
-#### Открыть релиз в браузере
+### Открыть релиз в браузере
 
 ```bash
-gh release view v5.1.3 --web
+gh release view vX.Y.Z --web
 ```
 
 ---
 
-### Альтернатива: Bash скрипты (если GitHub CLI недоступен)
+## 🧰 Fallback без `gh` (через токен и скрипты)
 
-#### Получение GitHub Token
+> Лучше использовать `gh`. Скрипты оставлены как запасной вариант.
 
-1. Зайдите на GitHub: [Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
-2. Нажмите **Generate new token (classic)**
-3. Выберите scope: ✅ **repo**
-4. Скопируйте токен (начинается на `ghp_`)
+### GitHub Token (PAT)
 
-#### Создание релиза
+1. Откройте: [Tokens (classic)](https://github.com/settings/tokens)
+2. Создайте токен со scope: **repo**
+3. Не храните токен в репозитории и не вставляйте в логи
 
-```bash
-cd /Users/olgazaharova/Project/ProjectPython/BOMCategorizer
-bash deployment/create_release.sh -t "ghp_YOUR_TOKEN" -v "5.1.3"
-```
-
-**Важно:** Скрипт должен запускаться из корня проекта, где находится DMG файл!
-
----
-
-### 🪟 Для Windows (PowerShell)
-
-#### Вариант А: Создать новый релиз
+### Windows PowerShell
 
 ```powershell
-$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
-
-.\deployment\create_release.ps1 -Token $Token -Version "5.1.3"
+$Token = "ghp_..."
+.\deployment\create_release.ps1 -Token $Token -Version "X.Y.Z"
 ```
 
-#### Вариант Б: Обновить существующий релиз
+### macOS/Linux bash
 
-```powershell
-$Token = "ghp_ВАШ_ТОКЕН_ЗДЕСЬ"
-
-.\deployment\upload_to_existing_release.ps1 -Token $Token
-```
-
-#### Если есть ошибка выполнения скриптов
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\deployment\create_release.ps1 -Token "ghp_..." -Version "5.1.3"
+```bash
+bash deployment/create_release.sh -t "ghp_..." -v "X.Y.Z"
 ```
 
 ---
 
-## ✅ Проверка Релиза
+## ✅ Проверка релиза
 
-После создания релиза проверьте:
-
-1. ✅ Релиз виден на https://github.com/kureinmaxim/BOMCategorizer/releases
-2. ✅ DMG/EXE файл прикреплен и доступен для скачивания
-3. ✅ Версия в релизе совпадает с версией в `__init__.py`
-4. ✅ Тег версии создан и виден в GitHub
-
----
-
-## 🛠 Где взять токен (PAT)?
-
-1. Зайдите на GitHub: [Settings → Developer settings → Personal access tokens → Tokens (classic)](https://github.com/settings/tokens)
-2. Нажмите **Generate new token (classic)**
-3. Выберите scopes (права):
-   * ✅ **repo** (Full control of repositories)
-4. Скопируйте токен (начинается на `ghp_`)
+- Релиз появился в GitHub Releases
+- Tag `vX.Y.Z` существует (и запушен)
+- Артефакты (`.exe`/`.dmg`) прикреплены и скачиваются
+- В приложении в футере / “О приложении” отображается версия **X.Y.Z** и корректная информация
 
 ---
 
@@ -203,42 +213,7 @@ powershell -ExecutionPolicy Bypass -File .\deployment\create_release.ps1 -Token 
 
 | Ошибка | Решение |
 |--------|---------|
-| `Tag not found` | Забыли `git push origin v5.1.3`. Отправьте тег на GitHub. |
-| `Release already exists` | Релиз уже создан. Используйте `gh release upload ... --clobber` для обновления файла. |
-| `File not found` | DMG/EXE файл не в корне проекта. Проверьте путь или запустите скрипт из корня. |
-| `curl: option : blank argument` | Ошибка в bash скрипте. Используйте GitHub CLI (`gh`) вместо bash скрипта. |
-| Версия не обновилась | Забыли изменить `__version__` в `bom_categorizer/__init__.py` и закоммитить. |
-
----
-
-## 📝 Пример полного цикла релиза v5.1.3
-
-```bash
-# 1. Обновить версию
-vim bom_categorizer/__init__.py  # Изменить на "5.1.3"
-
-# 2. Коммит
-git add .
-git commit -m "chore: bump version to 5.1.3"
-git push origin feature/custom-encryption
-
-# 3. Тег
-git tag -a v5.1.3 -m "Release 5.1.3"
-git push origin v5.1.3
-
-# 4. Сборка (было сделано ранее вручную)
-cd deployment && bash build_macos.sh
-# Выбрать [2] Modern Edition
-
-# 5. Релиз через GitHub CLI
-cd ..
-gh release create v5.1.3 \
-    BOMCategorizer-5.1.3-macOS-Modern.dmg \
-    --title "BOM Categorizer Modern Edition 5.1.3" \
-    --notes "Release notes here"
-
-# 6. Проверка
-gh release view v5.1.3 --web
-```
-
-**Готово!** 🎉
+| `Tag not found` | Проверьте `git push --tags`. |
+| `Release already exists` | Используйте `gh release upload ... --clobber`. |
+| `File not found` | Запускайте команды из корня проекта; проверьте имя файла артефакта. |
+| Версия “не та” | Проверьте версию в `config/*.template`, затем `python tools/update_version.py sync`, затем пересоберите артефакт. |

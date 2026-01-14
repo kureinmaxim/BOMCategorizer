@@ -96,6 +96,9 @@ desktop.ini
 # Logs
 *.log
 
+# Generated build metadata (included into app bundles, not committed)
+bom_categorizer/_build_meta.json
+
 # Backup databases
 *_backup_*.json
 

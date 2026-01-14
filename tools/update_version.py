@@ -171,6 +171,82 @@ def read_config_file(config_path):
         return None
 
 
+def _git_run(args, repo_root):
+    try:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        return (result.stdout or "").strip()
+    except Exception:
+        return None
+
+
+def _get_repo_root():
+    # tools/ -> repo root is one level up
+    return os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+
+
+def write_build_meta():
+    """
+    Генерирует build метаданные (время, git commit/tag/branch, версии из шаблонов)
+    в файл ../bom_categorizer/_build_meta.json.
+
+    Файл предназначен для отображения в UI (About/tooltip) и включается в сборки.
+    """
+    try:
+        repo_root = _get_repo_root()
+
+        standard = read_config_template("../config/config.json.template") or {}
+        modern = read_config_template("../config/config_qt.json.template") or {}
+
+        # Git info (best-effort)
+        commit = _git_run(["rev-parse", "--short", "HEAD"], repo_root)
+        branch = _git_run(["rev-parse", "--abbrev-ref", "HEAD"], repo_root)
+        describe = _git_run(["describe", "--tags", "--always", "--dirty"], repo_root)
+        dirty_flag = _git_run(["status", "--porcelain"], repo_root)
+        dirty = bool(dirty_flag) if dirty_flag is not None else None
+
+        meta = {
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "repo": {
+                "commit": commit,
+                "branch": branch,
+                "describe": describe,
+                "dirty": dirty,
+            },
+            "editions": {
+                "standard": {
+                    "version": ((standard.get("app_info") or {}).get("version")),
+                    "release_date": ((standard.get("app_info") or {}).get("release_date")),
+                    "last_updated": ((standard.get("app_info") or {}).get("last_updated")),
+                },
+                "modern": {
+                    "version": ((modern.get("app_info") or {}).get("version")),
+                    "release_date": ((modern.get("app_info") or {}).get("release_date")),
+                    "last_updated": ((modern.get("app_info") or {}).get("last_updated")),
+                },
+            },
+        }
+
+        out_path = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "bom_categorizer", "_build_meta.json"))
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        safe_print(f"{Colors.GREEN}   {Emoji.ARROW} Build meta: обновлен bom_categorizer/_build_meta.json{Colors.NC}")
+        return True
+    except Exception as e:
+        safe_print(f"{Colors.YELLOW}{Emoji.WARN} Не удалось сгенерировать build meta: {e}{Colors.NC}")
+        return False
+
+
 def show_status():
     """Показывает текущие версии во всех файлах (шаблоны и локальные)"""
     safe_print(f"\n{Colors.BOLD}[STATUS] ТЕКУЩИЕ ВЕРСИИ{Colors.NC}\n")
@@ -269,11 +345,11 @@ def show_status():
         safe_print(f"    Версия:      {Colors.GREEN}{user_version}{Colors.NC}")
         safe_print(f"    Дата релиза: {user_date}")
         safe_print(f"    Файл:        {user_config_path}")
-        
-        # Сравнение версий
+        # User config может отличаться от текущего репозитория (это настройки установленной сборки).
+        # Это НЕ повод делать sync репозитория — установленная сборка сама синхронизирует app_info при запуске.
         if template_config and template_version != user_version:
-            versions_differ = True
-            safe_print(f"    {Colors.RED}{Emoji.WARN} ⚠️ Версии отличаются!{Colors.NC}")
+            safe_print(f"    {Colors.YELLOW}{Emoji.WARN} ⚠️ Версии отличаются (repo vs installed).{Colors.NC}")
+            safe_print(f"    {Colors.YELLOW}      Запустите установленное приложение после обновления или переустановите сборку.{Colors.NC}")
     
     # Скрипты сборки
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Файлы сборки (читают из шаблонов){Colors.NC}")
@@ -416,12 +492,16 @@ def sync_hardcoded_versions():
     # Обновляем gui_qt.py (fallback версия)
     # Ищем: return {"app_info": {"version": "X.X.X"
     pattern_gui = r'(return \{"app_info": \{"version": )"[^"]+"'
-    update_hardcoded_version(
-        '../bom_categorizer/gui_qt.py',
-        pattern_gui,
-        modern_version,
-        'bom_categorizer/gui_qt.py (fallback)'
-    )
+    gui_qt_path = '../bom_categorizer/gui_qt.py'
+    if os.path.exists(gui_qt_path):
+        update_hardcoded_version(
+            gui_qt_path,
+            pattern_gui,
+            modern_version,
+            'bom_categorizer/gui_qt.py (fallback)'
+        )
+    else:
+        safe_print(f"{Colors.YELLOW}   {Emoji.INFO} bom_categorizer/gui_qt.py отсутствует — пропускаю{Colors.NC}")
     
     # Обновляем config_manager.py (default config)
     # Ищем: "version": "X.X.X" в блоке if "qt" in config_name
@@ -441,26 +521,11 @@ def sync_all():
     """Синхронизирует все файлы сборки и локальные config с шаблонами"""
     safe_print(f"\n{Colors.BOLD}{Emoji.SYNC} СИНХРОНИЗАЦИЯ ФАЙЛОВ СБОРКИ И ЛОКАЛЬНЫХ CONFIG{Colors.NC}\n")
     safe_print("=" * 70)
-    
-    # Обновляем даты в шаблонах
-    now = datetime.now()
-    release_date = now.strftime("%d.%m.%Y")
-    last_updated = now.strftime("%Y-%m-%d")
-    
-    safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Обновление дат в шаблонах:{Colors.NC}")
-    
-    for template_path, name in [
-        ('../config/config.json.template', 'Standard Edition'),
-        ('../config/config_qt.json.template', 'Modern Edition')
-    ]:
-        template_config = read_config_template(template_path)
-        if template_config:
-            old_date = template_config['app_info'].get('release_date', 'N/A')
-            template_config['app_info']['release_date'] = release_date
-            template_config['app_info']['last_updated'] = last_updated
-            if write_config_template(template_path, template_config):
-                safe_print(f"  {Colors.GREEN}{Emoji.CHECK} {name}: дата {old_date} → {release_date}{Colors.NC}")
-    
+
+    # ВАЖНО:
+    # sync НЕ должен менять шаблоны (источник правды).
+    # Даты/версии в шаблонах меняются только через команду `set` или scripts/bump_version.py.
+
     # Синхронизация локальных config файлов
     safe_print(f"\n{Colors.BLUE}{Emoji.INFO} Синхронизация локальных config файлов:{Colors.NC}")
     
@@ -475,8 +540,15 @@ def sync_all():
         local_config = read_config_file('../config.json')
         if local_config:
             local_version = local_config['app_info']['version']
-            if template_version != local_version:
-                safe_print(f"  {Colors.YELLOW}config.json: {local_version} → {template_version}{Colors.NC}")
+            local_date = local_config.get('app_info', {}).get('release_date')
+            local_last_updated = local_config.get('app_info', {}).get('last_updated')
+            needs_update = (
+                template_version != local_version
+                or (template_release_date is not None and template_release_date != local_date)
+                or (template_last_updated is not None and template_last_updated != local_last_updated)
+            )
+            if needs_update:
+                safe_print(f"  {Colors.YELLOW}config.json: синхронизирую app_info → v{template_version} / {template_release_date}{Colors.NC}")
                 update_local_config(
                     '../config.json',
                     template_version,
@@ -502,6 +574,8 @@ def sync_all():
         local_config = read_config_file('../config_qt.json')
         if local_config:
             local_version = local_config['app_info']['version']
+            local_date = local_config.get('app_info', {}).get('release_date')
+            local_last_updated = local_config.get('app_info', {}).get('last_updated')
             local_app_id = local_config.get('telegram_security', {}).get('app_id') or \
                            local_config.get('api_keys', {}).get('app_id')
             
@@ -509,6 +583,14 @@ def sync_all():
             
             if template_version != local_version:
                 safe_print(f"  {Colors.YELLOW}config_qt.json: версия {local_version} → {template_version}{Colors.NC}")
+                needs_update = True
+
+            if template_release_date is not None and template_release_date != local_date:
+                safe_print(f"  {Colors.YELLOW}config_qt.json: дата {local_date} → {template_release_date}{Colors.NC}")
+                needs_update = True
+
+            if template_last_updated is not None and template_last_updated != local_last_updated:
+                safe_print(f"  {Colors.YELLOW}config_qt.json: last_updated {local_last_updated} → {template_last_updated}{Colors.NC}")
                 needs_update = True
             
             if template_app_id and local_app_id != template_app_id:
@@ -551,33 +633,10 @@ def sync_all():
                 safe_print(f"  {Colors.GREEN}{Emoji.CHECK} config_qt.json уже синхронизирован (v{local_version}, app_id: {local_app_id}){Colors.NC}")
         else:
             safe_print(f"  {Colors.YELLOW}config_qt.json не найден (будет создан при первом запуске){Colors.NC}")
-        
-        # Синхронизация пользовательского config (если приложение установлено)
-        import os
-        import sys
-        if sys.platform == 'darwin':  # macOS
-            user_config_path = os.path.expanduser('~/Library/Application Support/BOMCategorizerModern/config_qt.json')
-        elif sys.platform == 'win32':  # Windows
-            appdata = os.environ.get('APPDATA', os.path.expanduser('~'))
-            user_config_path = os.path.join(appdata, 'BOMCategorizerModern', 'config_qt.json')
-        else:  # Linux
-            user_config_path = os.path.expanduser('~/.config/BOMCategorizerModern/config_qt.json')
-        
-        if os.path.exists(user_config_path):
-            user_config = read_config_file(user_config_path)
-            if user_config:
-                user_version = user_config['app_info']['version']
-                if template_version != user_version:
-                    safe_print(f"  {Colors.YELLOW}User config (installed app): {user_version} → {template_version}{Colors.NC}")
-                    update_local_config(
-                        user_config_path,
-                        template_version,
-                        template_edition,
-                        release_date=template_release_date,
-                        last_updated=template_last_updated
-                    )
-                else:
-                    safe_print(f"  {Colors.GREEN}{Emoji.CHECK} User config (installed app) уже синхронизирован (v{user_version}){Colors.NC}")
+        # ВАЖНО:
+        # sync НЕ должен трогать user config установленного приложения в профиле пользователя.
+        # Версия/дата для installed app синхронизируются при запуске самого приложения
+        # (из шаблона, упакованного в .app/.exe), иначе возможны "понижения" при работе с разными репозиториями.
     
     # Синхронизация захардкоженных версий в Python файлах
     sync_hardcoded_versions()
@@ -603,6 +662,9 @@ def sync_all():
         safe_print(f"{Colors.RED}{Emoji.ERROR} Ошибка выполнения sync_installer_versions.py: {e}{Colors.NC}")
         safe_print(f"{Colors.YELLOW}{Emoji.WARN} Убедитесь, что файл существует и имеет права на выполнение{Colors.NC}")
     
+    # Build meta для UI (About/tooltip)
+    write_build_meta()
+
     safe_print("=" * 70)
     safe_print(f"\n{Colors.GREEN}{Emoji.CHECK} Синхронизация завершена.{Colors.NC}")
     safe_print(f"{Colors.YELLOW}{Emoji.INFO} Локальные config обновлены (только секция app_info, личные настройки сохранены){Colors.NC}")

@@ -554,7 +554,7 @@ python -m bom_categorizer.config_manager
 
 - [**BUILD.md**](../BUILD.md) - Инструкции по сборке установщиков
 - [**VERSION_MANAGEMENT.md**](VERSION_MANAGEMENT.md) - Управление версиями
-- [**PROJECT_STRUCTURE.md**](PROJECT_STRUCTURE.md) - Структура проекта
+- [**ANALYSIS_PROJECT.md**](../ANALYSIS_PROJECT.md) - Структура проекта (и архитектура)
 - [**README.md**](../README.md) - Общая документация
 
 ---

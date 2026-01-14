@@ -71,6 +71,7 @@ from . import search_methods
 # Import from shared module to avoid duplication
 from ..shared.config import get_config_path, load_config
 from ..shared.fonts import get_system_font
+from ..shared.app_metadata import get_app_meta_for_ui, format_app_tooltip
 
 # Import mixins for modular code organization
 from .database_handlers import DatabaseHandlersMixin
@@ -3004,6 +3005,40 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                 self.log_text.append("✅ Интерфейс разблокирован")
             else:
                 self.log_text.append("❌ Авторизация отменена")
+
+    def on_show_app_info(self):
+        """Показывает подробную информацию о приложении (версия/дата/сборка/git/окружение)."""
+        try:
+            meta = get_app_meta_for_ui(self.cfg, edition="modern")
+            text = format_app_tooltip(meta, config_path=get_config_path("modern"))
+            dlg = QDialog(self)
+            dlg.setWindowTitle("О приложении")
+            dlg.setMinimumWidth(640)
+
+            layout = QVBoxLayout(dlg)
+
+            view = QTextEdit()
+            view.setReadOnly(True)
+            view.setPlainText(text)
+            layout.addWidget(view)
+
+            btn_row = QHBoxLayout()
+            btn_row.addStretch()
+
+            copy_btn = QPushButton("Copy to clipboard")
+            copy_btn.setToolTip("Скопировать всю информацию в буфер обмена")
+            copy_btn.clicked.connect(lambda: QApplication.clipboard().setText(text))
+            btn_row.addWidget(copy_btn)
+
+            close_btn = QPushButton("Close")
+            close_btn.clicked.connect(dlg.accept)
+            btn_row.addWidget(close_btn)
+
+            layout.addLayout(btn_row)
+
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.warning(self, "О приложении", f"Не удалось получить информацию:\n{e}")
 
     def on_log_double_click(self, event):
         """Обработчик двойного клика на логе - открывает лог в текстовом редакторе"""

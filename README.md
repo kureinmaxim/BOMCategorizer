@@ -250,7 +250,7 @@ BOMCategorizer/
 └── docs/                  # Документация
 ```
 
-> **Подробнее:** [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md)
+> **Подробнее:** [ANALYSIS_PROJECT.md](ANALYSIS_PROJECT.md) (раздел “Структура проекта (подробно)”)
 
 ---
 
