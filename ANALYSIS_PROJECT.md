@@ -2,9 +2,9 @@
 
 **BOM Categorizer** — десктопное приложение для автоматической классификации электронных компонентов из спецификаций (BOM).
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.5.5 (PySide6)  
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.5.1 (PySide6)  
 > **Язык:** Python 3.13+  
-> **Архитектура:** Модульный пайплайн + AI интеграция + Mixins + Шифрование
+> **Архитектура:** Модульный пайплайн + AI интеграция + Шифрование
 
 ---
 
@@ -94,34 +94,30 @@
 | `component_database.py` | 💾 Память | Управление базой знаний |
 | `formatters.py` | 🧹 Инструменты | Очистка данных, извлечение номиналов |
 | `parsers.py` | 📥 Ввод | Чтение .docx, .xlsx, .txt |
-| `config_manager.py` | ⚙️ Конфиг | Управление настройками (инициализация) |
+| `config_manager.py` | ⚙️ Конфиг | Управление настройками |
 | `encryption.py` | 🔐 Безопасность | AES-256-GCM шифрование |
 | `tru_merger.py` | 🔄 TRU Merger | Слияние BOM с данными ТРУ/РКМ |
 | `tru_rkm_processor.py` | 📦 RKM Logic | Обработка справочников ТРУ |
-| `shared/config.py` | ⚙️ Central Config | Централизованная загрузка конфигурации |
-| `shared/app_metadata.py`| ℹ️ Metadata | Общие метаданные приложения (версия, сборка) |
-| `shared/fonts.py` | 🔤 Fonts | Управление шрифтами |
 
 ### GUI Modern Edition (`gui/`)
 
 | Модуль | Описание |
 |--------|----------|
-| `main_window.py` | Главное окно (использует Mixins для логики) |
-| `database_handlers.py` | Mixin: Работа с БД в GUI |
-| `file_handlers.py` | Mixin: Обработка файлов и Drag & Drop |
-| `processing_handlers.py` | Mixin: Обработка BOM/ТРУ |
-| `help_dialogs.py` | Mixin: Окна помощи и об «О программе» |
-| `sections.py` | Модульные UI-секции (виджеты) |
-| `dialogs.py` | Вспомогательные диалоговые окна (PIN, Stats) |
+| `main_window.py` | Главное окно |
+| `dialogs.py` | Диалоговые окна |
+| `sections.py` | Виджеты и секции |
 | `menu.py` | Главное меню |
-| `scaling.py` | Масштабирование интерфейса |
-| `search.py` | Глобальный поиск (диалог) |
-| `search_methods.py` | Логика и методы поиска |
+| `scaling.py` | Масштабирование и темы |
+| `search.py` | Глобальный поиск |
+| `search_methods.py` | Методы поиска |
 | `workers.py` | Фоновые потоки (QThread) |
-| `drag_drop.py` | Логика Drag & Drop |
+| `drag_drop.py` | Drag & Drop файлов |
 | `ai_classifier.py` | AI классификация |
-| `pdf_search.py` | Поиск компонентов (PDF/AI) |
-| `pdf_search_dialogs.py` | Диалоги поиска |
+| `pdf_search.py` | Поиск компонентов |
+| `pdf_search_dialogs.py` | Диалоги AI поиска |
+| `processing_handlers.py` | Обработка BOM/ТРУ |
+| `database_handlers.py` | Работа с БД в GUI |
+| `file_handlers.py` | Обработка файлов |
 
 ### Вывод (Output)
 
@@ -265,12 +261,6 @@ BOMCategorizer/
 │   ├── utils.py                     # 🛠 Утилиты
 │   ├── cli_interactive.py           # 💬 Интерактивная консоль
 │   ├── styles.py                    # 🎨 Стили GUI
-│   ├── _build_meta.json             # ⚙️ Данные о сборке (генерируемые)
-│   │
-│   ├── 📁 shared/                   # 🤝 Общий код всех редакций
-│   │   ├── app_metadata.py           # Версии и Git-инфо
-│   │   ├── config.py                 # Централизованный конфиг
-│   │   └── fonts.py                  # Управление шрифтами
 │   │
 │   ├── 📁 gui/                      # ✨ Modern Edition (PySide6)
 │   │   ├── __init__.py
@@ -336,8 +326,8 @@ BOMCategorizer/
 
 > Объединено из `docs/PROJECT_STRUCTURE.md` (файл удалён после объединения).
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.5.5 (PySide6)  
-> **Обновлено:** 14.01.2026
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.4.12 (PySide6)  
+> **Обновлено:** 24.12.2025
 
 ---
 
@@ -385,13 +375,7 @@ BOMCategorizer/
 │   ├── utils.py                          # Вспомогательные утилиты
 │   ├── cli_interactive.py                # Интерактивная консоль
 │   ├── styles.py                         # Стили для GUI
-│   ├── _build_meta.json                  # Сведения о сборке
 │   ├── gui.py                            # GUI Standard Edition
-│   │
-│   ├── 📁 shared/                        # 🤝 Общие модули
-│   │   ├── app_metadata.py               # Метаданные приложения
-│   │   ├── config.py                     # Загрузка/сохранение конфига
-│   │   └── fonts.py                      # Системные шрифты
 │   │
 │   └── gui/                              # 📁 Modern Edition GUI (пакет)
 │       ├── __init__.py                   # Инициализация GUI пакета
@@ -504,7 +488,6 @@ BOMCategorizer/
     ├── config.json                       # Конфиг Standard Edition
     ├── config_qt.json                    # Конфиг Modern Edition
     ├── .gitignore                        # Исключения Git
-    ├── bom_categorizer/_build_meta.json  # Метаданные билда (в .gitignore)
     └── venv/                             # Виртуальное окружение
 ```
 
