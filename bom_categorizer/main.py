@@ -1345,6 +1345,262 @@ def compare_processed_files(file1_path: str, file2_path: str, output_path: str) 
     return True
 
 
+def detect_comparison_file_type(file_path: str) -> str:
+    """
+    Определяет тип файла для сравнения по листам внутри Excel.
+    
+    Returns:
+        'flat' - плоский файл (РКМ, Остатки, Запас)
+        'bom'  - BOM файл с категориями
+        'unknown' - неизвестный тип
+    """
+    try:
+        xl = pd.ExcelFile(file_path, engine='openpyxl')
+        sheets = set(s.lower() for s in xl.sheet_names)
+        
+        # Плоские файлы
+        flat_sheets = {'ркм', 'остатки', 'запас', 'тру'}
+        if sheets & flat_sheets:
+            return 'flat'
+        
+        # BOM файлы с категориями
+        category_sheets = {
+            'резисторы', 'конденсаторы', 'индуктивности', 'полупроводники',
+            'микросхемы', 'разъемы', 'оптика', 'свч модули', 'кабели',
+            'модули питания', 'отладочные платы', 'наши разработки', 'другие'
+        }
+        if sheets & category_sheets:
+            return 'bom'
+        
+        # Если есть только один лист с данными — считаем плоским
+        if len(xl.sheet_names) == 1:
+            return 'flat'
+        
+        return 'unknown'
+    except Exception:
+        return 'unknown'
+
+
+def compare_flat_files(file1_path: str, file2_path: str, output_path: str) -> bool:
+    """
+    Сравнивает два ПЛОСКИХ файла (РКМ, Ostatki, Zapas, ТРУ)
+    
+    Результат:
+    - Лист "Общие" - позиции в обоих файлах
+    - Лист "Только в файле 1" - позиции только в первом файле
+    - Лист "Только в файле 2" - позиции только во втором файле
+    
+    Args:
+        file1_path: Путь к первому файлу
+        file2_path: Путь ко второму файлу
+        output_path: Путь к выходному файлу
+        
+    Returns:
+        True если сравнение успешно
+    """
+    import re
+    
+    def normalize_for_key(text: str) -> str:
+        """Нормализует текст для создания ключа сравнения"""
+        if not text or pd.isna(text):
+            return ""
+        text = str(text).strip().lower()
+        # Удаляем множественные пробелы
+        text = re.sub(r'\s+', ' ', text)
+        # Заменяем разные виды тире на обычный дефис
+        text = re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]', '-', text)
+        return text
+    
+    def find_data_sheet(xl: pd.ExcelFile) -> str:
+        """Находит лист с данными"""
+        priority_sheets = ['РКМ', 'Остатки', 'Запас', 'ТРУ', 'ркм', 'остатки', 'запас', 'тру']
+        for sheet in priority_sheets:
+            if sheet in xl.sheet_names:
+                return sheet
+        # Возвращаем первый лист, если приоритетные не найдены
+        return xl.sheet_names[0] if xl.sheet_names else None
+    
+    def find_name_col(df: pd.DataFrame) -> str:
+        """Находит колонку с наименованием"""
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if 'наименование ивп' in col_lower:
+                return col
+            if col_lower == 'наименование':
+                return col
+        return None
+    
+    def find_tu_col(df: pd.DataFrame) -> str:
+        """Находит колонку с ТУ/Производителем"""
+        for col in df.columns:
+            col_lower = str(col).lower()
+            if 'ту/производитель' in col_lower or 'ту' == col_lower:
+                return col
+            if 'производитель' in col_lower:
+                return col
+            if 'поставщик' in col_lower:
+                return col
+            if 'документы' in col_lower:
+                return col
+        return None
+    
+    print("=" * 80)
+    print("[СРАВНЕНИЕ] ПЛОСКИХ ФАЙЛОВ (РКМ / Ostatki / Zapas)")
+    print("=" * 80)
+    
+    try:
+        xl1 = pd.ExcelFile(file1_path, engine='openpyxl')
+        xl2 = pd.ExcelFile(file2_path, engine='openpyxl')
+    except Exception as e:
+        print(f"❌ Ошибка чтения файлов: {e}")
+        return False
+    
+    # Находим листы с данными
+    sheet1 = find_data_sheet(xl1)
+    sheet2 = find_data_sheet(xl2)
+    
+    if not sheet1 or not sheet2:
+        print("❌ Не удалось найти листы с данными")
+        return False
+    
+    print(f"\n[ФАЙЛ 1] {os.path.basename(file1_path)} → лист '{sheet1}'")
+    print(f"[ФАЙЛ 2] {os.path.basename(file2_path)} → лист '{sheet2}'")
+    
+    # Читаем данные
+    df1 = pd.read_excel(file1_path, sheet_name=sheet1, engine='openpyxl')
+    df2 = pd.read_excel(file2_path, sheet_name=sheet2, engine='openpyxl')
+    
+    # Находим колонки
+    name_col1 = find_name_col(df1)
+    name_col2 = find_name_col(df2)
+    tu_col1 = find_tu_col(df1)
+    tu_col2 = find_tu_col(df2)
+    
+    if not name_col1 or not name_col2:
+        print("❌ Не удалось найти колонку 'Наименование' в одном из файлов")
+        return False
+    
+    print(f"\n   Файл 1: Наименование='{name_col1}', ТУ='{tu_col1 or 'не найдено'}'")
+    print(f"   Файл 2: Наименование='{name_col2}', ТУ='{tu_col2 or 'не найдено'}'")
+    
+    # Создаём словари: ключ → (наименование, ТУ)
+    def extract_items(df, name_col, tu_col):
+        items = {}
+        for _, row in df.iterrows():
+            name = str(row.get(name_col, '')) if pd.notna(row.get(name_col)) else ''
+            tu = str(row.get(tu_col, '')) if tu_col and pd.notna(row.get(tu_col)) else ''
+            
+            if not name or name == 'nan':
+                continue
+            
+            key = normalize_for_key(name)
+            if key:
+                items[key] = {
+                    'Наименование': name.strip(),
+                    'ТУ/Производитель': tu.strip() if tu and tu != 'nan' else ''
+                }
+        return items
+    
+    items1 = extract_items(df1, name_col1, tu_col1)
+    items2 = extract_items(df2, name_col2, tu_col2)
+    
+    print(f"\n   Файл 1: {len(items1)} уникальных позиций")
+    print(f"   Файл 2: {len(items2)} уникальных позиций")
+    
+    # Сравниваем
+    keys1 = set(items1.keys())
+    keys2 = set(items2.keys())
+    
+    common_keys = keys1 & keys2
+    only_in_1 = keys1 - keys2
+    only_in_2 = keys2 - keys1
+    
+    print(f"\n[РЕЗУЛЬТАТ]")
+    print(f"   Общих позиций: {len(common_keys)}")
+    print(f"   Только в файле 1: {len(only_in_1)}")
+    print(f"   Только в файле 2: {len(only_in_2)}")
+    
+    # Формируем DataFrames для вывода
+    common_data = [items1[k] for k in sorted(common_keys)]
+    only1_data = [items1[k] for k in sorted(only_in_1)]
+    only2_data = [items2[k] for k in sorted(only_in_2)]
+    
+    # Определяем имена для листов на основе имени файла
+    file1_name = os.path.splitext(os.path.basename(file1_path))[0]
+    file2_name = os.path.splitext(os.path.basename(file2_path))[0]
+    
+    # Короткие имена для листов (максимум 31 символ)
+    def short_name(name: str, max_len: int = 20) -> str:
+        if len(name) <= max_len:
+            return name
+        return name[:max_len-2] + '..'
+    
+    sheet_only1 = f"Только в {short_name(file1_name)}"[:31]
+    sheet_only2 = f"Только в {short_name(file2_name)}"[:31]
+    
+    # Записываем результат
+    with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
+        if common_data:
+            df_common = pd.DataFrame(common_data)
+            df_common.insert(0, '№', range(1, len(df_common) + 1))
+            df_common.to_excel(writer, sheet_name='Общие', index=False)
+        else:
+            pd.DataFrame([{'Результат': 'Нет общих позиций'}]).to_excel(
+                writer, sheet_name='Общие', index=False
+            )
+        
+        if only1_data:
+            df_only1 = pd.DataFrame(only1_data)
+            df_only1.insert(0, '№', range(1, len(df_only1) + 1))
+            df_only1.to_excel(writer, sheet_name=sheet_only1, index=False)
+        else:
+            pd.DataFrame([{'Результат': 'Нет уникальных позиций'}]).to_excel(
+                writer, sheet_name=sheet_only1, index=False
+            )
+        
+        if only2_data:
+            df_only2 = pd.DataFrame(only2_data)
+            df_only2.insert(0, '№', range(1, len(df_only2) + 1))
+            df_only2.to_excel(writer, sheet_name=sheet_only2, index=False)
+        else:
+            pd.DataFrame([{'Результат': 'Нет уникальных позиций'}]).to_excel(
+                writer, sheet_name=sheet_only2, index=False
+            )
+    
+    # Применяем стили
+    try:
+        from .excel_writer import apply_excel_styles
+        from openpyxl import load_workbook
+        from openpyxl.styles import Font, Alignment
+        
+        wb = load_workbook(output_path)
+        
+        for ws in wb.worksheets:
+            # Заголовки жирным
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Автоширина колонок
+            for column in ws.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    except:
+                        pass
+                ws.column_dimensions[column_letter].width = min(max_length + 2, 80)
+        
+        wb.save(output_path)
+    except Exception as e:
+        print(f"   ⚠️ Не удалось применить стили: {e}")
+    
+    print(f"\n[УСПЕХ] Результаты записаны: {output_path}")
+    return True
+
+
 def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_interactive: bool = True):
     """
     Сравнивает два BOM файла и создает отчет о различиях

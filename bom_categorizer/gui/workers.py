@@ -119,7 +119,7 @@ class ComparisonWorker(QThread):
     def run(self):
         """Выполняет сравнение в отдельном потоке"""
         try:
-            from ..main import compare_processed_files
+            from ..main import compare_processed_files, compare_flat_files, detect_comparison_file_type
             
             # Перехватываем stdout для получения прогресса с правильной кодировкой
             old_stdout = sys.stdout
@@ -138,29 +138,42 @@ class ComparisonWorker(QThread):
                 self.progress.emit(f"📄 Файл 1: {os.path.basename(self.file1)}\n")
                 self.progress.emit(f"📄 Файл 2: {os.path.basename(self.file2)}\n\n")
                 
-                self.progress.emit("🔍 Проверка формата файлов...\n")
+                self.progress.emit("🔍 Определение типа файлов...\n")
                 
-                # Пытаемся сравнить как обработанные файлы
-                success = compare_processed_files(self.file1, self.file2, self.output)
+                # Определяем тип файлов
+                type1 = detect_comparison_file_type(self.file1)
+                type2 = detect_comparison_file_type(self.file2)
+                
+                self.progress.emit(f"   Файл 1: {type1}\n")
+                self.progress.emit(f"   Файл 2: {type2}\n\n")
+                
+                # Выбираем алгоритм сравнения
+                if type1 == 'flat' or type2 == 'flat':
+                    # Хотя бы один файл плоский — используем сравнение плоских файлов
+                    self.progress.emit("📊 Используем алгоритм сравнения плоских файлов (РКМ/Ostatki/Zapas)\n\n")
+                    success = compare_flat_files(self.file1, self.file2, self.output)
+                elif type1 == 'bom' and type2 == 'bom':
+                    # Оба файла — BOM с категориями
+                    self.progress.emit("📊 Используем алгоритм сравнения BOM файлов (по категориям)\n\n")
+                    success = compare_processed_files(self.file1, self.file2, self.output)
+                else:
+                    # Неизвестные типы — пробуем как плоские
+                    self.progress.emit("⚠️ Тип файлов не определён, пробуем сравнить как плоские...\n\n")
+                    success = compare_flat_files(self.file1, self.file2, self.output)
                 
                 if not success:
-                    # Файлы не обработанные - показываем предупреждение
-                    self.progress.emit("\n⚠️ ВНИМАНИЕ: Файлы не являются обработанными BOM файлами!\n")
-                    self.progress.emit("   Обработанные файлы должны содержать листы с категориями:\n")
-                    self.progress.emit("   (Резисторы, Конденсаторы, Микросхемы и т.д.)\n\n")
-                    self.progress.emit("❌ Для сравнения необходимо:\n")
-                    self.progress.emit("   1. Сначала обработать исходные BOM файлы\n")
-                    self.progress.emit("   2. Затем сравнить полученные результаты\n\n")
-                    self.progress.emit("💡 Или используйте исходные (необработанные) файлы для сравнения\n")
+                    # Сравнение не удалось
+                    self.progress.emit("\n❌ Сравнение не удалось\n")
                     self.finished.emit(
-                        "⚠️ Ошибка: файлы не являются обработанными BOM файлами!\n\n"
-                        "Для сравнения используйте:\n"
-                        "• Обработанные файлы (с листами категорий)\n"
-                        "• Или исходные BOM файлы (.docx, .xlsx)", 
+                        "⚠️ Ошибка: не удалось сравнить файлы!\n\n"
+                        "Проверьте:\n"
+                        "• Оба файла существуют и доступны\n"
+                        "• Файлы содержат данные с колонкой 'Наименование'", 
                         False
                     )
                     return
                 
+
                 # Восстанавливаем stdout/stderr
                 sys.stdout = old_stdout
                 sys.stderr = old_stderr
