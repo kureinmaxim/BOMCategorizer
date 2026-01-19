@@ -1385,6 +1385,41 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     # *_zapas.xlsx:  несопоставленные ТРУ + позиции где TRU_qty > BOM_qty (разница)
                     ostatki_parts = []  # List[pd.DataFrame]
                     zapas_parts = []    # List[pd.DataFrame]
+
+                    category_prefix_map = {
+                        'резисторы': 'Резистор',
+                        'конденсаторы': 'Конденсатор',
+                        'индуктивности': 'Индуктивность',
+                        'полупроводники': 'Полупроводник',
+                        'микросхемы': 'Микросхема',
+                        'разъемы': 'Разъем',
+                        'разъёмы': 'Разъем',
+                        'оптические компоненты': 'Оптический компонент',
+                        'модули питания': 'Модуль питания',
+                        'кабели': 'Кабель',
+                        'свч модули': 'СВЧ модуль',
+                        'отладочные платы': 'Отладочная плата',
+                    }
+
+                    def _apply_category_prefix(df_in, name_col, sheet_name):
+                        sheet_raw = str(sheet_name or '').strip()
+                        if not sheet_raw or name_col not in df_in.columns:
+                            return df_in
+                        prefix = category_prefix_map.get(sheet_raw.lower()) or sheet_raw
+                        df_out = df_in.copy()
+
+                        def add_prefix(name):
+                            if name is None or pd.isna(name):
+                                return name
+                            s = str(name).strip()
+                            if not s:
+                                return s
+                            if s.lower().startswith(prefix.lower() + ' '):
+                                return s
+                            return f"{prefix} {s}"
+
+                        df_out[name_col] = df_out[name_col].apply(add_prefix)
+                        return df_out
                     
                     for sheet_name, df in all_sheets.items():
                         if merge_progress and merge_progress.wasCanceled():
@@ -1407,6 +1442,12 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         if not bom_name_col:
                             merged_sheets[sheet_name] = df
                             continue
+
+                        df = df.copy()
+                        if '№ п/п' in df.columns:
+                            df = df.drop(columns=['№ п/п'])
+
+                        df = _apply_category_prefix(df, bom_name_col, sheet_name)
                         
                         # Объединяем данные
                         merged_df, merged_indices, used_indices = merge_tru_into_bom(
@@ -1516,7 +1557,6 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                                     pass
                                     
                         summary_rows.append({
-                            '№ п/п': len(summary_rows) + 1,
                             'Категория': sheet_name,
                             'Кол-во позиций': positions_count,
                             'Общее количество': total_qty,
@@ -1656,6 +1696,17 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     
                     ostatki_path = os.path.join(output_dir, f"{base_name}_ostatki.xlsx")
                     zapas_path = os.path.join(output_dir, f"{base_name}_zapas.xlsx")
+
+                    def _find_name_qty_cols(ws):
+                        name_idx = None
+                        qty_idx = None
+                        for col_idx, cell in enumerate(ws[1], start=1):
+                            cell_val = str(cell.value).strip().lower() if cell.value else ''
+                            if 'наименование ивп' in cell_val or cell_val == 'наименование':
+                                name_idx = col_idx
+                            elif cell_val in ['шт.', 'шт', 'qty', 'количество', 'кол-во', 'кол.']:
+                                qty_idx = col_idx
+                        return name_idx, qty_idx
                     
                     # Пишем только если есть данные (чтобы не плодить пустые файлы)
                     if not ostatki_df.empty:
@@ -1665,11 +1716,16 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         try:
                             wb_o = load_workbook(ostatki_path)
                             ws_o = wb_o['Остатки']
-                            apply_merge_styles(worksheet=ws_o, merged_rows=set(), name_col_idx=2, qty_col_idx=4, header_row=1)
-                            # Чуть корректируем ширины именно для "Остатки" (чтобы 3 цифры влезали без переноса)
+                            name_idx, qty_idx = _find_name_qty_cols(ws_o)
+                            apply_merge_styles(worksheet=ws_o, merged_rows=set(), name_col_idx=name_idx or 1, qty_col_idx=qty_idx or 2, header_row=1)
+                            # Чуть корректируем ширины именно для "Остатки"
                             try:
-                                ws_o.column_dimensions['A'].width = max(ws_o.column_dimensions['A'].width or 0, 8)
-                                ws_o.column_dimensions['B'].width = max(ws_o.column_dimensions['B'].width or 0, 65)
+                                if name_idx:
+                                    name_letter = ws_o.cell(row=1, column=name_idx).column_letter
+                                    ws_o.column_dimensions[name_letter].width = max(ws_o.column_dimensions[name_letter].width or 0, 65)
+                                if qty_idx:
+                                    qty_letter = ws_o.cell(row=1, column=qty_idx).column_letter
+                                    ws_o.column_dimensions[qty_letter].width = max(ws_o.column_dimensions[qty_letter].width or 0, 8)
                             except Exception:
                                 pass
                             wb_o.save(ostatki_path)
@@ -1697,11 +1753,16 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         try:
                             wb_z = load_workbook(zapas_path)
                             ws_z = wb_z['Запас']
-                            apply_merge_styles(worksheet=ws_z, merged_rows=set(), name_col_idx=2, qty_col_idx=4, header_row=1)
-                            # Чуть корректируем ширины именно для "Запас" (чтобы 3 цифры влезали без переноса)
+                            name_idx, qty_idx = _find_name_qty_cols(ws_z)
+                            apply_merge_styles(worksheet=ws_z, merged_rows=set(), name_col_idx=name_idx or 1, qty_col_idx=qty_idx or 2, header_row=1)
+                            # Чуть корректируем ширины именно для "Запас"
                             try:
-                                ws_z.column_dimensions['A'].width = max(ws_z.column_dimensions['A'].width or 0, 8)
-                                ws_z.column_dimensions['B'].width = max(ws_z.column_dimensions['B'].width or 0, 65)
+                                if name_idx:
+                                    name_letter = ws_z.cell(row=1, column=name_idx).column_letter
+                                    ws_z.column_dimensions[name_letter].width = max(ws_z.column_dimensions[name_letter].width or 0, 65)
+                                if qty_idx:
+                                    qty_letter = ws_z.cell(row=1, column=qty_idx).column_letter
+                                    ws_z.column_dimensions[qty_letter].width = max(ws_z.column_dimensions[qty_letter].width or 0, 8)
                             except Exception:
                                 pass
                             wb_z.save(zapas_path)
@@ -1796,11 +1857,12 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     # Стилизуем лист несопоставленных ТРУ
                     if 'Несопоставленные ТРУ' in wb.sheetnames:
                         ws_unmatched = wb['Несопоставленные ТРУ']
+                        name_idx, qty_idx = _find_name_qty_cols(ws_unmatched)
                         apply_merge_styles(
                             worksheet=ws_unmatched,
                             merged_rows=set(),  # Пустой набор — просто применяем заголовки и границы
-                            name_col_idx=2,
-                            qty_col_idx=4,  # шт. на 4 позиции в формате BOM
+                            name_col_idx=name_idx or 1,
+                            qty_col_idx=qty_idx or 2,
                             header_row=1
                         )
                         

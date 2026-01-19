@@ -229,6 +229,67 @@ def build_ostatki_and_zapas_reports(
 
     ostatki_df = _concat_preserve_columns(ostatki_parts)
     zapas_df = _concat_preserve_columns(zapas_parts)
+    if '№ п/п' in ostatki_df.columns:
+        ostatki_df = ostatki_df.drop(columns=['№ п/п'])
+    if '№ п/п' in zapas_df.columns:
+        zapas_df = zapas_df.drop(columns=['№ п/п'])
+
+    def _find_name_col(df: pd.DataFrame) -> Optional[str]:
+        for c in ['Наименование ИВП', 'Наименование', 'наименование ивп', 'наименование']:
+            if c in df.columns:
+                return c
+        return None
+
+    # Сортировка плоских отчетов по приоритету категорий
+    category_order = [
+        'резистор',
+        'конденсатор',
+        'индуктивность',
+        'микросхема',
+        'полупроводник',
+        'разъем',
+        'оптический компонент',
+        'модуль питания',
+        'кабель',
+        'свч модуль',
+        'отладочная плата',
+        'наши разработки',
+        'другие',
+        'не распределено'
+    ]
+    category_rank = {name: i for i, name in enumerate(category_order)}
+    default_rank = len(category_order) + 1
+
+    def _get_rank(name: str) -> int:
+        if not name or pd.isna(name):
+            return default_rank
+        s = str(name).strip().lower()
+        if not s:
+            return default_rank
+        first_word = s.split(' ', 1)[0]
+        # Пробуем по первому слову (префиксу категории)
+        if first_word in category_rank:
+            return category_rank[first_word]
+        # Пробуем по полному префиксу (например "свч модуль")
+        for cat, rank in category_rank.items():
+            if s.startswith(cat + ' '):
+                return rank
+        return default_rank
+
+    def _sort_flat(df_in: pd.DataFrame) -> pd.DataFrame:
+        if df_in is None or df_in.empty:
+            return df_in
+        name_col = _find_name_col(df_in)
+        if not name_col:
+            return df_in
+        df = df_in.copy()
+        df['_cat_rank'] = df[name_col].map(_get_rank)
+        df['_name_sort'] = df[name_col].astype(str).str.lower()
+        df = df.sort_values(by=['_cat_rank', '_name_sort'], ascending=[True, True]).drop(columns=['_cat_rank', '_name_sort'])
+        return df.reset_index(drop=True)
+
+    ostatki_df = _sort_flat(ostatki_df)
+    zapas_df = _sort_flat(zapas_df)
     return ostatki_df, zapas_df
 
 
@@ -400,6 +461,17 @@ def find_matching_tru_row(
     # Извлекаем чистый код из BOM
     bom_pure_code = extract_pure_code(bom_name)
     
+    # Если в названии есть различающие слова (например, Вилка/Розетка),
+    # требуем их совпадения, чтобы избежать ложных матчей по коду.
+    def _extract_type_keywords(text: str) -> Set[str]:
+        if not text:
+            return set()
+        tokens = re.findall(r'[A-Za-zА-Яа-я]+', text.lower())
+        special = {'вилка', 'розетка', 'штекер', 'гнездо'}
+        return {t for t in tokens if t in special}
+
+    bom_type_keywords = _extract_type_keywords(bom_name)
+
     best_match = None
     best_score = 0.0
     
@@ -411,6 +483,13 @@ def find_matching_tru_row(
         if required_norm:
             tru_hay = tru_name.lower().replace(" ", "")
             if required_norm not in tru_hay:
+                continue
+
+        # Если есть типовые различающие слова в BOM (вилка/розетка/штекер/гнездо),
+        # но в ТРУ их нет — не считаем это совпадением.
+        if bom_type_keywords:
+            tru_type_keywords = _extract_type_keywords(tru_name)
+            if not bom_type_keywords.issubset(tru_type_keywords):
                 continue
 
         norm_tru_name = normalize_for_matching(tru_name)
@@ -969,9 +1048,8 @@ def generate_unmatched_report(
             tu_or_mfr_list.append(tu_or_mfr)
             clean_names_list.append(clean_nm)
         
-        # Преобразуем в формат BOM: №, Наименование ИВП, ТУ, шт., КОД ERP(МР), Источник, Примечание, № ТРУ, Стоимость
+        # Преобразуем в формат BOM: Наименование ИВП, ТУ, шт., КОД ERP(МР), Источник, Примечание, № ТРУ, Стоимость
         unmatched_tru = pd.DataFrame()
-        unmatched_tru['№ п/п'] = range(1, len(unmatched_raw) + 1)
         unmatched_tru['Наименование ИВП'] = clean_names_list
         unmatched_tru['ТУ'] = tu_or_mfr_list
         unmatched_tru['шт.'] = unmatched_raw.get('Количество', '').values

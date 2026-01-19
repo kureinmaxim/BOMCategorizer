@@ -121,6 +121,7 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
             'Цена': 'цена',
             'Стоимость': 'стоимость',
             'Ответственные': 'ответственные',
+            'Код ОКПД': 'код окпд',
         }
 
         # Предикат: строка похожа на повтор заголовков
@@ -207,6 +208,10 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
                 col_mapping['Цена'] = col
             elif 'стоимость' in col_str or col_str == 'сумма':
                 col_mapping['Стоимость'] = col
+            elif 'окпд' in col_str and ('код' in col_str or 'код окпд' in col_str):
+                col_mapping['Код ОКПД'] = col
+            elif 'окпд' in col_str and 'Код ОКПД' not in col_mapping:
+                col_mapping['Код ОКПД'] = col
         
         
         # Проверяем наличие минимальных колонок
@@ -231,6 +236,7 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
                 result_df['Стоимость'] = data_df.iloc[:, 9] if data_df.shape[1] > 9 else ''
                 result_df['_group_resp'] = data_df.iloc[:, 14].fillna('') if data_df.shape[1] > 14 else ''
                 result_df['_code_resp'] = data_df.iloc[:, 16].fillna('') if data_df.shape[1] > 16 else ''
+                result_df['Код ОКПД'] = data_df.iloc[:, 13] if data_df.shape[1] > 13 else ''
 
                 return _drop_tru_noise_rows(result_df)
             else:
@@ -245,6 +251,7 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
         result_df['Стоимость'] = df[col_mapping['Стоимость']] if 'Стоимость' in col_mapping else ''
         result_df['_group_resp'] = ''
         result_df['_code_resp'] = ''
+        result_df['Код ОКПД'] = df[col_mapping['Код ОКПД']] if 'Код ОКПД' in col_mapping else ''
 
         return _drop_tru_noise_rows(result_df)
         
@@ -312,6 +319,13 @@ def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[b
         
         # Удаляем временные колонки
         result_df = result_df.drop(columns=['_group_resp', '_code_resp', '_sort_key_code'])
+
+        if 'Код ОКПД' not in result_df.columns:
+            result_df['Код ОКПД'] = ''
+
+        # Упорядочиваем колонки для вывода
+        cols_order = ['Артикул', 'Наименование', 'Количество', 'Цена', 'Стоимость', 'Ответственные', 'Код ОКПД']
+        result_df = result_df[cols_order]
         
         # Удаляем пустые строки
         result_df = result_df.dropna(how='all')
@@ -336,7 +350,23 @@ def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[b
                 cell.alignment = header_alignment
             
             for row in worksheet.iter_rows(min_row=2):
-                row[0].alignment = left_align # Артикул
+                def _format_code_cell(val):
+                    if val is None:
+                        return val
+                    if isinstance(val, bool):
+                        return str(val)
+                    if isinstance(val, int):
+                        return str(val)
+                    if isinstance(val, float):
+                        if val.is_integer():
+                            return str(int(val))
+                        s = f"{val:.10f}".rstrip('0').rstrip('.')
+                        return s
+                    return str(val)
+
+                row[0].value = _format_code_cell(row[0].value)
+                row[0].alignment = center_align # Артикул
+                row[0].number_format = '@'
                 row[1].alignment = left_align # Наименование
                 row[2].alignment = center_align # Количество
                 
@@ -352,8 +382,11 @@ def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[b
                 cell.number_format = '#,##0.00'
                 
                 row[5].alignment = left_align # Ответственные
+                row[6].value = _format_code_cell(row[6].value)
+                row[6].alignment = center_align # Код ОКПД
+                row[6].number_format = '@'
 
-            column_widths = {'A': 15, 'B': 50, 'C': 12, 'D': 15, 'E': 15, 'F': 40}
+            column_widths = {'A': 15, 'B': 50, 'C': 12, 'D': 15, 'E': 15, 'F': 40, 'G': 20}
             for col_letter, width in column_widths.items():
                 worksheet.column_dimensions[col_letter].width = width
             

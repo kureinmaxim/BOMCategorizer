@@ -671,15 +671,18 @@ class PDFExporter:
             )
             
             # Создаем строку с заголовком категории
-            # Пустая ячейка в 1-й колонке (№ п/п), текст во 2-й колонке (Наименование ИВП)
+            # Если есть колонка №, оставляем пустую ячейку, иначе пишем сразу в 1-ю колонку.
             empty_cell = Paragraph('', category_header_style)
             category_cell = Paragraph(f"<b>{sheet_name}</b>", category_header_style)
-            
-            # Формируем строку: пустая ячейка, заголовок, затем остальные пустые
-            if num_cols >= 2:
+
+            headers = _header_cells()
+            has_no_col = any(h in ['№', '№ п/п', 'n'] for h in headers)
+
+            # Формируем строку: пустая ячейка (если есть №), заголовок, затем остальные пустые
+            if num_cols >= 2 and has_no_col:
                 category_row = [empty_cell, category_cell] + [empty_cell] * (num_cols - 2)
             else:
-                category_row = [category_cell]  # На случай если колонка всего одна
+                category_row = [category_cell] + [empty_cell] * (num_cols - 1) if num_cols > 1 else [category_cell]
             
             # Вставляем строку заголовка в начало данных
             data.insert(0, category_row)
@@ -1024,14 +1027,25 @@ class PDFExporter:
         style.add('ROWBACKGROUNDS', (0, body_start_row), (-1, -1), [colors.white, colors.HexColor('#f0f9ff')])
         
         # Выравнивание по центру для числовых колонок
-        # Колонка № п/п (0) - центр (для всех случаев)
-        style.add('ALIGN', (0, body_start_row), (0, -1), 'CENTER')
-        # Колонка шт. (обычно 4) - центр
-        if num_cols > 4:
-            style.add('ALIGN', (4, body_start_row), (4, -1), 'CENTER')
-        # Колонка Стоимость (обычно последняя) - право
-        if num_cols == 8:
-            style.add('ALIGN', (7, body_start_row), (7, -1), 'RIGHT')
+        headers = _header_cells()
+        num_col_idx = None
+        qty_col_idx = None
+        cost_col_idx = None
+        for idx, h in enumerate(headers):
+            hh = (h or '').strip().lower()
+            if num_col_idx is None and hh in ['№', '№ п/п', 'n']:
+                num_col_idx = idx
+            elif qty_col_idx is None and hh in ['шт.', 'шт', 'qty', 'количество', 'кол-во', 'кол.']:
+                qty_col_idx = idx
+            elif cost_col_idx is None and 'стоимость' in hh:
+                cost_col_idx = idx
+
+        if num_col_idx is not None:
+            style.add('ALIGN', (num_col_idx, body_start_row), (num_col_idx, -1), 'CENTER')
+        if qty_col_idx is not None:
+            style.add('ALIGN', (qty_col_idx, body_start_row), (qty_col_idx, -1), 'CENTER')
+        if cost_col_idx is not None:
+            style.add('ALIGN', (cost_col_idx, body_start_row), (cost_col_idx, -1), 'RIGHT')
         
         table.setStyle(style)
         
