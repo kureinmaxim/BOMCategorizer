@@ -1405,8 +1405,28 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         sheet_raw = str(sheet_name or '').strip()
                         if not sheet_raw or name_col not in df_in.columns:
                             return df_in
+                        if sheet_raw.lower() in {'другие'}:
+                            return df_in
                         prefix = category_prefix_map.get(sheet_raw.lower()) or sheet_raw
                         df_out = df_in.copy()
+
+                        component_prefixes = {
+                            'резистор', 'конденсатор', 'индуктивность', 'дроссель',
+                            'диод', 'транзистор', 'стабилитрон', 'микросхема',
+                            'разъем', 'разъём', 'вилка', 'розетка', 'штекер', 'гнездо',
+                            'кабель', 'плата', 'модуль', 'фильтр', 'реле', 'трансформатор',
+                            'индикатор', 'предохранитель', 'переключатель', 'кнопка',
+                            'транзисторная', 'адаптер', 'переход', 'свч'
+                        }
+                        blocked_phrases = set(component_prefixes)
+                        blocked_phrases.add(prefix.lower())
+                        blocked_phrases.add(sheet_raw.lower())
+                        for v in category_prefix_map.values():
+                            blocked_phrases.add(v.lower())
+                        blocked_phrases.update({
+                            'наши разработки', 'не распределено'
+                        })
+                        blocked_phrases_sorted = sorted(blocked_phrases, key=len, reverse=True)
 
                         def add_prefix(name):
                             if name is None or pd.isna(name):
@@ -1414,7 +1434,19 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             s = str(name).strip()
                             if not s:
                                 return s
-                            if s.lower().startswith(prefix.lower() + ' '):
+                            s_lower = s.lower()
+                            if prefix.lower() == 'свч модуль':
+                                rf_terms = [
+                                    'свч', 'аттенюатор', 'вентиль', 'переключатель', 'делитель',
+                                    'детектор', 'коммутатор', 'корректор', 'нагрузка',
+                                    'ответвитель', 'усилитель', 'фазовращатель'
+                                ]
+                                if any(term in s_lower for term in rf_terms):
+                                    return s
+                            for phrase in blocked_phrases_sorted:
+                                if s_lower.startswith(phrase + ' '):
+                                    return s
+                            if s_lower.startswith(prefix.lower() + ' '):
                                 return s
                             return f"{prefix} {s}"
 

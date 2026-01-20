@@ -389,6 +389,11 @@ def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[b
             column_widths = {'A': 15, 'B': 50, 'C': 12, 'D': 15, 'E': 15, 'F': 40, 'G': 20}
             for col_letter, width in column_widths.items():
                 worksheet.column_dimensions[col_letter].width = width
+
+            # Дополнительно фиксируем выравнивание всей колонки Код ОКПД по центру
+            for cell in worksheet.iter_cols(min_col=7, max_col=7, min_row=2):
+                for c in cell:
+                    c.alignment = center_align
             
             # ИТОГО
             last_row = len(result_df) + 1
@@ -713,18 +718,13 @@ def process_tru_rkm_files(file_paths: List[str], progress_callback=None) -> Dict
             results[path] = {'success': False, 'message': 'Unknown file type'}
             if progress_callback: progress_callback(i+1, len(file_paths), os.path.basename(path), False)
             
-    # Обработка ТРУ файлов (объединение)
+    # Обработка ТРУ файлов (по каждому файлу отдельно)
     if tru_files:
-        # Имя выходного файла берем из первого файла
-        output_path = generate_output_filename(tru_files[0], 'tpy')
-        
-        if progress_callback:
-             progress_callback(1, len(file_paths), "Объединение ТРУ файлов...", True)
-             
-        success, msg = process_tru_files_batch(tru_files, output_path)
-        
-        # Записываем результат для всех входных файлов
-        for path in tru_files:
+        for idx, path in enumerate(tru_files, start=1):
+            output_path = generate_output_filename(path, 'tpy')
+            if progress_callback:
+                progress_callback(idx, len(file_paths), f"Обработка ТРУ: {os.path.basename(path)}", True)
+            success, msg = process_tru_files_batch([path], output_path)
             results[path] = {
                 'success': success,
                 'output_path': output_path if success else None,

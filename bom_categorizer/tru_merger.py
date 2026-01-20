@@ -1111,7 +1111,7 @@ def apply_merge_styles(
     right_alignment = Alignment(horizontal='right', vertical='center')
     
     # Определяем индексы колонок для центрирования и выравнивания по правому краю
-    center_cols = set()  # №, шт., № ТРУ, КОД ERP(МР)
+    center_cols = set()  # №, шт., № ТРУ, КОД ERP(МР), ОКПД
     right_cols = set()   # (не используется)
     left_cols = set()    # Стоимость
     code_col_idx = None  # Индекс колонки КОД
@@ -1126,6 +1126,8 @@ def apply_merge_styles(
         elif header_value in ['шт.', 'шт', 'qty', 'количество']:
             center_cols.add(col_idx)
         elif header_value in ['№ тру', 'тру']:
+            center_cols.add(col_idx)
+        elif 'окпд' in header_value:
             center_cols.add(col_idx)
         elif 'код' in header_value or 'erp' in header_value:
             center_cols.add(col_idx)
