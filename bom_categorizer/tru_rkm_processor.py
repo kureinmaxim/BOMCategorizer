@@ -160,6 +160,7 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
 
     try:
         ext = os.path.splitext(input_path)[1].lower()
+        df_raw = None
         
         if ext == '.xls':
             # Старый формат Excel — используем xlrd
@@ -172,65 +173,199 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
             for row_idx in range(sheet.nrows):
                 data.append([sheet.cell_value(row_idx, col_idx) for col_idx in range(sheet.ncols)])
                 
-            df = pd.DataFrame(data)
-            
-            # Пробуем использовать первую строку как заголовок
-            if len(df) > 0:
-                df.columns = df.iloc[0]
-                df = df.iloc[1:].reset_index(drop=True)
+            df_raw = pd.DataFrame(data)
             
         elif ext == '.xlsx':
             # Новый формат Excel — используем openpyxl через pandas
-            # Сначала пробуем с заголовком
-            df = pd.read_excel(input_path, sheet_name=0, engine='openpyxl')
+            # Читаем БЕЗ заголовка, чтобы найти его вручную
+            df_raw = pd.read_excel(input_path, sheet_name=0, header=None, engine='openpyxl')
             
         else:
             print(f"Неподдерживаемый формат файла: {ext}")
             return None
         
-        # Проверяем что файл не пустой
-        if len(df) < 1:
+        if df_raw is None or len(df_raw) < 1:
             return None
+
+        # Ищем строку заголовка
+        header_row_idx = -1
         
+        # Ключевые слова для поиска заголовка
+        keywords = ['наименование', 'артикул', 'количество', 'цена', 'стоимость', 'ответственные', 'код']
+        
+        for idx in range(min(20, len(df_raw))):
+            row_str = df_raw.iloc[idx].astype(str).str.lower().str.strip()
+            # Проверяем наличие хотя бы двух ключевых слов
+            hits = sum(1 for kw in keywords if row_str.str.contains(kw, regex=False).any())
+            
+            has_name = row_str.str.contains('наименование').any() or row_str.str.contains('description').any()
+            
+            if hits >= 2 or has_name:
+                header_row_idx = idx
+                break
+        
+        df = None
+        if header_row_idx >= 0:
+            # Заголовок найден
+            df = df_raw.iloc[header_row_idx+1:].copy()
+            df.columns = df_raw.iloc[header_row_idx]
+            df = df.reset_index(drop=True)
+        else:
+            # Заголовок НЕ найден — считаем, что данные начинаются с 0
+            # Не присваиваем column names, оставляем int индексы
+            df = df_raw.copy()
+
         # Нормализуем названия колонок для поиска
         col_mapping = {}
-        for col in df.columns:
-            col_str = str(col).lower().strip()
-            if 'артикул' in col_str or col_str == 'код':
-                col_mapping['Артикул'] = col
-            elif 'наименование' in col_str and 'ивп' not in col_str:
-                col_mapping['Наименование'] = col
-            elif 'наименование ивп' in col_str:
-                col_mapping['Наименование'] = col
-            elif col_str in ['количество', 'кол-во', 'qty', 'шт', 'шт.']:
-                col_mapping['Количество'] = col
-            elif 'цена' in col_str or col_str == 'price':
-                col_mapping['Цена'] = col
-            elif 'стоимость' in col_str or col_str == 'сумма':
-                col_mapping['Стоимость'] = col
-            elif 'окпд' in col_str and ('код' in col_str or 'код окпд' in col_str):
-                col_mapping['Код ОКПД'] = col
-            elif 'окпд' in col_str and 'Код ОКПД' not in col_mapping:
-                col_mapping['Код ОКПД'] = col
+        cols = list(df.columns)
+        cols_lower = [str(c).lower().strip() for c in cols]
+        
+        # --- Поиск Наименования ---
+        # Приоритет: 1. Точное "Наименование" 2. "Наименование ИВП" 3. Содержит "Наименование" (но не "заказа")
+        name_idx = -1
+        
+        # 1. Exact match
+        try:
+            name_idx = cols_lower.index('наименование')
+        except ValueError:
+            # 2. Exact match variants
+            try:
+                name_idx = cols_lower.index('наименование ивп')
+            except ValueError:
+                pass
+        
+        # 3. Fuzzy match (excluding bad words)
+        if name_idx < 0:
+            for i, c_low in enumerate(cols_lower):
+                if 'наименование' in c_low and 'заказа' not in c_low and 'подразделение' not in c_low:
+                     name_idx = i
+                     break
+                if 'description' in c_low:
+                     name_idx = i
+                     break
+        
+        if name_idx >= 0:
+            col_mapping['Наименование'] = cols[name_idx]
+
+        # --- Поиск Количества ---
+        # Приоритет: 1. "Количество заявлено в БЕИ" 2. Точное "Количество" 3. Fuzzy
+        qty_idx = -1
+        
+        # 1. Known long headers
+        for target in ['количество заявлено в беи', 'количество (беи)']:
+             try:
+                 qty_idx = cols_lower.index(target)
+                 if qty_idx >= 0: break
+             except ValueError:
+                 pass
+        
+        # 2. Exact common headers
+        if qty_idx < 0:
+            for target in ['количество', 'кол-во', 'qty', 'шт', 'шт.']:
+                try:
+                    qty_idx = cols_lower.index(target)
+                    if qty_idx >= 0: break
+                except ValueError:
+                    pass
+        
+        # 3. Fuzzy match
+        if qty_idx < 0:
+            for i, c_low in enumerate(cols_lower):
+                if 'количество' in c_low and 'деи' not in c_low: # Избегаем ДЕИ если есть выбор
+                    qty_idx = i
+                    break
+                if 'qty' in c_low:
+                    qty_idx = i
+                    break
+        
+        if qty_idx >= 0:
+            col_mapping['Количество'] = cols[qty_idx]
+
+        # --- Поиск Цены ---
+        price_idx = -1
+        # 1. Exact or starts with
+        for i, c_low in enumerate(cols_lower):
+            if c_low in ['цена', 'price', 'цена без ндс']:
+                price_idx = i
+                break
+        
+        # 2. Contains
+        if price_idx < 0:
+            for i, c_low in enumerate(cols_lower):
+                if ('цена' in c_low or 'price' in c_low) and 'сумма' not in c_low:
+                    price_idx = i
+                    break
+        
+        if price_idx >= 0:
+            col_mapping['Цена'] = cols[price_idx]
+            
+        # --- Поиск Стоимости ---
+        cost_idx = -1
+        for i, c_low in enumerate(cols_lower):
+            if c_low in ['стоимость', 'сумма', 'сумма без ндс']:
+                cost_idx = i
+                break
+        if cost_idx < 0:
+            for i, c_low in enumerate(cols_lower):
+                if 'стоимость' in c_low or 'сумма' in c_low:
+                    cost_idx = i
+                    break
+        
+        if cost_idx >= 0:
+            col_mapping['Стоимость'] = cols[cost_idx]
+
+        # --- Поиск Артикула ---
+        art_idx = -1
+        for i, c_low in enumerate(cols_lower):
+            if 'артикул' in c_low or c_low == 'код':
+                art_idx = i
+                break
+        if art_idx >= 0:
+            col_mapping['Артикул'] = cols[art_idx]
+
+        # --- Поиск Код ОКПД ---
+        okpd_idx = -1
+        for i, c_low in enumerate(cols_lower):
+            if 'окпд' in c_low:
+                okpd_idx = i
+                break
+        if okpd_idx >= 0:
+            col_mapping['Код ОКПД'] = cols[okpd_idx]
+            
+        # --- Ответственные ---
+        # Может быть "Роль ответственного" или "Группа ответственных"
+        # Нам нужно то, что было раньше как "group_resp"? 
+        # В старом коде: _group_resp = data_df.iloc[:, 14] (Группа ответственных?)
+        # В файле: Col 14 = "Группа ответственных", Col 11 = "Роль ответственного"
+        # Также ищем 'Код группы ответственных' (Col 16)
+        
+        # Ищем группу 
+        group_idx = -1
+        for i, c_low in enumerate(cols_lower):
+            if 'группа ответственных' in c_low:
+                group_idx = i
+                break
+        
+        code_resp_idx = -1
+        for i, c_low in enumerate(cols_lower):
+            if 'код группы ответственных' in c_low:
+                code_resp_idx = i
+                break
         
         
         # Проверяем наличие минимальных колонок
         if 'Наименование' not in col_mapping:
-            # Если нет колонки "Наименование", пробуем fallback на индексы
-            # (для старых ТРУ файлов без заголовков)
-            
-            
-            # Перечитываем без заголовков
-            if ext == '.xlsx':
-                df = pd.read_excel(input_path, sheet_name=0, header=None, engine='openpyxl')
-            
+            # Fallback на индексы для совсем плохих случаев (как раньше)
             if df.shape[1] >= 2:
-                # Пропускаем первые 2 строки (заголовки)
-                data_df = df.iloc[2:].copy() if len(df) > 2 else df.copy()
+                # ВАЖНО: Не пропускаем строки, если заголовка не было!
+                data_df = df # Используем данные как есть
                 
                 result_df = pd.DataFrame()
                 result_df['Артикул'] = data_df.iloc[:, 0] if data_df.shape[1] > 0 else ''
+                # Если 0-я пустая, берем 1-ю как наименование
                 result_df['Наименование'] = data_df.iloc[:, 1] if data_df.shape[1] > 1 else ''
+                
+                # Fallback индексы
                 result_df['Количество'] = data_df.iloc[:, 4] if data_df.shape[1] > 4 else ''
                 result_df['Цена'] = data_df.iloc[:, 8] if data_df.shape[1] > 8 else ''
                 result_df['Стоимость'] = data_df.iloc[:, 9] if data_df.shape[1] > 9 else ''
@@ -249,8 +384,21 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
         result_df['Количество'] = df[col_mapping['Количество']] if 'Количество' in col_mapping else ''
         result_df['Цена'] = df[col_mapping['Цена']] if 'Цена' in col_mapping else ''
         result_df['Стоимость'] = df[col_mapping['Стоимость']] if 'Стоимость' in col_mapping else ''
-        result_df['_group_resp'] = ''
-        result_df['_code_resp'] = ''
+        
+        # Ответственные: берем из найденных колонок или пытаемся по индексам если заголовки есть но странные?
+        # Лучше брать по имени
+        if group_idx >= 0:
+            result_df['_group_resp'] = df.iloc[:, group_idx]
+        else:
+             # Fallback index 14 "Группа ответственных"
+             result_df['_group_resp'] = df.iloc[:, 14] if df.shape[1] > 14 else ''
+
+        if code_resp_idx >= 0:
+             result_df['_code_resp'] = df.iloc[:, code_resp_idx]
+        else:
+             # Fallback index 16 "Код группы ответственных"
+             result_df['_code_resp'] = df.iloc[:, 16] if df.shape[1] > 16 else ''
+             
         result_df['Код ОКПД'] = df[col_mapping['Код ОКПД']] if 'Код ОКПД' in col_mapping else ''
 
         return _drop_tru_noise_rows(result_df)
