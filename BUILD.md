@@ -192,6 +192,27 @@ git push origin main --tags
 
 ---
 
+### ❌ Inno Setup: `EndUpdateResource failed (110)`
+
+Антивирус (Windows Defender) блокирует запись в `.exe` во время сборки.
+
+**Решение:**
+
+```powershell
+# 1. Добавить исключение в Windows Defender
+Add-MpPreference -ExclusionPath "C:\Project\BOMCategorizer"
+
+# 2. Удалить старый .exe перед повторной сборкой
+Remove-Item "BOMCategorizerModernSetup.exe" -Force -ErrorAction SilentlyContinue
+
+# 3. Повторить сборку
+python deployment/build_installer.py
+```
+
+> ⚠️ Исключение нужно добавить один раз (от имени администратора). После этого пересборки работают без ошибок.
+
+---
+
 ### ❌ Ошибка с PySide6 / offline_packages
 
 Если сборка Modern Edition ругается на зависимости:
@@ -211,6 +232,18 @@ pip download PySide6 -d offline_packages --platform win_amd64 --python-version 3
 ```bash
 python3 tools/update_version.py status
 python3 tools/update_version.py sync
+```
+
+---
+
+### ❌ Windows: `pip` не распознаётся
+
+Если `pip` не в PATH, используйте:
+
+```powershell
+python -m pip install <пакет>
+# или
+py -m pip install <пакет>
 ```
 
 ---

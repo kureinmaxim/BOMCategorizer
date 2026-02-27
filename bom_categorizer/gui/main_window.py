@@ -1359,6 +1359,14 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     except:
                         all_sheets = pd.read_excel(bom_path, sheet_name=None)
 
+                    # Фильтруем мусорные строки (пустые и ИТОГО), которые могут
+                    # остаться от предыдущей обработки _тру.xlsx файлов
+                    for _sn in list(all_sheets.keys()):
+                        _df_s = all_sheets[_sn]
+                        if 'Наименование ИВП' in _df_s.columns:
+                            _mask = _df_s['Наименование ИВП'].notna() & (_df_s['Наименование ИВП'].astype(str).str.strip() != '')
+                            all_sheets[_sn] = _df_s[_mask].reset_index(drop=True)
+
                     # Для этого BOM файла включаем шаговый прогресс
                     if merge_progress:
                         # +8 примерно на сохранение/отчеты/форматирование/PDF
@@ -1369,13 +1377,8 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         QApplication.processEvents()
                         step = 0
                     
-                    # Ищем колонку с наименованием
-                    bom_name_col = None
-                    bom_qty_col = None
-                    
                     # Обрабатываем каждый лист
                     total_merged = 0
-                    merged_sheets = {}
                     merged_sheets = {}
                     merged_rows_per_sheet = {}
                     all_used_tru_indices = set()
@@ -1405,7 +1408,7 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         sheet_raw = str(sheet_name or '').strip()
                         if not sheet_raw or name_col not in df_in.columns:
                             return df_in
-                        if sheet_raw.lower() in {'другие'}:
+                        if sheet_raw.lower() in {'другие', 'наши разработки', 'не распределено', 'несопоставленные тру'}:
                             return df_in
                         prefix = category_prefix_map.get(sheet_raw.lower()) or sheet_raw
                         df_out = df_in.copy()
@@ -1463,6 +1466,9 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             merge_progress.setValue(step)
                             merge_progress.setLabelText(f"Merge: {os.path.basename(bom_path)} → {sheet_name}")
                             QApplication.processEvents()
+                        # Сбрасываем колонки для каждого листа (у разных листов могут быть разные колонки)
+                        bom_name_col = None
+                        bom_qty_col = None
                         # Ищем колонки
                         for col in df.columns:
                             col_lower = str(col).lower()
@@ -1479,9 +1485,8 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                         if '№ п/п' in df.columns:
                             df = df.drop(columns=['№ п/п'])
 
-                        df = _apply_category_prefix(df, bom_name_col, sheet_name)
-                        
-                        # Объединяем данные
+                        # ВАЖНО: сначала матчим с ТРУ по ОРИГИНАЛЬНЫМ именам,
+                        # и только потом добавляем категорийные префиксы для отчётов.
                         merged_df, merged_indices, used_indices = merge_tru_into_bom(
                             bom_df=df,
                             tru_dfs=tru_dfs,
@@ -1489,9 +1494,11 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             bom_name_col=bom_name_col,
                             bom_qty_col=bom_qty_col if bom_qty_col else 'шт.'
                         )
-                        
+
+                        merged_df = _apply_category_prefix(merged_df, bom_name_col, sheet_name)
+
                         all_used_tru_indices.update(used_indices)
-                        
+
                         merged_sheets[sheet_name] = merged_df
                         merged_rows_per_sheet[sheet_name] = merged_indices
                         total_merged += len(merged_indices)

@@ -76,6 +76,10 @@ def normalize_for_matching(text: str) -> str:
     
     text = str(text).strip()
     
+    # Нормализация кавычек (ёлочки, лапки, фигурные → прямые)
+    text = text.replace('«', '"').replace('»', '"')
+    text = text.replace('\u201c', '"').replace('\u201d', '"').replace('\u201e', '"')
+    
     # Заменяем разные виды тире и пробелов
     text = re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]', '-', text)  # Различные тире
     text = re.sub(r'\s+', ' ', text)  # Множественные пробелы → один
@@ -103,8 +107,13 @@ def extract_nominal(text: str) -> str:
     for pattern in patterns:
         match = re.search(pattern, str(text), re.IGNORECASE)
         if match:
-            return normalize_for_matching(match.group(0))
-    
+            nominal = match.group(0)
+            # Нормализуем десятичный разделитель: точка → запятая
+            # чтобы "6.8 Ом" и "6,8 Ом" давали одинаковый результат
+            nominal = re.sub(r'(\d)\.(\d)', r'\1,\2', nominal)
+            # Убираем пробел между числом и единицей чтобы "12 пФ" == "12пФ"
+            return normalize_for_matching(nominal).replace(' ', '')
+
     return ""
 
 
@@ -342,36 +351,60 @@ def extract_pure_code(text: str) -> str:
     
     text = str(text).strip()
     
+    # Нормализация кавычек (ёлочки, лапки, фигурные → прямые)
+    text = text.replace('«', '"').replace('»', '"')
+    text = text.replace('\u201c', '"').replace('\u201d', '"').replace('\u201e', '"')
+    
     # Список слов-категорий для удаления
     category_words = [
         'чип катушки индуктивности', 'чип катушка индуктивности',
         'катушка индуктивности', 'катушки индуктивности',
-        'микросхема', 'микродроссель', 'дроссель',
+        'микросхема', 'микродроссель', 'дроссель фильтрации', 'дроссель',
         'конденсатор', 'резистор', 'диод', 'транзистор',
         'стабилитрон', 'индикатор единичный', 'индикатор',
         'трансформатор', 'модуль электропитания', 'модуль питания',
         'модуль передачи данных', 'модуль фильтра',
         'модуль', 'плата инструментальная', 'плата входа', 'плата', 'аттенюатор',
         'чип', 'фильтр помехоподавляющий', 'фильтр', 'реле', 'оптопара', 'кабель',
-        'патч-корд', 'патч корд'
+        'патч-корд', 'патч корд',
+        'корректор ачх', 'эквалайзер', 'фазовращатель', 'вентиль свч',
+        'делитель мощности', 'ответвитель однонаправленный', 'ответвитель',
+        'детектор', 'усилитель', 'аттенюатор цифровой',
+        'ethernet кабель',
+        # разъемные компоненты и адаптеры
+        'разъем', 'разъём', 'розетка', 'вилка', 'штекер', 'гнездо', 'адаптер',
+        # характеристики разъёмов (спецификации, которые не являются частью артикула)
+        'jack', 'plug', 'socket', 'receptacle',
+        '50 ω', '50 ohm', '75 ω', '75 ohm',
+        'sma', 'n type',
     ]
     
     # Производители для удаления (в начале и в конце строки)
     manufacturers = [
         'coilcraft', 'mini-circuits', 'texas instruments', 'analog devices',
         'hittite', 'maxim integrated', 'stmicroelectronics', 'avnet', 'ebyte',
-        'api technologies', 'weinschel', 'vishay', 'yageo', 'murata', 'tdk',
-        'samsung', 'intel', 'amd', 'nxp', 'infineon', 'on semiconductor',
-        'microchip', 'renesas', 'broadcom', 'qualcomm', 'xilinx', 'altera',
-        'hyperline', 'cablexpert'
+        'api technologies', 'weinschel', 'api/weinschel', 'vishay', 'yageo',
+        'murata', 'tdk', 'samsung', 'intel', 'amd', 'nxp', 'infineon',
+        'on semiconductor', 'microchip', 'renesas', 'broadcom', 'qualcomm',
+        'xilinx', 'altera', 'hyperline', 'cablexpert',
+        # Fix 7: дополнительные производители
+        'delta electronics', 'rosenberger', 'lanjian electronics',
+        'jfw', 'qualwave', 'a-info', 'opsero', 'harting',
+        'planar monolithics industries', 'psemi', 'samtec',
+        'bel', 'gembird', 'defender',
+        'aeroflex/weinschel', 'aeroflex',
     ]
     
-    # Удаляем слова-категории (с начала)
+    # Удаляем слова-категории (с начала, возможно цепочкой: "Кабель - адаптер" → "")
     text_lower = text.lower()
-    for word in category_words:
-        if text_lower.startswith(word):
-            text = text[len(word):].strip()
-            text_lower = text.lower()
+    changed = True
+    while changed:
+        changed = False
+        for word in category_words:
+            if text_lower.startswith(word):
+                text = text[len(word):].lstrip(' -')
+                text_lower = text.lower()
+                changed = True
             
     # Заменяем кириллицу на латиницу (визуально похожие символы)
     # Это решает проблемы, когда код написан в русской раскладке (например, 0603HP vs 0603НР)
@@ -385,7 +418,7 @@ def extract_pure_code(text: str) -> str:
     text = "".join(new_text_chars)
     text_lower = text  # Уже в нижнем регистре
     
-    # Удаляем производителей (и с начала, и с конца)
+    # Удаляем производителей (с начала, с конца и из середины строки)
     for mfr in manufacturers:
         # С конца
         if text_lower.endswith(mfr):
@@ -401,18 +434,60 @@ def extract_pure_code(text: str) -> str:
         elif text_lower.startswith(mfr):
             text = text[len(mfr):].strip()
             text_lower = text.lower()
+        # Из середины (окружён пробелами)
+        mid_pattern = ' ' + mfr + ' '
+        if mid_pattern in text_lower:
+            text = text_lower.replace(mid_pattern, ' ')
+            text_lower = text
     
+    # Удаляем суффикс ТУ в конце (например "АЛЯР.434110.005 ТУ", "ОЖ0.460.107 ТУ")
+    # После замены кириллицы на латиницу текст может быть смешанным (aляp, oж0 и т.п.)
+    # Паттерн: буквы/цифры + "." + цифры + "." + цифры + опц дефис/цифры + ТУ/ty
+    text = re.sub(r'\s*[A-Za-zА-Яа-яёЁ0-9]{2,10}[\s.]+\d{3,6}[\s.]+\d{3}[\s.\-]*\d*\s*[тtТT][уyУY]\s*$', '', text_lower)
+    if text == text_lower:
+        # Более простой паттерн — просто убрать " ТУ" / " TУ" / "ТУ" в конце
+        text = re.sub(r'\s*[тtТT][уyУY]\s*$', '', text_lower)
+    
+    # Удаляем "p/n", "p/n:", "артикул" — это метки, не часть кода
+    text = re.sub(r'\bp/n\s*:?\s*', '', text)
+    text = re.sub(r'\bартикул\s*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\bartикyл\s*', '', text, flags=re.IGNORECASE)  # с лат. 'y'
+
+    # Fix 3: Кавычки → дефис (К53-66"Е" и К53-66-"Е" → одинаковый вид)
+    text = text.replace('"', '-')
+
     # Нормализуем
     text = re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]', '-', text)  # Различные тире
     text = re.sub(r'\s+', '', text)  # Убираем все пробелы
     text = text.replace('_', '-')  # Подчёркивания → дефисы
     text = text.replace(':', '-')  # Двоеточие → дефис
-    text = text.replace('.', '-')  # Точка → дефис
-    
+
+    # Fix 2: Убираем стреляный дефис после знака процента (±5%-а → ±5%а)
+    text = re.sub(r'%-', '%', text)
+
+    # Схлопываем двойные/тройные дефисы после замен
+    text = re.sub(r'-{2,}', '-', text)
+
+    # Точка в десятичных числах → запятая (чтобы "6.8" и "6,8" давали одинаковый код)
+    # Паттерн: цифра + точка + цифра (это десятичный разделитель, не разделитель частей кода)
+    text = re.sub(r'(\d)\.(\d)', r'\1,\2', text)
+    # Оставшиеся точки (разделители частей кода) → дефис
+    text = text.replace('.', '-')
+
+    # Fix 5: Нормализация мощности: "2,0" → "2" (перед дефисом)
+    text = re.sub(r'(\d),0(?=-)', r'\1', text)
+
     # Убираем суффикс типа -LW, -AB в конце (если код > 9 символов)
     if len(text) > 9:
         text = re.sub(r'-[A-Za-z]{1,3}$', '', text)
-    
+
+    # Fix 4: Убираем мусорные символы в конце (запятые, слэши)
+    text = text.rstrip(',-/')
+
+    # Финальная нормализация: ещё раз схлопываем дефисы и убираем крайние
+    text = re.sub(r'-{2,}', '-', text)
+    text = text.strip('-')
+
     return text.lower()
 
 
@@ -477,7 +552,7 @@ def find_matching_tru_row(
     
     for idx, row in tru_df.iterrows():
         tru_name = str(row.get(name_col, ''))
-        
+
         # Если требуется конкретный код (например АМФИ./ГВАТ./де...), то матчим только строки,
         # где этот код реально присутствует (иначе будут ложные совпадения на "Плата 1", "Плата 2" и т.п.)
         if required_norm:
@@ -485,19 +560,12 @@ def find_matching_tru_row(
             if required_norm not in tru_hay:
                 continue
 
-        # Если есть типовые различающие слова в BOM (вилка/розетка/штекер/гнездо),
-        # но в ТРУ их нет — не считаем это совпадением.
-        if bom_type_keywords:
-            tru_type_keywords = _extract_type_keywords(tru_name)
-            if not bom_type_keywords.issubset(tru_type_keywords):
-                continue
-
         norm_tru_name = normalize_for_matching(tru_name)
         tru_code = extract_component_code(tru_name)
         tru_pure_code = extract_pure_code(tru_name)
-        
+
         score = 0.0
-        
+
         # НОВАЯ Стратегия: Сравнение чистых кодов (без категорий и суффиксов)
         # Это самый надёжный способ — включает полный номер модели (напр. МДМ30-1В15ТУП)
         if bom_pure_code and tru_pure_code:
@@ -505,7 +573,46 @@ def find_matching_tru_row(
                 score = 0.99  # Точное совпадение — максимальный приоритет
             elif bom_pure_code in tru_pure_code or tru_pure_code in bom_pure_code:
                 score = 0.97  # Один содержит другой — высокий приоритет
-        
+            # Fix 9: сравнение без дефисов (РП-10-11 vs РП10-11)
+            elif bom_pure_code.replace('-', '') == tru_pure_code.replace('-', ''):
+                score = 0.95  # Одинаковые без дефисов — высокий приоритет
+            elif (bom_pure_code.replace('-', '') in tru_pure_code.replace('-', '') or
+                  tru_pure_code.replace('-', '') in bom_pure_code.replace('-', '')):
+                score = 0.93  # Вхождение без дефисов
+
+        # Fix 8: Типовые различающие слова (вилка/розетка/штекер/гнездо).
+        # Блокируем матч только если ТРУ тоже содержит специфичные типовые слова,
+        # но они не совпадают (вилка vs розетка). Если у ТРУ нет типовых слов
+        # (например "Разъем" без "вилка/розетка"), разрешаем матч (разъем — общий тип).
+        if bom_type_keywords:
+            tru_type_keywords = _extract_type_keywords(tru_name)
+            if tru_type_keywords and not bom_type_keywords.issubset(tru_type_keywords):
+                continue
+
+        # Стратегия: Сопоставление по артикулу / part number
+        # BOM: "Вилка D-SUB p/n: 09 65262681 7"  →  digits "09652626817"
+        # ТРУ: "Вилка Harting D-SUB артикул 09 65 262 6817"  → digits "09652626817"
+        if score < 0.9:
+            def _extract_article_digits(t: str) -> str:
+                """Извлекает цифровой артикул из строки с p/n или 'артикул'."""
+                # Ищем паттерн p/n: XXXXX или артикул XXXXX
+                m = re.search(r'(?:p/n\s*:?|артикул)\s*([\d\s]{6,})', t, re.IGNORECASE)
+                if m:
+                    return re.sub(r'\s+', '', m.group(1))
+                return ''
+            bom_article = _extract_article_digits(bom_name)
+            if bom_article and len(bom_article) >= 6:
+                tru_article = _extract_article_digits(tru_name)
+                if tru_article and bom_article == tru_article:
+                    score = max(score, 0.98)
+                elif not tru_article:
+                    # Пробуем найти артикул просто как длинную последовательность цифр в ТРУ
+                    tru_digits = re.findall(r'\d{5,}', tru_name.replace(' ', ''))
+                    for td in tru_digits:
+                        if bom_article in td or td in bom_article:
+                            score = max(score, 0.96)
+                            break
+
         # Стратегия 0: Если BOM — короткий код, ищем его вхождение в ТРУ
         if score < 0.9 and bom_is_short_code and norm_bom_name:
             # Проверяем нормализованную версию
@@ -514,7 +621,7 @@ def find_matching_tru_row(
             # Проверяем оригинальные строки (до нормализации)
             elif bom_name.strip().lower().replace(' ', '') in tru_name.lower().replace(' ', ''):
                 score = max(score, 0.95)
-        
+
         # Стратегия 1: Совпадение кода компонента (напр. МДМ30)
         # ВНИМАНИЕ: Это менее точный метод — может давать ложные совпадения!
         # Например, МДМ30-1В12 и МДМ30-1В15 оба имеют код МДМ30
@@ -523,19 +630,19 @@ def find_matching_tru_row(
                 score = max(score, 0.92)  # Ниже чем pure code чтобы избежать ложных матчей
             elif bom_code.lower() in tru_code.lower() or tru_code.lower() in bom_code.lower():
                 score = max(score, 0.85)
-        
+
         # Стратегия 2: BOM название содержится в ТРУ (или наоборот)
         if score < 0.8:
             if norm_bom_name in norm_tru_name:
                 score = max(score, 0.90)
             elif norm_tru_name in norm_bom_name:
                 score = max(score, 0.85)
-        
+
         # Стратегия 3: Общая схожесть
         if score < min_name_similarity:
             sim = similarity_ratio(norm_bom_name, norm_tru_name)
             score = max(score, sim)
-        
+
         if score < min_name_similarity:
             continue
         
@@ -751,19 +858,42 @@ def merge_tru_into_bom(
         if not bom_name or pd.isna(bom_name):
             continue
         
-        # Если в BOM есть "наш код" в колонке ТУ/Производитель — используем его как обязательный ключ матчинга.
+        bom_name_str = str(bom_name).strip()
+        
+        # Пропускаем перемычки — они не подлежат сопоставлению с ТРУ
+        if bom_name_str.lower() in ('перемычка', 'на перемычку'):
+            continue
+        
+        # Проверяем, является ли элемент «Наши разработки» (собственная разработка).
+        # Такие элементы не имеют записей в ТРУ и не подлежат сопоставлению.
+        _OWN_DEV_RE = re.compile(
+            r'\b(гват|амфи|игнд|гнди|арвд)\.\d+(?:\.\d+)*\b'   # ГВАТ.xxx, АМФИ.xxx и т.д.
+            r'|\bде\s*\d+(?:\.\d+){0,3}\b'                       # деX.xxx (собственный код)
+            r'|\b[её]\d+\.\d+(?:\.\d+){0,3}\b'                   # е5.067.066 (обрезанное «де»)
+            r'|\bост\s*\d+',                                      # ОСТxx
+            re.IGNORECASE
+        )
+        is_own_dev = False
         required_code = None
         try:
+            # Проверяем ТУ колонку
             for tu_col in ['ТУ/Производитель', 'ТУ', 'ту', '_extracted_tu_']:
                 if tu_col in result_df.columns:
                     v = bom_row.get(tu_col, '')
                     if v and not pd.isna(v):
                         vv = str(v).strip()
-                        if re.search(r'\b(гват|амфи|игнд)\.\d+(?:\.\d+)+\b|\bде\s*\d+(?:\.\d+){0,3}\b', vv, re.IGNORECASE):
-                            required_code = re.sub(r'\s+', '', vv)
+                        if _OWN_DEV_RE.search(vv):
+                            is_own_dev = True
                             break
+            # Если ТУ пуст, проверяем само наименование BOM
+            if not is_own_dev:
+                if _OWN_DEV_RE.search(bom_name_str):
+                    is_own_dev = True
         except Exception:
-            required_code = None
+            pass
+        
+        if is_own_dev:
+            continue  # Пропускаем «Наши разработки» — им не нужен ТРУ
 
         tru_match = find_matching_tru_row(
             bom_name=str(bom_name),
