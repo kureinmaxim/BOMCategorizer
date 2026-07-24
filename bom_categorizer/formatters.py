@@ -393,142 +393,150 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
             clean_text = clean_text.strip()
             break
     
-    # Если ТУ не найден, ищем производителя
-    if not tu_code:
-        manufacturer = ""
-        
-        # Сначала проверяем известные префиксы плат (высокий приоритет для dev boards)
-        board_prefixes = {
-            'NUCLEO-': 'STMicroelectronics',
-            'NUCLEO': 'STMicroelectronics',  # Если без дефиса
-            'DISCOVERY-': 'STMicroelectronics',
-            'DISCOVERY': 'STMicroelectronics',
-            'STM32-': 'STMicroelectronics',
-            'STM32': 'STMicroelectronics',
-            'EVAL-ADF': 'Analog Devices',  # EVAL-ADFxxxx
-            'EVAL-AD': 'Analog Devices',   # EVAL-ADxxxx
-        }
-        
-        text_upper = clean_text.upper()
-        for prefix, mfr in board_prefixes.items():
-            if prefix in text_upper:
-                manufacturer = mfr
-                # Не удаляем префикс из названия, так как это часть артикула
-                break
-        
-        # Список известных производителей (в порядке от более специфичных к менее)
-        # Сначала идут полные названия, потом сокращения (чтобы избежать ложных срабатываний)
-        if not manufacturer:
-            known_manufacturers = [
-            'Texas Instruments',
-            'MAXIM INTEGRATED',
-            'Maxim Integrated',
-            'Analog Devices',
-            'Analog Device',  # Вариант без 's'
-            'MINI-CIRCUITS',
-            'Mini-Circuits',
-            'ROSENBERGER',
-            'Rosenberger',
-            'COILCRAFT',
-            'Coilcraft',
-            'MURATA',
-            'Murata',
-            'HARTING',
-            'Harting',
-            'HITTITE',
-            'Hittite',
-            # Сокращения (добавляем в конец списка, чтобы полные названия имели приоритет)
-            'TI',  # Texas Instruments
-            'ADI',  # Analog Devices
-            'Maxim',
-        ]
-        
-        # Словарь нормализации: сокращение -> полное название
-        # Ключи в ВЕРХНЕМ РЕГИСТРЕ для корректного сравнения
-        manufacturer_aliases = {
-            'TI': 'Texas Instruments',
-            'ADI': 'Analog Devices',
-            'ANALOG DEVICE': 'Analog Devices',  # Нормализация варианта без 's'
-            'MAXIM': 'Maxim Integrated',
-            'MAXIM INTEGRATED': 'Maxim Integrated',
-        }
-        
-        # Если производитель еще не найден по префиксу, продолжаем поиск
-        if not manufacturer:
-            # 1. Сначала ищем "ф." + производитель (высокий приоритет)
-            # Паттерн для извлечения производителя после "ф." или "ф ."
-            # Ищем "ф." и берем производителя (до разделителя)
-            # Поддерживает: Avnet, Huber+Suhner, API Technologies corp.
-            mfr_pattern = r'\s*ф\s*\.\s*([A-Za-zА-ЯЁа-яё][A-Za-zА-ЯЁа-яё\s\-\.\+]+?)(?=\s*$|,|;|/|\(|\s+\d)'
-            match = re.search(mfr_pattern, clean_text, re.IGNORECASE)
-            
-            if match:
-                manufacturer = match.group(1).strip()
-                
-                # Удаляем "ф.Производитель" и всё после него
-                # 1. Найти позицию начала "ф."
-                start_pos = match.start()
-                
-                # 2. Взять только текст ДО "ф."
-                clean_text = clean_text[:start_pos].strip()
-                
-                # Альтернативный способ: удалить " ф.Производитель" и всё что после него
-                # clean_text = re.sub(r'\s+ф\s*\.\s*.*$', '', clean_text, flags=re.IGNORECASE).strip()
-                
-                # Нормализуем производителя сразу (преобразуем сокращения в полные названия)
-                manufacturer_upper = manufacturer.upper()
-                if manufacturer_upper in manufacturer_aliases:
-                    manufacturer = manufacturer_aliases[manufacturer_upper]
-            else:
-                # 2. Ищем известного производителя в начале строки (второй приоритет)
-                for mfr in known_manufacturers:
-                    # Проверяем, начинается ли текст с производителя (с учетом регистра)
-                    if clean_text.upper().startswith(mfr.upper()):
-                        manufacturer = mfr
-                        # Удаляем производителя из начала текста
-                        clean_text = clean_text[len(mfr):].strip()
-                        
-                        # Нормализуем производителя
-                        manufacturer_upper = manufacturer.upper()
-                        if manufacturer_upper in manufacturer_aliases:
-                            manufacturer = manufacturer_aliases[manufacturer_upper]
-                        break
-                
-                # 3. Если не нашли в начале, ищем производителя в любом месте текста (третий приоритет)
-                if not manufacturer:
-                    text_upper = clean_text.upper()
-                    for mfr in known_manufacturers:
-                        mfr_upper = mfr.upper()
-                        
-                        # Для коротких сокращений (2-3 символа) проверяем, что это отдельное слово
-                        if len(mfr) <= 3:
-                            # Используем word boundary (\b) для поиска целого слова
-                            pattern = r'\b' + re.escape(mfr) + r'\b'
-                            match = re.search(pattern, clean_text, re.IGNORECASE)
-                            if match:
-                                manufacturer = mfr
-                                # Удаляем найденное слово
-                                clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
-                                clean_text = clean_text.strip()
-                                break
-                        else:
-                            # Для длинных названий ищем как подстроку
-                            if mfr_upper in text_upper:
-                                manufacturer = mfr
-                                # Удаляем производителя из текста (case-insensitive)
-                                clean_text = re.sub(re.escape(mfr), '', clean_text, flags=re.IGNORECASE)
-                                clean_text = clean_text.strip()
-                                break
-        
-        if manufacturer:
-            # Нормализуем производителя (преобразуем сокращения в полные названия)
-            manufacturer_upper = manufacturer.upper()
-            if manufacturer_upper in manufacturer_aliases:
-                tu_code = manufacturer_aliases[manufacturer_upper]
-            else:
-                tu_code = manufacturer
-    
+    # Производитель: извлекаем ВСЕГДА (даже если ТУ уже найден),
+    # чтобы "ф. ..." / имя производителя не оставались в наименовании.
+    # В колонку ТУ/Производитель пишем производителя только если ТУ-код пуст.
+    clean_text, manufacturer = _extract_manufacturer(clean_text)
+    if manufacturer and not tu_code:
+        tu_code = manufacturer
+
     return clean_text, tu_code
+
+
+# Канонические названия производителей (без UPPERCASE-дублей — иначе в колонку
+# попадало "MURATA"/"COILCRAFT" вместо нормального регистра).
+_KNOWN_MANUFACTURERS = [
+    'Texas Instruments',
+    'Maxim Integrated',
+    'Analog Devices',
+    'Analog Device',  # вариант без 's' → нормализуется в aliases
+    'STMicroelectronics',
+    'Mini-Circuits',
+    'Mini Circuits',
+    'Rosenberger',
+    'Coilcraft',
+    'Murata',
+    'Harting',
+    'Hittite',
+    'Yageo',
+    'Vishay',
+    'Infineon',
+    'NXP',
+    'Microchip',
+    'Renesas',
+    'TDK',
+    'Qualwave',
+    'JFW',
+    'Huber+Suhner',
+    'API Technologies',
+    # Сокращения — в конце, чтобы полные названия имели приоритет
+    'TI',
+    'ADI',
+    'Maxim',
+]
+
+_MANUFACTURER_ALIASES = {
+    'TI': 'Texas Instruments',
+    'ADI': 'Analog Devices',
+    'ANALOG DEVICE': 'Analog Devices',
+    'MAXIM': 'Maxim Integrated',
+    'MAXIM INTEGRATED': 'Maxim Integrated',
+    'MINI CIRCUITS': 'Mini-Circuits',
+    'STMICROELECTRONICS': 'STMicroelectronics',
+}
+
+# Префиксы отладочных плат → производитель (только fallback, если явно не указан)
+_BOARD_PREFIX_MANUFACTURERS = {
+    'NUCLEO-': 'STMicroelectronics',
+    'NUCLEO': 'STMicroelectronics',
+    'DISCOVERY-': 'STMicroelectronics',
+    'DISCOVERY': 'STMicroelectronics',
+    'STM32-': 'STMicroelectronics',
+    'STM32': 'STMicroelectronics',
+    'EVAL-ADF': 'Analog Devices',
+    'EVAL-AD': 'Analog Devices',
+}
+
+
+def _normalize_manufacturer(name: str) -> str:
+    """Normalize manufacturer aliases to canonical form."""
+    if not name:
+        return ""
+    key = name.strip().upper()
+    return _MANUFACTURER_ALIASES.get(key, name.strip())
+
+
+def _extract_manufacturer(text: str) -> Tuple[str, str]:
+    """
+    Extract manufacturer from component name and remove it from the text.
+
+    Priority:
+    1. Explicit "ф. Manufacturer"
+    2. Known manufacturer at the start of the string
+    3. Dev-board prefixes (NUCLEO/EVAL-AD/...) as manufacturer hint only
+    4. Known manufacturer anywhere in the string
+
+    Returns:
+        (cleaned_text, manufacturer)
+    """
+    if not text:
+        return "", ""
+
+    clean_text = str(text).strip()
+    manufacturer = ""
+
+    # 1. Явный маркер "ф. Производитель" — высший приоритет
+    # Поддерживает: Avnet, Huber+Suhner, API Technologies corp., Murata Manufacturing
+    mfr_pattern = (
+        r'\s*ф\s*\.\s*'
+        r'([A-Za-zА-ЯЁа-яё][A-Za-zА-ЯЁа-яё\s\-\.\+]*?)'
+        r'(?=\s*$|,|;|/|\(|\s+\d)'
+    )
+    match = re.search(mfr_pattern, clean_text, re.IGNORECASE)
+    if match:
+        manufacturer = _normalize_manufacturer(match.group(1))
+        clean_text = clean_text[:match.start()].strip()
+        clean_text = re.sub(r'[\s,;]+$', '', clean_text).strip()
+        return clean_text, manufacturer
+
+    # 2. Известный производитель в начале строки
+    # Сортируем по длине DESC, чтобы "Maxim Integrated" сработал раньше "Maxim"
+    for mfr in sorted(_KNOWN_MANUFACTURERS, key=len, reverse=True):
+        if clean_text.upper().startswith(mfr.upper()):
+            # Не откусывать часть артикула: после имени должен быть пробел/конец/разделитель
+            rest = clean_text[len(mfr):]
+            if rest and rest[0].isalnum():
+                continue
+            manufacturer = _normalize_manufacturer(mfr)
+            clean_text = rest.lstrip(' ,;-').strip()
+            return clean_text, manufacturer
+
+    # 3. Префиксы отладочных плат (не удаляем из названия — это часть артикула)
+    text_upper = clean_text.upper()
+    for prefix, mfr in _BOARD_PREFIX_MANUFACTURERS.items():
+        if prefix in text_upper:
+            return clean_text, mfr
+
+    # 4. Известный производитель в любом месте текста
+    for mfr in sorted(_KNOWN_MANUFACTURERS, key=len, reverse=True):
+        if len(mfr) <= 3:
+            pattern = r'\b' + re.escape(mfr) + r'\b'
+            match = re.search(pattern, clean_text, re.IGNORECASE)
+            if match:
+                manufacturer = _normalize_manufacturer(mfr)
+                clean_text = re.sub(pattern, '', clean_text, flags=re.IGNORECASE)
+                clean_text = re.sub(r'\s+', ' ', clean_text).strip(' ,;-')
+                return clean_text, manufacturer
+        else:
+            pattern = re.compile(re.escape(mfr), re.IGNORECASE)
+            match = pattern.search(clean_text)
+            if match:
+                manufacturer = _normalize_manufacturer(mfr)
+                clean_text = pattern.sub('', clean_text, count=1)
+                clean_text = re.sub(r'\s+', ' ', clean_text).strip(' ,;-')
+                return clean_text, manufacturer
+
+    return clean_text, ""
 
 
 def _parse_smd_resistor(text: str) -> Optional[float]:

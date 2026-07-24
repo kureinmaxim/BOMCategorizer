@@ -356,21 +356,37 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             # Извлечь ТУ из текста
             cleaned_text, tu_code = extract_tu_code(cleaned_text)
             
-            # Если ТУ был в note, используем его (приоритет у note), НО:
-            # - если из текста уже извлечён "наш код" (ГВАТ/АМФИ/ИГНД/де<цифра>), он важнее производителя из note,
-            #   иначе получаем "ТУ/Производитель = Mini-Circuits" для строк ГВАТ....
+            # Приоритет для колонки ТУ/Производитель:
+            # 1) ТУ / наш код (ГВАТ/АМФИ/ИГНД/де…) из текста — не затираем производителем из note
+            # 2) ТУ из note (формат "ТУ | manufacturer")
+            # 3) производитель из note, если из текста ничего не извлекли
+            def _looks_like_tu_or_our_code(value: str) -> bool:
+                s = str(value or '').strip()
+                if not s:
+                    return False
+                if re.search(r'ТУ|TU', s, re.IGNORECASE):
+                    return True
+                return bool(re.search(
+                    r'\b(гват|амфи|игнд)\.\d+(?:\.\d+)+\b|\bде\s*\d+(?:\.\d+){0,3}\b',
+                    s,
+                    re.IGNORECASE
+                ))
+
             if note_tu:
-                try:
-                    is_our_code = bool(re.search(
-                        r'\b(гват|амфи|игнд)\.\d+(?:\.\d+)+\b|\bде\s*\d+(?:\.\d+){0,3}\b',
-                        str(tu_code),
-                        re.IGNORECASE
-                    ))
-                except Exception:
-                    is_our_code = False
-                if not is_our_code:
+                text_is_tu = _looks_like_tu_or_our_code(tu_code)
+                note_is_tu = _looks_like_tu_or_our_code(note_tu)
+                if not tu_code:
                     tu_code = note_tu
-            
+                elif note_is_tu and not text_is_tu:
+                    # В note настоящее ТУ, в тексте только производитель
+                    tu_code = note_tu
+                elif text_is_tu:
+                    # Текст уже дал ТУ/наш код — оставляем (не перезаписываем производителем)
+                    pass
+                else:
+                    # Оба — производители/прочее: приоритет у note (как было)
+                    tu_code = note_tu
+
             # ВАЖНО: ранее для "Наши разработки" очищали ТУ, но теперь там нужен код (ГВАТ/АМФИ/ИГНД/деX...)
             # Поэтому НИЧЕГО не очищаем — оставляем извлечённый код/производителя как есть.
             
