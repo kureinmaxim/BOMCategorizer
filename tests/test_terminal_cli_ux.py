@@ -54,3 +54,16 @@ class TestTerminalCliUx:
         err = r.stderr or ""
         assert "[ОШИБКА]" in err
         assert "не найден" in err.lower()
+
+    def test_multiplier_suffix_is_stripped_for_existence(self):
+        """GUI передаёт path:count — проверка существования должна игнорировать :N."""
+        from bom_categorizer.main import _resolve_input_path
+        assert _resolve_input_path(r"C:\data\bom.xlsx:3") == r"C:\data\bom.xlsx"
+        readme = str(ROOT / "README.md")
+        assert _resolve_input_path(f"{readme}:3") == readme
+        r = _run("--inputs", f"{readme}:3", "--xlsx", str(ROOT / "_cli_ux_out.xlsx"))
+        # Не должно упасть на «файл не найден» из‑за :3
+        assert "не найден" not in (r.stderr or "").lower()
+        # Может упасть позже на парсинге .md — это ок; главное не validation path
+        if r.returncode == 2:
+            assert "не найден" not in (r.stderr or "").lower()

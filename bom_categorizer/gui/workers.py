@@ -25,6 +25,7 @@ class ProcessingWorker(QThread):
     
     def run(self):
         """Выполняет обработку в отдельном потоке"""
+        captured_output = StringIO()
         try:
             from ..main import main as cli_main
             
@@ -33,8 +34,6 @@ class ProcessingWorker(QThread):
             old_stderr = sys.stderr
             old_stdin = sys.stdin
             old_argv = sys.argv
-            
-            captured_output = StringIO()
             
             try:
                 sys.stdout = captured_output
@@ -93,11 +92,24 @@ class ProcessingWorker(QThread):
                 sys.argv = old_argv
                 
         except SystemExit as e:
-            # CLI может вызывать sys.exit(), это нормально
-            if e.code == 0:
+            # CLI может вызывать sys.exit(); код 0 — успех, иначе показываем лог CLI
+            output_text = captured_output.getvalue()
+            if output_text:
+                try:
+                    self.progress.emit(output_text)
+                except Exception:
+                    pass
+            if e.code in (0, None):
                 self.finished.emit("✅ Обработка завершена!", True, self.output_file)
             else:
+                # Берём последние строки ошибки из CLI (не только «код N»)
+                tail = ""
+                if output_text:
+                    lines = [ln for ln in output_text.strip().splitlines() if ln.strip()]
+                    tail = "\n".join(lines[-12:])
                 error_msg = f"❌ Ошибка при обработке (код {e.code})"
+                if tail:
+                    error_msg = f"{error_msg}\n\n{tail}"
                 self.finished.emit(error_msg, False, "")
         except Exception as e:
             import traceback

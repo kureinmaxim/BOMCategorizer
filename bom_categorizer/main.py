@@ -1885,14 +1885,39 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_input_path(input_spec: str) -> str:
+    """
+    Resolve GUI/CLI input spec "path" or "path:multiplier" to the actual file path.
+    Mirrors the parsing logic in load_and_combine_inputs.
+    """
+    if ':' not in input_spec:
+        return input_spec
+    parts = input_spec.rsplit(':', 1)
+    if len(parts) != 2:
+        return input_spec
+    try:
+        mult = int(parts[1])
+    except ValueError:
+        return input_spec
+    if mult > 0:
+        return parts[0]
+    return input_spec
+
+
 def _validate_existing_files(paths: List[str], label: str) -> None:
-    missing = [p for p in paths if not os.path.isfile(p)]
+    missing = []
+    for spec in paths:
+        path = _resolve_input_path(spec)
+        if not os.path.isfile(path):
+            missing.append(spec if spec == path else f"{spec}  →  {path}")
     if missing:
         listed = "\n  - ".join(missing)
         _cli_error(
             f"{label}: файл(ы) не найдены:\n  - {listed}",
             examples=[
                 f'{_cli_prog_name()} --inputs "путь\\к\\существующему.xlsx" --xlsx "result.xlsx"',
+                f'{_cli_prog_name()} --inputs "bom.xlsx:3" --xlsx "result.xlsx"  '
+                f'# множитель экземпляров (GUI)',
             ],
         )
 
