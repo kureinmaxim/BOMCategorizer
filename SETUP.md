@@ -2,7 +2,7 @@
 
 Этот файл содержит инструкции по первоначальной настройке проекта **BOM Categorizer** после клонирования с GitHub.
 
-**Версии:** Standard 3.3.0 | Modern 5.4.12
+**Версии:** Standard 3.3.0 | Modern 5.6.3
 
 ---
 
@@ -57,10 +57,10 @@ python3 tools/init_project.py
 
 ### Шаг 3: Создайте виртуальное окружение
 
-**Windows:**
+**Windows** (предпочтительно `.venv`):
 ```powershell
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
 **macOS/Linux:**
@@ -72,19 +72,19 @@ source venv/bin/activate
 ### Шаг 4: Установите зависимости
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 ### Шаг 5: Запустите приложение
 
+**Modern Edition (PySide6, рекомендуется):**
+```bash
+python app_qt.py
+```
+
 **Standard Edition (Tkinter):**
 ```bash
 python app.py
-```
-
-**Modern Edition (PySide6):**
-```bash
-python app_qt.py
 ```
 
 ---
@@ -113,11 +113,13 @@ cp config/config_qt.json.template config_qt.json
 
 ### 2. Создайте виртуальное окружение
 
-```bash
+```powershell
 # Windows
-python -m venv venv
-venv\Scripts\activate
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
 
+```bash
 # macOS/Linux
 python3 -m venv venv
 source venv/bin/activate
@@ -135,10 +137,10 @@ pip install -r requirements.txt
 python tools/update_version.py status
 ```
 
-Должно показать:
+Должно показать актуальные версии из шаблонов, например:
 ```
 Standard Edition: v3.3.0
-Modern Edition: v5.4.12
+Modern Edition: v5.6.3
 ```
 
 ---
@@ -147,12 +149,14 @@ Modern Edition: v5.4.12
 
 ### `config.json` (Standard Edition)
 
+Создаётся из `config/config.json.template`. Пример ключевых полей:
+
 ```json
 {
   "app_info": {
     "version": "3.3.0",
     "edition": "Standard",
-    "release_date": "11.11.2025"
+    "release_date": "11.01.2026"
   },
   "security": {
     "pin": "1234",
@@ -168,24 +172,18 @@ Modern Edition: v5.4.12
 
 ### `config_qt.json` (Modern Edition)
 
+Создаётся из `config/config_qt.json.template`. Пример ключевых полей:
+
 ```json
 {
   "app_info": {
-    "version": "5.4.12",
+    "version": "5.6.3",
     "edition": "Modern Edition",
-    "release_date": "24.12.2025"
+    "release_date": "24.07.2026"
   },
   "security": {
     "pin": "1234",
     "require_pin": true
-  },
-  "window": {
-    "remember_size": true,
-    "sizes_by_mode": {
-      "simple": {"width": 730, "height": 560},
-      "advanced": {"width": 730, "height": 790},
-      "expert": {"width": 730, "height": 1160}
-    }
   },
   "ui": {
     "theme": "dark",
@@ -198,10 +196,7 @@ Modern Edition: v5.4.12
     "anthropic": "",
     "openai": ""
   },
-  "ai_provider": "telegram",
-  "pdf_search": {
-    "custom_directories": []
-  }
+  "ai_provider": "telegram"
 }
 ```
 
@@ -266,19 +261,24 @@ Modern Edition поддерживает AI поиск информации о к
    }
    ```
 
-### Встроенные CLI команды для AI
+### Встроенный CLI (кнопка 💻 CLI)
 
-В интерактивном CLI (кнопка 💻 CLI):
+Доступен в Modern Edition. Полезные команды:
 
 | Команда | Описание |
 |---------|----------|
-| `ai` | Показать все настройки AI |
-| `aiprovider anthropic` | Сменить провайдера |
-| `aimodel claude-opus-4-5-20251101` | Сменить модель |
-| `aimodels` | Список доступных моделей |
-| `apitest` | Проверить подключение |
+| `help` | Список команд (`help theme` — подробнее) |
+| `add "путь"` | Добавить файл (пути с пробелами — в кавычках) |
+| `process` / `run` | Запуск обработки |
+| `theme dark\|light` | Установить тему (не «переключить наугад») |
+| `ai` | Показать настройки AI |
+| `aiprovider telegram` | Сменить провайдера |
+| `aimodels` | Список моделей |
+| `apitest` | Проверить API |
 
-> 📖 Подробнее: `docs/AI_INTEGRATION_GUIDE.md`
+Подсказки при опечатках, Tab-автодополнение и цвета под тему light/dark.
+
+> 📖 Подробнее: `docs/CLI_USAGE.md`, `docs/AI_INTEGRATION_GUIDE.md`
 
 ---
 
@@ -360,9 +360,11 @@ pytest tests/
 
 | Документ | Описание |
 |----------|----------|
+| `README.md` | Обзор проекта |
+| `GUIDE.md` | Руководство пользователя |
 | `BUILD.md` | Сборка инсталлятора |
+| `VERSION_MANAGEMENT.md` | Управление версиями |
 | `ANALYSIS_PROJECT.md` | Структура проекта |
-| `CHANGELOG.md` | История изменений |
 | `docs/CLI_USAGE.md` | Использование CLI |
 | `docs/AI_INTEGRATION_GUIDE.md` | Настройка AI интеграции |
 | `docs/API_MANAGEMENT.md` | Управление API ключами |
@@ -386,7 +388,7 @@ python tools/ai_search.py "TPS54302"
 ---
 
 **Дата создания:** 20.11.2025  
-**Обновлено:** 24.12.2025  
+**Обновлено:** 24.07.2026  
 **Автор:** Куреин М.Н. / Kurein M.N.  
-**Версия документа:** 1.2
+**Версия документа:** 1.3
 

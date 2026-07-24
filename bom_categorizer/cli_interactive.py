@@ -16,20 +16,42 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
 from PySide6.QtCore import Qt, Signal, QStringListModel
 from PySide6.QtGui import QFont, QTextCursor, QColor
 
+from .cli_ux import (
+    ARG_COMPLETIONS,
+    completion_candidates,
+    format_usage_hint,
+    get_palette,
+    parse_command_line,
+    suggest_commands,
+)
+
 
 class CLICommand:
     """Базовый класс для CLI команд"""
     
-    def __init__(self, name: str, description: str, usage: str, handler: Callable):
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        usage: str,
+        handler: Callable,
+        example: str = "",
+    ):
         self.name = name
         self.description = description
         self.usage = usage
         self.handler = handler
+        self.example = example
         self.aliases = []
     
     def add_alias(self, alias: str):
         """Добавляет алиас для команды"""
         self.aliases.append(alias)
+        return self
+    
+    def with_example(self, example: str):
+        """Sets usage example for help / error hints."""
+        self.example = example
         return self
 
 
@@ -49,8 +71,12 @@ class InteractiveCLI(QWidget):
         base_scale = getattr(main_window, 'scale_factor', 1.0)
         self.scale_factor = base_scale * 1.4
         
+        self.palette = get_palette(getattr(main_window, "current_theme", "dark"))
+        self._all_command_names: List[str] = []
+        
         self._setup_ui()
         self._register_commands()
+        self._apply_palette()
         self._print_welcome()
     
     def _setup_ui(self):
@@ -59,25 +85,16 @@ class InteractiveCLI(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         
         # Заголовок
-        header = QLabel("💻 Интерактивная командная строка")
+        self.header_label = QLabel("💻 Интерактивная командная строка")
         header_font_size = int(14 * self.scale_factor)
-        header.setStyleSheet(f"font-weight: bold; font-size: {header_font_size}px; padding: 5px;")
-        layout.addWidget(header)
+        self.header_label.setStyleSheet(f"font-weight: bold; font-size: {header_font_size}px; padding: 5px;")
+        layout.addWidget(self.header_label)
         
         # Область вывода
         self.output_area = QTextEdit()
         self.output_area.setReadOnly(True)
         output_font_size = max(8, int(10 * self.scale_factor))
         self.output_area.setFont(QFont("Consolas", output_font_size))
-        self.output_area.setStyleSheet("""
-            QTextEdit {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-                border: 2px solid #45475a;
-                border-radius: 5px;
-                padding: 5px;
-            }
-        """)
         layout.addWidget(self.output_area)
         
         # Поле ввода команды
@@ -85,88 +102,111 @@ class InteractiveCLI(QWidget):
         
         self.prompt_label = QLabel(">>>")
         prompt_font_size = max(8, int(14 * self.scale_factor))
-        self.prompt_label.setStyleSheet(f"color: #89b4fa; font-weight: bold; font-family: Consolas; font-size: {prompt_font_size}pt;")
+        self.prompt_label.setStyleSheet(
+            f"font-weight: bold; font-family: Consolas; font-size: {prompt_font_size}pt;"
+        )
         input_layout.addWidget(self.prompt_label)
         
         self.input_field = QLineEdit()
         input_font_size = max(8, int(10 * self.scale_factor))
         self.input_field.setFont(QFont("Consolas", input_font_size))
-        self.input_field.setPlaceholderText("Введите команду (help для справки)...")
+        self.input_field.setPlaceholderText(
+            "Команда…  help · Tab · ↑↓ · пути в \"кавычках\""
+        )
         self.input_field.returnPressed.connect(self._execute_command)
-        self.input_field.setStyleSheet("""
-            QLineEdit {
-                background-color: #313244;
-                color: #cdd6f4;
-                border: 2px solid #45475a;
-                border-radius: 5px;
-                padding: 5px;
-            }
-            QLineEdit:focus {
-                border-color: #89b4fa;
-            }
-        """)
         input_layout.addWidget(self.input_field)
         
         # Кнопка выполнения
-        exec_button = QPushButton("Выполнить")
-        exec_button.clicked.connect(self._execute_command)
-        exec_button.setStyleSheet("""
-            QPushButton {
-                background-color: #89b4fa;
-                color: #1e1e2e;
-                border: none;
-                border-radius: 5px;
-                padding: 5px 15px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #a6c9ff;
-            }
-        """)
-        input_layout.addWidget(exec_button)
+        self.exec_button = QPushButton("Выполнить")
+        self.exec_button.clicked.connect(self._execute_command)
+        input_layout.addWidget(self.exec_button)
         
         layout.addLayout(input_layout)
         
         # Автодополнение с улучшенными настройками
         self.completer = QCompleter()
         self.completer.setCaseSensitivity(Qt.CaseInsensitive)
-        self.completer.setFilterMode(Qt.MatchStartsWith)  # Фильтр по началу
-        self.completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)  # Popup меню
-        self.completer.setMaxVisibleItems(10)  # Максимум 10 подсказок
+        self.completer.setFilterMode(Qt.MatchStartsWith)
+        self.completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        self.completer.setMaxVisibleItems(10)
         self.completer_model = QStringListModel()
         self.completer.setModel(self.completer_model)
         self.input_field.setCompleter(self.completer)
-        
-        # Стилизация popup автодополнения
-        popup = self.completer.popup()
-        popup.setStyleSheet("""
-            QListView {
-                background-color: #1e1e2e;
-                color: #cdd6f4;
-                border: 1px solid #585b70;
-                border-radius: 4px;
-                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-                font-size: 13px;
-                padding: 4px;
-            }
-            QListView::item {
-                padding: 4px 8px;
-                border-radius: 3px;
-            }
-            QListView::item:selected {
-                background-color: #45475a;
-                color: #f5c2e7;
-            }
-            QListView::item:hover {
-                background-color: #313244;
-            }
-        """)
         
         # Обработка истории (стрелки вверх/вниз) и автодополнения
         self.input_field.installEventFilter(self)
         
         # Обновление автодополнения при вводе
         self.input_field.textChanged.connect(self._on_text_changed)
+    
+    def _apply_palette(self):
+        """Apply theme-aware colors to CLI widgets."""
+        theme = getattr(self.main_window, "current_theme", "dark")
+        self.palette = get_palette(theme)
+        p = self.palette
+        
+        self.output_area.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {p['bg']};
+                color: {p['fg']};
+                border: 2px solid {p['border']};
+                border-radius: 5px;
+                padding: 5px;
+            }}
+        """)
+        self.input_field.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {p['bg_input']};
+                color: {p['fg']};
+                border: 2px solid {p['border']};
+                border-radius: 5px;
+                padding: 5px;
+            }}
+            QLineEdit:focus {{
+                border-color: {p['border_focus']};
+            }}
+        """)
+        prompt_font_size = max(8, int(14 * self.scale_factor))
+        self.prompt_label.setStyleSheet(
+            f"color: {p['prompt']}; font-weight: bold; "
+            f"font-family: Consolas; font-size: {prompt_font_size}pt;"
+        )
+        self.exec_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {p['button_bg']};
+                color: {p['button_fg']};
+                border: none;
+                border-radius: 5px;
+                padding: 5px 15px;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                background-color: {p['button_hover']};
+            }}
+        """)
+        popup = self.completer.popup()
+        popup.setStyleSheet(f"""
+            QListView {{
+                background-color: {p['popup_bg']};
+                color: {p['fg']};
+                border: 1px solid {p['border']};
+                border-radius: 4px;
+                font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+                font-size: 13px;
+                padding: 4px;
+            }}
+            QListView::item {{
+                padding: 4px 8px;
+                border-radius: 3px;
+            }}
+            QListView::item:selected {{
+                background-color: {p['popup_selected_bg']};
+                color: {p['popup_selected_fg']};
+            }}
+            QListView::item:hover {{
+                background-color: {p['popup_hover']};
+            }}
+        """)
     
     def eventFilter(self, obj, event):
         """Фильтр событий для истории команд и автодополнения"""
@@ -226,40 +266,43 @@ class InteractiveCLI(QWidget):
                     self.completer.popup().hide()
                     return True
         
-        # Fallback - ищем первое совпадение вручную
-        current_text = self.input_field.text().strip().lower()
-        if not current_text:
+        # Fallback — первое совпадение из кандидатов
+        current_text = self.input_field.text()
+        matches = completion_candidates(current_text, self._all_command_names, ARG_COMPLETIONS)
+        if not matches:
             return False
-        
-        # Ищем первое совпадение
-        all_commands = list(self.commands.keys())
-        for cmd in self.commands.values():
-            all_commands.extend(cmd.aliases)
-        
-        for cmd in sorted(set(all_commands)):
-            if cmd.startswith(current_text) and cmd != current_text:
-                self.input_field.setText(cmd)
-                self.input_field.setCursorPosition(len(cmd))
-                return True
-        
-        return False
+
+        parts, _ = parse_command_line(current_text.strip())
+        ends_with_space = bool(current_text) and current_text[-1:].isspace()
+        pick = matches[0]
+        if parts and (ends_with_space or len(parts) >= 2) and " " not in pick:
+            pick = f"{parts[0]} {pick}"
+
+        if pick.lower() == current_text.strip().lower():
+            return False
+        self.input_field.setText(pick)
+        self.input_field.setCursorPosition(len(pick))
+        return True
     
     def _on_text_changed(self, text: str):
         """Обработчик изменения текста - показывает автодополнение"""
-        text = text.strip().lower()
-        if not text:
+        if not text.strip():
             self.completer.popup().hide()
             return
-        
-        # Проверяем, есть ли совпадения
-        all_commands = list(self.commands.keys())
-        for cmd in self.commands.values():
-            all_commands.extend(cmd.aliases)
-        
-        matches = [cmd for cmd in sorted(set(all_commands)) if cmd.startswith(text)]
-        
-        if matches and len(matches) > 0 and text not in matches:
-            # Показываем popup если есть совпадения и текст не точное совпадение
+
+        matches = completion_candidates(text, self._all_command_names, ARG_COMPLETIONS)
+        parts, _ = parse_command_line(text.strip())
+        ends_with_space = bool(text) and text[-1].isspace()
+
+        # Для аргументов показываем полный кандидат "cmd arg" (удобнее для QCompleter)
+        if matches and parts and (ends_with_space or len(parts) >= 2):
+            cmd = parts[0]
+            if matches and " " not in matches[0]:
+                matches = [f"{cmd} {m}" for m in matches]
+
+        self.completer_model.setStringList(matches)
+        exact = text.strip().lower()
+        if matches and exact not in {m.lower() for m in matches}:
             self.completer.complete()
         else:
             self.completer.popup().hide()
@@ -281,23 +324,18 @@ class InteractiveCLI(QWidget):
     
     def _print_welcome(self):
         """Выводит приветственное сообщение"""
-        welcome = f"""
-╔═══════════════════════════════════════════════════════════════╗
-║  💻 BOM Categorizer - Интерактивный CLI режим                 ║
-║  Версия: {self.main_window.cfg.get('app_info', {}).get('version', 'dev')}                                                  ║
-╚═══════════════════════════════════════════════════════════════╝
-
-Добро пожаловать в расширенную командную строку!
-
-Введите 'help' для списка доступных команд.
-Используйте ↑↓ для навигации по истории команд.
-Используйте Tab для автодополнения команд.
-
-"""
-        self._print(welcome, color="#89b4fa")
+        version = self.main_window.cfg.get("app_info", {}).get("version", "dev")
+        theme = getattr(self.main_window, "current_theme", "dark")
+        p = self.palette
+        self._print(f"BOM Categorizer CLI  ·  v{version}  ·  тема: {theme}", color=p["prompt"])
+        self._print("help — список команд  ·  Tab — автодополнение  ·  ↑↓ — история", color=p["hint"])
+        self._print('Пути с пробелами: add "C:\\My Files\\bom.xlsx"', color=p["hint"])
+        self._print("")
     
-    def _print(self, text: str, color: str = "#cdd6f4"):
+    def _print(self, text: str, color: str = None):
         """Выводит текст в область вывода"""
+        if color is None:
+            color = self.palette.get("fg", "#cdd6f4")
         cursor = self.output_area.textCursor()
         cursor.movePosition(QTextCursor.End)
         
@@ -310,43 +348,73 @@ class InteractiveCLI(QWidget):
         self.output_area.setTextCursor(cursor)
         self.output_area.ensureCursorVisible()
     
+    def _find_command(self, name: str) -> Optional[CLICommand]:
+        """Resolve command by name or alias."""
+        key = (name or "").lower()
+        command = self.commands.get(key)
+        if command:
+            return command
+        for cmd in self.commands.values():
+            if key in cmd.aliases:
+                return cmd
+        return None
+
+    def _known_names(self) -> List[str]:
+        names = list(self.commands.keys())
+        for cmd in self.commands.values():
+            names.extend(cmd.aliases)
+        return sorted(set(names))
+
     def _execute_command(self):
         """Выполняет введенную команду"""
         command_line = self.input_field.text().strip()
         if not command_line:
             return
         
+        p = self.palette
         # Добавляем в историю
         self.command_history.append(command_line)
         self.history_index = -1
         
         # Выводим команду
-        self._print(f">>> {command_line}", color="#f9e2af")
+        self._print(f">>> {command_line}", color=p["command"])
         
-        # Парсим команду
-        parts = command_line.split()
+        parts, parse_err = parse_command_line(command_line)
+        if parse_err:
+            self._print(f"❌ {parse_err}", color=p["error"])
+            self.input_field.clear()
+            self.command_executed.emit(command_line, "ERROR")
+            return
+
         command_name = parts[0].lower()
-        args = parts[1:] if len(parts) > 1 else []
-        
-        # Ищем команду
-        command = self.commands.get(command_name)
-        if not command:
-            # Проверяем алиасы
-            for cmd in self.commands.values():
-                if command_name in cmd.aliases:
-                    command = cmd
-                    break
+        args = parts[1:]
+        command = self._find_command(command_name)
         
         if command:
             try:
                 result = command.handler(args)
                 if result:
-                    self._print(result, color="#a6e3a1")
+                    # Ошибки handlers часто начинаются с ❌ — красим соответственно
+                    color = p["error"] if str(result).lstrip().startswith("❌") else p["success"]
+                    self._print(result, color=color)
+                    hint = format_usage_hint(command.usage, command.example)
+                    if color == p["error"] and hint:
+                        self._print(hint, color=p["hint"])
             except Exception as e:
-                self._print(f"❌ Ошибка выполнения: {e}", color="#f38ba8")
+                self._print(f"❌ Ошибка выполнения: {e}", color=p["error"])
+                hint = format_usage_hint(command.usage, command.example)
+                if hint:
+                    self._print(hint, color=p["hint"])
         else:
-            self._print(f"❌ Неизвестная команда: {command_name}", color="#f38ba8")
-            self._print("   Введите 'help' для списка команд.", color="#6c7086")
+            self._print(f"❌ Неизвестная команда: {command_name}", color=p["error"])
+            suggestions = suggest_commands(command_name, self._known_names())
+            if suggestions:
+                self._print(
+                    "   Возможно, вы имели в виду: " + ", ".join(suggestions),
+                    color=p["hint"],
+                )
+            else:
+                self._print("   Введите help для списка команд.", color=p["hint"])
         
         # Очищаем поле ввода
         self.input_field.clear()
@@ -400,14 +468,16 @@ class InteractiveCLI(QWidget):
             "add",
             "Добавляет файл в список обработки",
             "add <путь_к_файлу>",
-            self._cmd_add_file
+            self._cmd_add_file,
+            example='add "C:\\My Files\\bom.xlsx"',
         )
         
         self.commands["remove"] = CLICommand(
             "remove",
             "Удаляет файл из списка",
             "remove <индекс|путь>",
-            self._cmd_remove_file
+            self._cmd_remove_file,
+            example="remove 1",
         ).add_alias("rm")
         
         self.commands["process"] = CLICommand(
@@ -430,7 +500,8 @@ class InteractiveCLI(QWidget):
             "dbsearch",
             "Поиск компонента в базе данных",
             "dbsearch <название>",
-            self._cmd_db_search
+            self._cmd_db_search,
+            example="dbsearch LM358",
         ).add_alias("search")
         
         self.commands["dbexport"] = CLICommand(
@@ -465,16 +536,18 @@ class InteractiveCLI(QWidget):
         
         self.commands["theme"] = CLICommand(
             "theme",
-            "Переключает тему интерфейса",
+            "Устанавливает тему интерфейса",
             "theme [dark|light]",
-            self._cmd_theme
+            self._cmd_theme,
+            example="theme dark",
         )
         
         self.commands["scale"] = CLICommand(
             "scale",
             "Изменяет масштаб интерфейса",
             "scale <0.7-1.25>",
-            self._cmd_scale
+            self._cmd_scale,
+            example="scale 1.0",
         )
         
         # === КОМАНДЫ СИНХРОНИЗАЦИИ ===
@@ -527,14 +600,16 @@ class InteractiveCLI(QWidget):
             "aiprovider",
             "Показывает/меняет провайдера AI",
             "aiprovider [anthropic|openai|telegram]",
-            self._cmd_ai_provider
+            self._cmd_ai_provider,
+            example="aiprovider telegram",
         ).add_alias("provider")
         
         self.commands["aimodel"] = CLICommand(
             "aimodel",
             "Показывает/меняет модель AI",
             "aimodel [название_модели]",
-            self._cmd_ai_model
+            self._cmd_ai_model,
+            example="aimodel claude-3-5-sonnet-20241022",
         ).add_alias("model")
         
         self.commands["aimodels"] = CLICommand(
@@ -552,52 +627,49 @@ class InteractiveCLI(QWidget):
         ).add_alias("ai")
         
         # Обновляем автодополнение
-        command_names = list(self.commands.keys())
-        for cmd in self.commands.values():
-            command_names.extend(cmd.aliases)
-        self.completer_model.setStringList(sorted(set(command_names)))
+        self._all_command_names = self._known_names()
+        self.completer_model.setStringList(self._all_command_names)
     
     # === ОБРАБОТЧИКИ КОМАНД ===
     
     def _cmd_help(self, args: List[str]) -> str:
         """Команда help"""
         if args:
-            # Помощь по конкретной команде
             cmd_name = args[0].lower()
-            cmd = self.commands.get(cmd_name)
+            cmd = self._find_command(cmd_name)
             if cmd:
-                result = f"\n📖 Команда: {cmd.name}\n"
-                result += f"Описание: {cmd.description}\n"
-                result += f"Использование: {cmd.usage}\n"
+                result = f"\n📖 {cmd.name}\n"
+                result += f"  {cmd.description}\n"
+                result += f"  {format_usage_hint(cmd.usage, cmd.example)}\n"
                 if cmd.aliases:
-                    result += f"Алиасы: {', '.join(cmd.aliases)}\n"
+                    result += f"  Алиасы: {', '.join(cmd.aliases)}\n"
                 return result
-            else:
-                return f"❌ Команда '{cmd_name}' не найдена"
+            suggestions = suggest_commands(cmd_name, self._known_names())
+            msg = f"❌ Команда '{cmd_name}' не найдена"
+            if suggestions:
+                msg += f"\n   Возможно: {', '.join(suggestions)}"
+            return msg
         
-        # Общая справка
-        result = "\n📚 Доступные команды:\n"
-        result += "=" * 60 + "\n\n"
+        # Компактная общая справка
+        result = "\n📚 Команды (help <имя> — подробнее):\n"
         
         categories = {
             "Общие": ["help", "clear", "exit", "history"],
             "Файлы": ["list", "add", "remove", "process"],
-            "База данных": ["dbstats", "dbsearch", "dbexport", "dbbackup"],
+            "БД": ["dbstats", "dbsearch", "dbexport", "dbbackup"],
             "Система": ["status", "config", "theme", "scale"],
-            "Синхронизация": ["version", "vsync", "vset", "api", "apisync", "apitest"],
-            "AI настройки": ["aiinfo", "aiprovider", "aimodel", "aimodels"]
+            "Синхр.": ["version", "vsync", "vset", "api", "apisync", "apitest"],
+            "AI": ["aiinfo", "aiprovider", "aimodel", "aimodels"],
         }
         
         for category, commands in categories.items():
-            result += f"🔹 {category}:\n"
+            result += f"\n{category}:\n"
             for cmd_name in commands:
                 cmd = self.commands.get(cmd_name)
                 if cmd:
                     aliases = f" ({', '.join(cmd.aliases)})" if cmd.aliases else ""
-                    result += f"  • {cmd.name}{aliases} - {cmd.description}\n"
-            result += "\n"
+                    result += f"  {cmd.name}{aliases} — {cmd.description}\n"
         
-        result += "Для подробной справки: help <команда>\n"
         return result
     
     def _cmd_clear(self, args: List[str]) -> str:
@@ -778,16 +850,27 @@ class InteractiveCLI(QWidget):
         return f"{param}: {value}"
     
     def _cmd_theme(self, args: List[str]) -> str:
-        """Команда theme"""
+        """Команда theme — выставляет тему явно (не toggle)."""
         if not args:
-            return f"Текущая тема: {self.main_window.current_theme}\nИспользование: theme [dark|light]"
+            return (
+                f"Текущая тема: {self.main_window.current_theme}\n"
+                f"{format_usage_hint('theme [dark|light]', 'theme dark')}"
+            )
         
         theme = args[0].lower()
-        if theme in ["dark", "light"]:
-            self.main_window.toggle_theme()
-            return f"✅ Тема изменена на {theme}"
-        else:
+        if theme not in ("dark", "light"):
             return "❌ Неизвестная тема. Доступны: dark, light"
+        
+        if self.main_window.current_theme == theme:
+            return f"Тема уже: {theme}"
+        
+        self.main_window.current_theme = theme
+        if hasattr(self.main_window, "apply_theme"):
+            self.main_window.apply_theme()
+        if hasattr(self.main_window, "save_theme_preference"):
+            self.main_window.save_theme_preference()
+        self._apply_palette()
+        return f"✅ Тема установлена: {theme}"
     
     def _cmd_scale(self, args: List[str]) -> str:
         """Команда scale"""

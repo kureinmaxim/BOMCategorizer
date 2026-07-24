@@ -85,8 +85,8 @@ config/config.json.template      → Standard Edition (Tkinter)
 ```json
 {
   "app_info": {
-    "version": "5.0.0",
-    "release_date": "28.11.2025",
+    "version": "5.6.3",
+    "release_date": "24.07.2026",
     "last_updated": "2025-11-28",
     "developer": "Куреин М.Н."
   }
@@ -234,10 +234,10 @@ python tools/update_version.py sync
 
 ℹ️ Modern Edition (PySide6)
   Шаблон:
-    Версия:      5.0.0
-    Дата релиза: 28.11.2025
+    Версия:      5.6.3
+    Дата релиза: 24.07.2026
   Локальный:
-    Версия:      5.0.0
+    Версия:      5.6.3
     ✅ Синхронизировано
 
 ℹ️ Standard Edition (Tkinter)
@@ -532,4 +532,5 @@ BOMCategorizer/
 
 **Последнее обновление:** 29.11.2025  
 **Автор:** Куреин М.Н.
+
 

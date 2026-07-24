@@ -1750,43 +1750,213 @@ def compare_bom_files(file1_path: str, file2_path: str, output_path: str, no_int
         result_df.to_excel(output_path, sheet_name='Сравнение', index=False)
 
 
+def _cli_prog_name() -> str:
+    """How the user most likely launches the CLI."""
+    argv0 = os.path.basename(sys.argv[0]) if sys.argv else "split_bom.py"
+    if argv0 in ("main.py", "-c", ""):
+        return "python tools/split_bom.py"
+    if argv0.endswith("split_bom.py"):
+        return f"python tools/{argv0}" if not argv0.startswith("tools") else f"python {argv0}"
+    return f"python {argv0}"
+
+
+def _cli_error(message: str, *, examples: Optional[List[str]] = None, exit_code: int = 2) -> None:
+    """Print a user-friendly CLI error with optional examples, then exit."""
+    prog = _cli_prog_name()
+    print(f"\n[ОШИБКА] {message}", file=sys.stderr)
+    if examples:
+        print("\nПримеры:", file=sys.stderr)
+        for ex in examples:
+            print(f"  {ex}", file=sys.stderr)
+    else:
+        print("\nПримеры:", file=sys.stderr)
+        print(
+            f'  {prog} --inputs "bom.xlsx" --xlsx "result.xlsx" --combine',
+            file=sys.stderr,
+        )
+        print(
+            f'  {prog} --compare "a.xlsx" "b.xlsx" --compare-output "diff.xlsx"',
+            file=sys.stderr,
+        )
+    print(f"\nПолная справка: {prog} --help\n", file=sys.stderr)
+    sys.exit(exit_code)
+
+
+def _build_arg_parser() -> argparse.ArgumentParser:
+    prog = _cli_prog_name()
+    epilog = f"""
+Примеры:
+
+  Обработка одного файла:
+    {prog} --inputs "bom.xlsx" --xlsx "result.xlsx"
+
+  Несколько файлов + SUMMARY + TXT:
+    {prog} --inputs "a.docx" "b.xlsx" --xlsx "out.xlsx" --txt-dir "out_txt" --combine
+
+  Сравнение двух BOM:
+    {prog} --compare "old.xlsx" "new.xlsx" --compare-output "diff.xlsx"
+
+  Windows (без активации venv):
+    .\\.venv\\Scripts\\python.exe tools\\split_bom.py --inputs "bom.xlsx" --xlsx "out.xlsx" --combine
+
+Подробнее: docs/CLI_USAGE.md
+""".rstrip()
+
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description=(
+            "BOM Categorizer — терминальный CLI: классификация BOM "
+            "и сравнение двух файлов."
+        ),
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--inputs",
+        nargs="+",
+        metavar="FILE",
+        help="Входные файлы (.xlsx/.xls/.docx/.doc/.txt)",
+    )
+    parser.add_argument(
+        "--sheets",
+        help="Номера листов Excel через запятую (например: 1,3)",
+    )
+    parser.add_argument(
+        "--sheet",
+        help="Имя или номер одного листа Excel",
+    )
+    parser.add_argument(
+        "--xlsx",
+        metavar="OUTPUT.xlsx",
+        help="Выходной Excel-файл (режим обработки)",
+    )
+    parser.add_argument(
+        "--compare",
+        nargs=2,
+        metavar=("FILE1", "FILE2"),
+        help="Сравнить два BOM-файла",
+    )
+    parser.add_argument(
+        "--compare-output",
+        metavar="DIFF.xlsx",
+        help="Выходной файл для --compare (обязателен вместе с --compare)",
+    )
+    parser.add_argument(
+        "--txt-dir",
+        metavar="DIR",
+        help="Папка для TXT-отчётов по категориям",
+    )
+    parser.add_argument(
+        "--combine",
+        action="store_true",
+        help="Добавить лист SUMMARY с суммарными данными",
+    )
+    parser.add_argument(
+        "--loose",
+        action="store_true",
+        help="Нестрогая классификация",
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Интерактивная классификация нераспределённых",
+    )
+    parser.add_argument(
+        "--no-interactive",
+        action="store_true",
+        help="Не запускать интерактивный режим автоматически",
+    )
+    parser.add_argument(
+        "--assign-json",
+        default="rules.json",
+        metavar="FILE",
+        help="JSON с правилами автоклассификации (по умолчанию: rules.json)",
+    )
+    parser.add_argument(
+        "--exclude-items",
+        metavar="FILE",
+        help="Файл исключений (Название ИВП, количество)",
+    )
+    parser.add_argument(
+        "--exclude-podbor",
+        action="store_true",
+        help="Исключить подборы и замены из выходного файла",
+    )
+    return parser
+
+
+def _validate_existing_files(paths: List[str], label: str) -> None:
+    missing = [p for p in paths if not os.path.isfile(p)]
+    if missing:
+        listed = "\n  - ".join(missing)
+        _cli_error(
+            f"{label}: файл(ы) не найдены:\n  - {listed}",
+            examples=[
+                f'{_cli_prog_name()} --inputs "путь\\к\\существующему.xlsx" --xlsx "result.xlsx"',
+            ],
+        )
+
+
 def main():
     """
     Главная функция CLI
     """
-    parser = argparse.ArgumentParser(description="BOM Categorizer CLI")
-    parser.add_argument("--inputs", nargs="+", help="Входные файлы (TXT, DOCX, XLSX)")
-    parser.add_argument("--sheets", help="Листы Excel (через запятую)")
-    parser.add_argument("--sheet", help="Конкретный лист Excel")
-    parser.add_argument("--xlsx", help="Выходной Excel файл")
-    parser.add_argument("--compare", nargs=2, metavar=('FILE1', 'FILE2'), help="Сравнить два BOM файла")
-    parser.add_argument("--compare-output", help="Выходной файл для результатов сравнения")
-    parser.add_argument("--txt-dir", help="Директория для TXT отчетов")
-    parser.add_argument("--combine", action="store_true", help="Создать SUMMARY лист")
-    parser.add_argument("--loose", action="store_true", help="Нестрогая классификация")
-    parser.add_argument("--interactive", action="store_true", help="Интерактивная классификация")
-    parser.add_argument("--no-interactive", action="store_true", help="Отключить автоматический интерактивный режим")
-    parser.add_argument("--assign-json", default="rules.json", help="JSON файл с правилами")
-    parser.add_argument("--exclude-items", help="Файл с элементами для исключения (формат: Название ИВП, количество)")
-    parser.add_argument("--exclude-podbor", action="store_true", help="Исключить подборы и замены из выходного файла")
-    
+    parser = _build_arg_parser()
+
+    # Без аргументов — показать справку (не сухой "[ОШИБКА]")
+    if len(sys.argv) == 1:
+        parser.print_help()
+        print(
+            "\nПодсказка: для обработки нужны --inputs и --xlsx; "
+            "для сравнения — --compare и --compare-output.\n"
+        )
+        sys.exit(0)
+
     args = parser.parse_args()
-    
+    prog = _cli_prog_name()
+
     # Режим сравнения файлов
     if args.compare:
         if not args.compare_output:
-            print("[ОШИБКА] укажите --compare-output для сохранения результатов сравнения")
-            return
-        compare_bom_files(args.compare[0], args.compare[1], args.compare_output, args.no_interactive)
+            _cli_error(
+                "для сравнения укажите --compare-output",
+                examples=[
+                    f'{prog} --compare "file1.xlsx" "file2.xlsx" --compare-output "diff.xlsx"',
+                ],
+            )
+        _validate_existing_files(list(args.compare), "Сравнение")
+        compare_bom_files(
+            args.compare[0],
+            args.compare[1],
+            args.compare_output,
+            args.no_interactive,
+        )
         return
-    
+
     # Обычный режим обработки
-    if not args.inputs or not args.xlsx:
-        print("[ОШИБКА] укажите --inputs и --xlsx для обработки файлов")
-        return
-    
+    missing = []
+    if not args.inputs:
+        missing.append("--inputs FILE [FILE ...]")
+    if not args.xlsx:
+        missing.append("--xlsx OUTPUT.xlsx")
+    if missing:
+        _cli_error(
+            "не заданы обязательные параметры: " + ", ".join(missing),
+            examples=[
+                f'{prog} --inputs "bom.xlsx" --xlsx "result.xlsx"',
+                f'{prog} --inputs "a.docx" "b.xlsx" --xlsx "out.xlsx" --combine',
+                f'{prog} --inputs "bom.xlsx" --xlsx "out.xlsx" --txt-dir "txt_out" --combine',
+            ],
+        )
+
+    _validate_existing_files(list(args.inputs), "Входные файлы")
+
     # Load and combine inputs
-    print(f"Запуск: split_bom --inputs {' '.join(args.inputs)} --xlsx {args.xlsx} {' --combine' if args.combine else ''} {' --txt-dir ' + args.txt_dir if args.txt_dir else ''}")
+    print(
+        f"Запуск: {prog} --inputs {' '.join(args.inputs)} --xlsx {args.xlsx}"
+        f"{' --combine' if args.combine else ''}"
+        f"{' --txt-dir ' + args.txt_dir if args.txt_dir else ''}"
+    )
     
     df = load_and_combine_inputs(args.inputs, args.sheets, args.sheet)
     
@@ -1953,6 +2123,13 @@ def main():
     # Применить исключения элементов (если указано)
     if args.exclude_items:
         print(f"\n🔧 Применение исключений из файла: {args.exclude_items}")
+        if not os.path.isfile(args.exclude_items):
+            _cli_error(
+                f"файл исключений не найден: {args.exclude_items}",
+                examples=[
+                    f'{prog} --inputs "bom.xlsx" --xlsx "out.xlsx" --exclude-items "exclude.txt"',
+                ],
+            )
         exclude_items = parse_exclude_items(args.exclude_items)
         if exclude_items:
             print(f"Найдено {len(exclude_items)} элементов для исключения")
@@ -2054,6 +2231,8 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\n\nПрервано пользователем.")
         sys.exit(1)
+    except SystemExit:
+        raise
     except Exception as e:
         print(f"\nОШИБКА: {e}")
         import traceback

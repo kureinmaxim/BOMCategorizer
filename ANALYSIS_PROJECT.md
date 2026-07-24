@@ -2,7 +2,7 @@
 
 **BOM Categorizer** — десктопное приложение для автоматической классификации электронных компонентов из спецификаций (BOM).
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.5.1 (PySide6)  
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.6.3 (PySide6)  
 > **Язык:** Python 3.13+  
 > **Архитектура:** Модульный пайплайн + AI интеграция + Шифрование
 
@@ -326,7 +326,7 @@ BOMCategorizer/
 
 > Объединено из `docs/PROJECT_STRUCTURE.md` (файл удалён после объединения).
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.4.12 (PySide6)  
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.6.3 (PySide6)  
 > **Обновлено:** 24.12.2025
 
 ---
@@ -468,7 +468,7 @@ BOMCategorizer/
 │   ├── AI_CLASSIFIER_README.md           # 🤖 AI классификатор
 │   ├── CLI_USAGE.md                      # 💻 CLI использование
 │   ├── TESTING_GUIDE.md                  # 🧪 Тестирование
-│   ├── USER_MANUAL.md                    # 📖 Руководство пользователя
+│   ├── GUIDE.md                    # 📖 Руководство пользователя
 │   ├── DATABASE_GUIDE.md                 # 💾 Работа с БД
 │   ├── DATABASE_ARCHITECTURE.md          # 💾 Архитектура БД
 │   ├── (merged into STATE_DIAGRAMS.md)   # 📋 Правила классификации (бывш. CLASSIFICATION_RULES.md)
@@ -501,7 +501,7 @@ BOMCategorizer/
 |----------|----------|
 | [README.md](README.md) | Главная страница, обзор возможностей |
 | [GUIDE.md](GUIDE.md) | Руководство пользователя (режимы, BOM/ТРУ/merge) |
-| [docs/USER_MANUAL.md](docs/USER_MANUAL.md) | Полное руководство пользователя |
+| [GUIDE.md](GUIDE.md) | Полное руководство пользователя |
 | [docs/OFFLINE_INSTALLATION_GUIDE.md](docs/OFFLINE_INSTALLATION_GUIDE.md) | Установка без интернета |
 
 #### 🔵 Для разработчиков

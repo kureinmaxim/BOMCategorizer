@@ -14,5 +14,4 @@ if not exist ".venv\Scripts\python.exe" (
     exit /b 1
 )
 
-.venv\Scripts\python.exe split_bom.py %*
-
+.venv\Scripts\python.exe tools\split_bom.py %*

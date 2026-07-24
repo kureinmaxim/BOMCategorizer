@@ -69,15 +69,17 @@ python scripts/bump_version.py --bump patch
 #### Вариант B: `update_version.py set`
 
 ```bash
-# Modern Edition
-python3 tools/update_version.py set modern 5.5.3
+# Modern Edition (пример)
+python tools/update_version.py set modern 5.6.3
 
 # Standard Edition
-python3 tools/update_version.py set standard 3.3.0
+python tools/update_version.py set standard 3.3.0
 
-# обе редакции
-python3 tools/update_version.py set both 5.0.0
+# обе редакции — только если осознанно выравниваете номера
+python tools/update_version.py set both 5.6.3
 ```
+
+> На Windows в примерах используйте `python`, на macOS/Linux — `python3`.
 
 ---
 
@@ -105,14 +107,19 @@ python3 tools/update_version.py sync
 
 ### 🪟 Windows (Inno Setup)
 
-Запуск:
+Нужен [Inno Setup 6](https://jrsoftware.org/isinfo.php)  
+(по умолчанию: `C:\Program Files (x86)\Inno Setup 6\ISCC.exe`).
 
 ```powershell
+cd C:\Project\BOMCategorizer
+.\.venv\Scripts\Activate.ps1
+python tools/update_version.py sync
 python deployment/build_installer.py
 ```
 
+В меню выберите редакцию: **1** Standard / **2** Modern Edition.
+
 Что происходит:
-- выбор редакции (Standard / Modern)
 - сбор временной папки `temp_installer`
 - запуск Inno Setup Compiler
 - готовый `.exe` появляется в корне проекта
@@ -120,7 +127,29 @@ python deployment/build_installer.py
 Результат:
 - `BOMCategorizerModernSetup.exe` или `BOMCategorizerSetup.exe`
 
+**Апгрейд (как в ApiHA):** у установщиков стабильный `AppId`. При установке новой версии
+старая тихо удаляется, затем ставится новая; `config` / база компонентов сохраняются.
+
 ---
+
+### 🔄 Git remotes — GitHub + Forgejo (NAS)
+
+Как в ApiHA: один `origin`, два **pushurl**. `git push origin HEAD` уходит и на GitHub, и на NAS.
+
+```powershell
+# Один раз на машине (из корня BOMCategorizer)
+git remote set-url origin https://github.com/kureinmaxim/BOMCategorizer.git
+git remote set-url --push origin https://github.com/kureinmaxim/BOMCategorizer.git
+git remote set-url --add --push origin ssh://git@100.64.0.12:2222/mxm/BOMCategorizer.git
+# если настроен alias forgejo-nas:
+# git remote set-url --add --push origin git@forgejo-nas:mxm/BOMCategorizer.git
+
+git remote -v
+git push origin HEAD
+```
+
+Forgejo веб: `http://100.64.0.12:3000/mxm/BOMCategorizer` (LAN: `http://192.168.1.222:3000/...`).
+Репозиторий на NAS должен уже существовать (пустой, без README).
 
 ### 🍎 macOS (DMG + py2app)
 

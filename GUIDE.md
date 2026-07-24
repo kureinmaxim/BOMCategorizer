@@ -85,9 +85,37 @@
 
 ---
 
+## 💻 Встроенный CLI (Modern Edition)
+
+Кнопка **💻 CLI** (обычно в экспертном режиме):
+
+| Команда | Назначение |
+|---------|------------|
+| `help` / `help <cmd>` | Справка |
+| `list` / `add` / `remove` / `process` | Файлы и запуск |
+| `dbsearch <имя>` | Поиск в базе |
+| `theme dark\|light` | Тема GUI + CLI |
+| `ai` / `aiprovider` / `aimodel` | AI-настройки |
+
+Полезное:
+- пути с пробелами: `add "D:\Мои файлы\bom.xlsx"`
+- опечатка команды → подсказка «Возможно, вы имели в виду…»
+- Tab — автодополнение (`theme ` → `dark`/`light`)
+
+Терминальная обработка BOM (без GUI):
+
+```powershell
+.\.venv\Scripts\python.exe tools\split_bom.py --inputs "bom.xlsx" --xlsx "out.xlsx" --combine
+```
+
+Подробнее: [docs/CLI_USAGE.md](docs/CLI_USAGE.md)
+
+---
+
 ## 🧩 Советы
 
 - Если в merge у «наших» позиций внезапно появляется `№ ТРУ/Стоимость`, проверьте что:
   - вы используете **`*_tpy.xlsx`**, а не исходный `.xls`,
   - в «Название/ТУ» корректно выделяются коды (ГВАТ/АМФИ/ИГНД/де…).
+- После `git pull` синхронизируйте версии: `python tools/update_version.py sync`.
 

@@ -3,7 +3,7 @@
 **Автоматическая сортировка электронных компонентов из спецификаций (BOM) по категориям.**  
 Загружаете файл → Получаете Excel с разделением на: Резисторы, Конденсаторы, Микросхемы и др.
 
-> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.0.0 (PySide6)
+> **Версии:** Standard v3.3.0 (Tkinter) / Modern Edition v5.6.3 (PySide6)
 
 ---
 
@@ -136,57 +136,50 @@ python tools/ai_search.py "NE555"
 
 ---
 
-## 💻 CLI Команды
+## 💻 CLI
 
-### Обработка BOM файлов
+### Встроенный CLI (Modern Edition)
+
+Кнопка **💻 CLI** в GUI (экспертный режим): `help`, `list`/`add`/`process`, `dbsearch`, `theme`, AI-команды и др.
+
+- пути с пробелами: `add "C:\My Files\bom.xlsx"`
+- опечатки → подсказки «Возможно, вы имели в виду…»
+- Tab — автодополнение команд и аргументов (`theme dark`)
+- цвета CLI подстраиваются под тему light/dark
+
+> Подробнее: [docs/CLI_USAGE.md](docs/CLI_USAGE.md) · [GUIDE.md](GUIDE.md)
+
+### Терминал: обработка BOM
 
 ```bash
-python tools/split_bom.py --inputs "bom.docx" --xlsx "result.xlsx" --combine
+# Windows
+.\.venv\Scripts\python.exe tools\split_bom.py --inputs "bom.docx" --xlsx "result.xlsx" --combine
+
+# macOS/Linux
+venv/bin/python3 tools/split_bom.py --inputs "bom.docx" --xlsx "result.xlsx" --combine
 ```
 
 ### AI поиск компонентов
 
 ```bash
-# Описание компонента
 python tools/ai_search.py "TPS54302"
-
-# Поиск аналогов
 python tools/ai_search.py "LM2596" --prompt analogs
-
-# JSON вывод
 python tools/ai_search.py "NE555" --json
-
-# Список промптов
 python tools/ai_search.py --list-prompts
 ```
 
-### Управление API
+### API и версии
 
 ```bash
-# Синхронизировать ключ с сервера
 python tools/sync_telegram_api.py --fetch
-
-# Показать настройки
 python tools/sync_telegram_api.py --show
-
-# Тест соединения
 python tools/sync_telegram_api.py --test
+
+python scripts/bump_version.py --bump patch
+python scripts/bump_version.py --bump minor --edition both
+python tools/update_version.py status
+python tools/update_version.py sync
 ```
-
-### Управление версиями
-
-```bash
-# Увеличить patch версию (только Modern Edition)
-./scripts/bump_version.py --bump patch
-
-# Увеличить minor версию обеих редакций
-./scripts/bump_version.py --bump minor --edition both
-
-# Установить конкретную версию
-./scripts/bump_version.py --version 5.1.0
-```
-
-> **Подробнее:** [docs/CLI_USAGE.md](docs/CLI_USAGE.md)
 
 ---
 
@@ -196,19 +189,20 @@ python tools/sync_telegram_api.py --test
 
 | Документ | Описание |
 |----------|----------|
-| [GUIDE.md](GUIDE.md) | Руководство пользователя (режимы, BOM/ТРУ/merge) |
-| [docs/USER_MANUAL.md](docs/USER_MANUAL.md) | Полное руководство |
+| [GUIDE.md](GUIDE.md) | Руководство пользователя (режимы, BOM/ТРУ/merge, CLI) |
 | [docs/INTERACTIVE_MODE_GUIDE.md](docs/INTERACTIVE_MODE_GUIDE.md) | Обучение классификатора |
+| [docs/CLI_USAGE.md](docs/CLI_USAGE.md) | Встроенный и терминальный CLI |
 
 ### Для разработчиков
 
 | Документ | Описание |
 |----------|----------|
-| [SETUP.md](SETUP.md) | Настройка окружения |
+| [SETUP.md](SETUP.md) | Настройка окружения после clone |
 | [BUILD.md](BUILD.md) | Сборка инсталляторов |
 | [ANALYSIS_PROJECT.md](ANALYSIS_PROJECT.md) | Архитектура проекта |
-| [docs/VERSION_MANAGEMENT.md](docs/VERSION_MANAGEMENT.md) | Управление версиями |
+| [VERSION_MANAGEMENT.md](VERSION_MANAGEMENT.md) | Управление версиями |
 | [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | Тестирование |
+| [CLAUDE.md](CLAUDE.md) | Краткая шпаргалка для AI/разработки |
 
 ### AI и API
 
@@ -223,7 +217,7 @@ python tools/sync_telegram_api.py --test
 
 | Проблема | Решение |
 |----------|---------|
-| **Module not found** | Активируйте venv: `source venv/bin/activate` |
+| **Module not found** | Активируйте venv: Windows `.\.venv\Scripts\Activate.ps1`, macOS `source venv/bin/activate` |
 | **Access Denied (PowerShell)** | `Set-ExecutionPolicy Bypass -Scope Process` |
 | **AI не отвечает** | `python tools/sync_telegram_api.py --test` |
 | **Неверный API ключ** | `python tools/sync_telegram_api.py --fetch` |
@@ -235,25 +229,28 @@ python tools/sync_telegram_api.py --test
 
 ```
 BOMCategorizer/
-├── app_qt.py              # Modern Edition
-├── app.py                 # Standard Edition
-├── bom_categorizer/       # Ядро приложения
-│   ├── encryption.py      # 🔐 AES-256-GCM
-│   └── gui/               # Modern GUI модули
-├── scripts/
-│   └── bump_version.py    # Управление версиями
-├── tools/                 # CLI утилиты
-│   ├── ai_search.py       # AI поиск компонентов
-│   └── split_bom.py       # Обработка BOM
-├── config_qt.json         # Конфигурация Modern
-├── config.json            # Конфигурация Standard
-└── docs/                  # Документация
+├── app_qt.py                 # Modern Edition
+├── app.py                    # Standard Edition
+├── bom_categorizer/          # Ядро приложения
+│   ├── main.py               # Терминальный CLI (pipeline)
+│   ├── cli_interactive.py    # Встроенный GUI CLI
+│   ├── cli_ux.py             # UX-хелперы встроенного CLI
+│   ├── formatters.py         # Очистка имён / ТУ / производители
+│   ├── encryption.py         # AES-256-GCM
+│   └── gui/                  # Modern GUI (mixin + workers)
+├── scripts/bump_version.py   # Управление версиями
+├── tools/
+│   ├── split_bom.py          # Точка входа CLI обработки BOM
+│   ├── ai_search.py          # AI поиск
+│   └── update_version.py     # status / sync / set
+├── config/*.template         # Источник правды версий
+└── docs/                     # Документация
 ```
 
-> **Подробнее:** [ANALYSIS_PROJECT.md](ANALYSIS_PROJECT.md) (раздел “Структура проекта (подробно)”)
+> **Подробнее:** [ANALYSIS_PROJECT.md](ANALYSIS_PROJECT.md)
 
 ---
 
 **Разработчик:** Куреин М.Н.  
 **Лицензия:** Proprietary  
-**Обновлено:** 28.11.2025
+**Обновлено:** 24.07.2026

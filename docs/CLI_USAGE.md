@@ -1,4 +1,6 @@
-# 🖥️ Использование CLI (командная строка) v2.0.0
+# 🖥️ Использование CLI (командная строка) v2.1.0
+
+> Актуальные версии приложения: Standard **3.3.0** / Modern **5.6.3** (см. шаблоны `config/`).
 
 ## 📋 Содержание
 
@@ -14,14 +16,19 @@
 
 ## 💻 Интерактивный CLI режим (в приложении)
 
-Встроенная командная строка доступна через кнопку **💻 CLI** в интерфейсе приложения.
+Встроенная командная строка доступна через кнопку **💻 CLI** в интерфейсе Modern Edition.
+
+Код: `bom_categorizer/cli_interactive.py` + UX-хелперы `bom_categorizer/cli_ux.py`.
 
 ### Возможности
 
-- 🔄 **Автодополнение команд** (Tab)
+- 🔄 **Автодополнение** (Tab) — команды и аргументы (`theme dark|light`, `aiprovider …`)
 - 📜 **История команд** (↑↓)
-- 🎨 **Цветной вывод**
-- ⚡ **Быстрый доступ ко всем функциям**
+- 🎨 **Цвета под тему** light/dark приложения
+- 💬 **Подсказки при опечатках** («Возможно, вы имели в виду…»)
+- 📁 **Пути в кавычках** с пробелами: `add "C:\My Files\bom.xlsx"`
+- 📖 **Компактный `help`**, подробности: `help <команда>`
+- ⚡ **Быстрый доступ** к файлам, БД, AI и sync-командам
 
 ### Все доступные команды
 
@@ -323,6 +330,11 @@ Key: 754c7afb2b146882...
 
 ## 📦 Обработка BOM файлов (split_bom.py)
 
+Точка входа: `tools/split_bom.py` (логика в `bom_categorizer/main.py`).
+
+Без аргументов печатается полная справка с примерами.  
+При отсутствии `--inputs` / `--xlsx` (или `--compare-output` для сравнения) — сообщение с **примерами** и код выхода `2`.
+
 ### ❌ Частая ошибка
 
 **НЕ правильно:**
@@ -338,23 +350,26 @@ split_bom --inputs file.xlsx  # Ошибка: команда не найдена
 .\.venv\Scripts\Activate.ps1
 
 # 2. Запустить скрипт
-python split_bom.py --inputs D:/path/to/file.xlsx --xlsx output.xlsx
+python tools/split_bom.py --inputs D:/path/to/file.xlsx --xlsx output.xlsx
 ```
 
 ### Windows (без активации venv):
 ```powershell
-# Прямой запуск через venv Python
-.\.venv\Scripts\python.exe split_bom.py --inputs D:/path/to/file.xlsx --xlsx output.xlsx --txt-dir D:/output --combine
+.\.venv\Scripts\python.exe tools\split_bom.py --inputs D:/path/to/file.xlsx --xlsx output.xlsx --txt-dir D:/output --combine
+```
+
+### Windows (bat-обёртка):
+```cmd
+scripts\split_bom.bat --inputs file.xlsx --xlsx output.xlsx --combine
 ```
 
 ### macOS/Linux:
 ```bash
-# С активацией
 source venv/bin/activate
-python3 split_bom.py --inputs file.xlsx --xlsx output.xlsx
+python3 tools/split_bom.py --inputs file.xlsx --xlsx output.xlsx
 
-# Без активации
-venv/bin/python3 split_bom.py --inputs file.xlsx --xlsx output.xlsx
+# или
+venv/bin/python3 tools/split_bom.py --inputs file.xlsx --xlsx output.xlsx
 ```
 
 ---
@@ -365,7 +380,7 @@ venv/bin/python3 split_bom.py --inputs file.xlsx --xlsx output.xlsx
 
 ```powershell
 # Windows PowerShell
-.\.venv\Scripts\python.exe split_bom.py `
+.\.venv\Scripts\python.exe tools\split_bom.py `
   --inputs "D:/!ШСК_М/Project/Plata_Preobrz.xlsx" `
   --xlsx "D:/!ШСК_М/Project/categorized.xlsx" `
   --txt-dir "D:/!ШСК_М/Project/1_txt" `
@@ -379,7 +394,7 @@ venv/bin/python3 split_bom.py --inputs file.xlsx --xlsx output.xlsx
 .\.venv\Scripts\Activate.ps1
 
 # Запустить
-python split_bom.py `
+python tools/split_bom.py `
   --inputs "D:/!ШСК_М/Project/Plata_Preobrz.xlsx" `
   --xlsx "D:/!ШСК_М/Project/categorized.xlsx" `
   --txt-dir "D:/!ШСК_М/Project/1_txt" `
@@ -391,7 +406,7 @@ python split_bom.py `
 ## 🎯 Все опции CLI
 
 ```
-python split_bom.py [опции]
+python tools/split_bom.py [опции]
 
 Обязательные:
   --inputs FILE [FILE ...]    Входные файлы (XLSX/DOCX/DOC/TXT)
@@ -416,14 +431,14 @@ python split_bom.py [опции]
 
 ### 1. Простая обработка одного файла:
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py `
+.\.venv\Scripts\python.exe tools\split_bom.py `
   --inputs "example/БЗ.doc" `
   --xlsx "output.xlsx"
 ```
 
 ### 2. Несколько файлов с суммарными данными:
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py `
+.\.venv\Scripts\python.exe tools\split_bom.py `
   --inputs "file1.xlsx" "file2.doc" "file3.txt" `
   --xlsx "combined.xlsx" `
   --combine
@@ -431,7 +446,7 @@ python split_bom.py [опции]
 
 ### 3. С экспортом в TXT:
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py `
+.\.venv\Scripts\python.exe tools\split_bom.py `
   --inputs "БЗ.doc" `
   --xlsx "output.xlsx" `
   --txt-dir "output_txt" `
@@ -440,7 +455,7 @@ python split_bom.py [опции]
 
 ### 4. Выбор конкретных листов из Excel:
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py `
+.\.venv\Scripts\python.exe tools\split_bom.py `
   --inputs "workbook.xlsx" `
   --sheets 3,4,5 `
   --xlsx "output.xlsx"
@@ -448,7 +463,7 @@ python split_bom.py [опции]
 
 ### 5. С автоклассификацией по правилам:
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py `
+.\.venv\Scripts\python.exe tools\split_bom.py `
   --inputs "БЗ.doc" `
   --xlsx "output.xlsx" `
   --assign-json rules.json `
@@ -652,7 +667,7 @@ config/config_qt.json.template  ← ИСТОЧНИК ПРАВДЫ
 
 **Решение:** Используйте полный путь:
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py --inputs file.xlsx --xlsx output.xlsx
+.\.venv\Scripts\python.exe tools\split_bom.py --inputs file.xlsx --xlsx output.xlsx
 ```
 
 ### Ошибка: "python не является внутренней командой"
@@ -660,7 +675,7 @@ config/config_qt.json.template  ← ИСТОЧНИК ПРАВДЫ
 
 **Решение:** Используйте полный путь к python.exe:
 ```powershell
-.\.venv\Scripts\python.exe split_bom.py ...
+.\.venv\Scripts\python.exe tools\split_bom.py ...
 ```
 
 ### Ошибка: "ModuleNotFoundError: No module named 'pandas'"
@@ -784,7 +799,7 @@ python tools/sync_telegram_api.py --key "скопированный_ключ"
 
 | Скрипт | Назначение | Пример |
 |--------|------------|--------|
-| `split_bom.py` | Обработка BOM файлов | `python split_bom.py --inputs file.xlsx --xlsx out.xlsx` |
+| `split_bom.py` | Обработка BOM файлов | `python tools/split_bom.py --inputs file.xlsx --xlsx out.xlsx` |
 | `tools/ai_search.py` | AI поиск компонентов | `python tools/ai_search.py "TPS54302"` |
 | `tools/update_version.py` | Управление версиями | `python tools/update_version.py status` |
 | `tools/sync_telegram_api.py` | Синхронизация API | `python tools/sync_telegram_api.py --fetch` |
@@ -832,5 +847,5 @@ python tools/update_version.py set modern 4.6.0
 
 ---
 
-*Создано: 06.10.2025 | Обновлено: 26.11.2025*
+*Создано: 06.10.2025 | Обновлено: 24.07.2026*
 

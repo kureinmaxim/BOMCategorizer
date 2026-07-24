@@ -61,9 +61,11 @@ Input Files (.xlsx/.xls/.docx/.txt)
 
 | Module | Purpose |
 |--------|---------|
-| `main.py` | CLI orchestrator for the processing pipeline |
+| `main.py` | Terminal CLI orchestrator for the processing pipeline |
+| `cli_interactive.py` | In-app Interactive CLI widget (Modern Edition) |
+| `cli_ux.py` | Pure helpers for in-app CLI (parse/fuzzy/palette) |
 | `classifiers.py` | Regex + heuristics classification engine |
-| `formatters.py` | Data cleaning, prefix removal, unit normalization |
+| `formatters.py` | Data cleaning, TU/manufacturer split, unit normalization |
 | `parsers.py` | Input file readers (.txt, .docx, .xlsx) |
 | `component_database.py` | JSON knowledge base with hash-based versioning |
 | `excel_writer.py` | Styled Excel output with charts and source tracking |
@@ -106,7 +108,8 @@ Long-running operations use **QThread workers** (`workers.py`: ProcessingWorker,
 
 Tests live in `tests/` using pytest. Key test files:
 - `test_classifiers.py` — classification regex and heuristics
-- `test_formatters.py` — data cleaning logic
+- `test_formatters.py` — data cleaning / TU extraction
+- `test_cli_ux.py` — in-app CLI parse/fuzzy/palette helpers
 - `test_database.py` — database CRUD and versioning
 - `test_integration.py` — end-to-end pipeline
 
