@@ -13,7 +13,7 @@ import re
 from typing import List, Dict, Any, Optional
 import pandas as pd
 
-from .utils import LINE_SPLIT_RE, POS_PREFIX_RE
+from .utils import LINE_SPLIT_RE, POS_PREFIX_RE, parse_number, require_number, normalize_special_letters
 
 try:
     from docx import Document  # python-docx
@@ -54,7 +54,7 @@ def normalize_dashes(text: str) -> str:
 
 def normalize_cell(s: Any) -> str:
     """Нормализует содержимое ячейки таблицы"""
-    text = str(s or "").strip()
+    text = normalize_special_letters(str(s or "").strip())
     # Нормализуем тире для корректного объединения компонентов
     text = normalize_dashes(text)
     # Удаляем непечатные символы (включая �)
@@ -82,7 +82,7 @@ def count_from_reference(ref: str) -> int:
     if not ref or not ref.strip():
         return 1
     
-    ref = ref.strip()
+    ref = ref.strip().upper().translate(str.maketrans('АВСЕНКМОРТХ', 'ABCEHKMOPTX'))
     total = 0
     
     # Разделяем по запятым
@@ -150,7 +150,10 @@ def parse_txt_like(path: str) -> pd.DataFrame:
                     qty = int(p)
                     break
         
-        desc = " ".join(parts[1:-1]) if pos and len(parts) >= 2 else (" ".join(parts))
+        desc_parts = parts[1:] if pos else parts[:]
+        if desc_parts and re.fullmatch(r'\d+(?:[.,]\d+)?\s*(?:шт\.?|pcs|pieces)?', desc_parts[-1], re.IGNORECASE):
+            desc_parts.pop()
+        desc = " ".join(desc_parts)
         row = {"reference": pos or "", "description": desc, "qty": qty if qty is not None else 1}
         rows.append(row)
     
@@ -159,6 +162,54 @@ def parse_txt_like(path: str) -> pd.DataFrame:
         rows = [{"description": text, "qty": 1}]
     
     return pd.DataFrame(rows)
+
+
+def _open_word_document(path: str):
+    """Read DOCX or convert a legacy DOC in an isolated, read-only Word instance."""
+    from pathlib import Path
+    import tempfile
+    if Path(path).suffix.lower() != '.doc':
+        return Document(path)
+    # Старый DOC может содержать вложенный ZIP темы Office: is_zipfile()
+    # видит этот хвост, хотя сам документ остаётся бинарным OLE.
+    with open(path, 'rb') as stream:
+        if stream.read(4) == b'PK\x03\x04':
+            return Document(path)
+    try:
+        import pythoncom
+        import win32com.client
+    except ImportError as exc:
+        raise ValueError('Для чтения DOC нужны Microsoft Word и pywin32. '
+                         'Можно сохранить документ как DOCX и открыть его.') from exc
+    pythoncom.CoInitialize()
+    app = document = None
+    try:
+        with tempfile.TemporaryDirectory(prefix='bom_doc_') as directory:
+            converted = str(Path(directory) / 'converted.docx')
+            app = win32com.client.DispatchEx('Word.Application')
+            app.Visible = False
+            app.DisplayAlerts = 0
+            app.AutomationSecurity = 3
+            document = app.Documents.Open(str(Path(path).resolve()),
+                                          ConfirmConversions=False, ReadOnly=True,
+                                          AddToRecentFiles=False)
+            document.SaveAs2(converted, FileFormat=16, AddToRecentFiles=False)
+            document.Close(False)
+            document = None
+            return Document(converted)
+    except Exception as exc:
+        raise ValueError(f'Не удалось прочитать DOC через Microsoft Word: {exc}. '
+                         'Сохраните документ как DOCX и повторите обработку.') from exc
+    finally:
+        try:
+            if document is not None:
+                document.Close(False)
+        finally:
+            try:
+                if app is not None:
+                    app.Quit()
+            finally:
+                pythoncom.CoUninitialize()
 
 
 def parse_docx(path: str) -> pd.DataFrame:
@@ -174,7 +225,7 @@ def parse_docx(path: str) -> pd.DataFrame:
     if Document is None:
         raise SystemExit("python-docx is required to parse DOCX. Install with pip install python-docx")
     
-    doc = Document(path)
+    doc = _open_word_document(path)
     extracted: List[Dict[str, Any]] = []
 
     def guess_header_index(table) -> int:
@@ -192,6 +243,11 @@ def parse_docx(path: str) -> pd.DataFrame:
     for table in doc.tables:
         if not table.rows:
             continue
+        first_rows = ' '.join(normalize_cell(c.text).lower()
+                              for r in table.rows[:2] for c in r.cells)
+        if ('лист регистрации изменений' in first_rows
+                or ('номера листов' in first_rows and 'изм.' in first_rows)):
+            continue  # Лист регистрации изменений не содержит компонентов.
         
         header_idx = guess_header_index(table)
         header_cells = [normalize_cell(c.text).strip() for c in table.rows[header_idx].cells]
@@ -478,12 +534,9 @@ def parse_docx(path: str) -> pd.DataFrame:
                                 last_item['note'] = cell_note.strip()
                     
                     # Устанавливаем количество
-                    try:
-                        qty_val = int(re.sub(r'\D', '', qty_raw))
-                        last_item['qty'] = qty_val if qty_val > 0 else 1
-                        last_item['has_explicit_qty'] = True
-                    except (ValueError, AttributeError):
-                        last_item['qty'] = 1
+                    qty_val = require_number(qty_raw)
+                    last_item['qty'] = qty_val
+                    last_item['has_explicit_qty'] = True
                     
                     # Обновляем note/original_note если они были во второй строке (и это НЕ ТУ-код и НЕ производитель)
                     if note.strip() and not is_tu_code and not is_manufacturer:
@@ -505,14 +558,9 @@ def parse_docx(path: str) -> pd.DataFrame:
             # parse qty
             qty = None
             has_explicit_qty = False  # Флаг: была ли qty ячейка НЕ пустой
-            m = re.search(r"(\d+)", str(qty_raw))
-            if m:
-                try:
-                    qty = int(m.group(1))
-                    has_explicit_qty = True
-                except Exception:
-                    qty = 1
-                    has_explicit_qty = False
+            if str(qty_raw).strip():
+                qty = require_number(qty_raw)
+                has_explicit_qty = True
 
             # Проверить, есть ли в наименовании информация о производителе (формат "ф. Производитель")
             manufacturer_in_name = ""
@@ -685,6 +733,9 @@ def parse_docx(path: str) -> pd.DataFrame:
             # - "с подбором 50HFFA - 001 - 2/6SMA" -> "50HFFA - 001 - 2/6SMA"
             # - "50HFFA-003-2/6SMA,\nс подбором\n50HFFA-001-2/6SMA" -> "50HFFA-003-2/6SMA,"
             # ВАЖНО: Используем re.DOTALL чтобы . совпадал с \n
+            selection = re.search(r'с\s+подбором.*$', name, flags=re.IGNORECASE | re.DOTALL)
+            if selection:
+                original_note = (original_note + ' ' + selection.group()).strip()
             name = re.sub(r'[,\s]*с\s+подбором.*$', '', name, flags=re.IGNORECASE | re.DOTALL).strip()
             name = re.sub(r'^с\s+подбором\s+', '', name, flags=re.IGNORECASE).strip()
             
@@ -692,13 +743,12 @@ def parse_docx(path: str) -> pd.DataFrame:
             # Примечания могут содержать многострочный текст с переносами
             cell_note = re.sub(r'[,\s]*с\s+подбором.*$', '', cell_note, flags=re.IGNORECASE | re.DOTALL).strip()
             cell_note = re.sub(r'^с\s+подбором\s+', '', cell_note, flags=re.IGNORECASE).strip()
-            original_note = re.sub(r'[,\s]*с\s+подбором.*$', '', original_note, flags=re.IGNORECASE | re.DOTALL).strip()
-            original_note = re.sub(r'^с\s+подбором\s+', '', original_note, flags=re.IGNORECASE).strip()
+            # original_note сохраняется для последующего извлечения вариантов.
             note = re.sub(r'[,\s]*с\s+подбором.*$', '', note, flags=re.IGNORECASE | re.DOTALL).strip()
             note = re.sub(r'^с\s+подбором\s+', '', note, flags=re.IGNORECASE).strip()
 
             # Если количество не указано явно, пытаемся посчитать из reference (например, FU1-FU6 = 6)
-            if qty is None or qty == 0:
+            if qty is None:
                 qty = count_from_reference(ref)
             
             # Определить нужно ли использовать group_type для этого элемента

@@ -20,7 +20,7 @@ from .parsers import parse_txt_like, parse_docx
 from .classifiers import classify_row
 from .excel_writer import write_categorized_excel, enrich_with_mr_and_total, format_excel_output, RUS_SHEET_NAMES
 from .txt_writer import write_txt_reports
-from .utils import normalize_column_names, find_column
+from .utils import normalize_column_names, find_column, QUANTITY_COLUMNS, parse_number, require_number, contains_our_development_code
 from .podborka_extractor import extract_podbor_elements
 
 
@@ -73,7 +73,7 @@ def multiply_quantities(df: pd.DataFrame, multiplier: int) -> pd.DataFrame:
     
     # Найти колонку с количеством (без учета регистра)
     qty_col = None
-    qty_keywords = ["qty", "quantity", "количество", "кол.", "кол-во", "кол-в", "_merged_qty_"]
+    qty_keywords = QUANTITY_COLUMNS + ['кол-в']
     
     # Сначала попробуем find_column (для обратной совместимости)
     qty_col = find_column(qty_keywords, list(df.columns))
@@ -102,9 +102,9 @@ def multiply_quantities(df: pd.DataFrame, multiplier: int) -> pd.DataFrame:
             current_qty = df.loc[idx, qty_col]
             if pd.notna(current_qty):
                 try:
-                    df.loc[idx, qty_col] = int(float(current_qty)) * multiplier
+                    df.loc[idx, qty_col] = require_number(current_qty) * multiplier
                 except (ValueError, TypeError):
-                    pass  # Оставляем как есть, если не можем преобразовать
+                    raise ValueError(f'Невозможно умножить количество в строке {idx}: {current_qty!r}')
     
     return df
 
@@ -186,7 +186,7 @@ def load_and_combine_inputs(input_paths: List[str], sheets_str: Optional[str] = 
                 if multiplier > 1:
                     print(f"  [x{multiplier}] Умножено количество элементов из '{os.path.basename(input_path)}'")
             except Exception as exc:
-                print(f" Не удалось прочитать DOCX '{input_path}': {exc}", file=sys.stderr)
+                raise ValueError(f"Не удалось прочитать Word '{input_path}': {exc}") from exc
         
         # Excel parsing
         elif ext in [".xlsx", ".xls"]:
@@ -487,9 +487,7 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
     df['_normalized_desc_'] = df[desc_col].apply(normalize_description)
     
     # Найти колонку quantity
-    qty_col = find_column([
-        "qty", "quantity", "количество", "кол.", "кол-во", "_merged_qty_"
-    ], list(df.columns))
+    qty_col = find_column(QUANTITY_COLUMNS, list(df.columns))
     
     # Найти колонку reference
     ref_col = find_column([
@@ -508,6 +506,12 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
     if 'source_sheet' in df.columns:
         group_cols.append('source_sheet')
     group_cols.append('_normalized_desc_')
+    # Отдельные артикулы, ТУ и единицы имеют приоритет над общим описанием.
+    identity_names = {'partnumber', 'mfr part', 'mpn', 'pn', 'артикул', 'part', 'part name',
+                      'value', 'номинал', 'ту', 'ту/производитель', '_extracted_tu_',
+                      'manufacturer', 'производитель', 'note', 'unit', 'единица измерения',
+                      'ед. изм.', 'ед. изм. ктд'}
+    group_cols.extend(c for c in df.columns if str(c).lower() in identity_names and c not in group_cols)
     
     # Группируем по категории ТОЛЬКО если НЕ объединяем файлы
     # (иначе XLSX с category='dev_boards' и DOCX с category=NaN не объединятся!)
@@ -519,6 +523,8 @@ def aggregate_duplicate_items(df: pd.DataFrame, desc_col: str, combine_across_fi
     
     # Суммируем количество
     if qty_col:
+        df = df.copy()
+        df[qty_col] = df[qty_col].map(require_number)
         agg_dict[qty_col] = 'sum'
     
     # Объединяем reference через запятую
@@ -647,6 +653,13 @@ def run_classification(df: pd.DataFrame, ref_col: str, desc_col: str, value_col:
         if has_existing_category:
             existing_cat = row.get('category')
             if pd.notna(existing_cat) and str(existing_cat).strip():
+                # Категория в уже обработанном XLSX может быть устаревшей.
+                # Код собственной разработки всегда имеет приоритет над ней.
+                own_text = ' '.join(str(row.get(c, '') or '') for c in
+                                    (desc_col, value_col, part_col, 'note', 'group_type'))
+                if contains_our_development_code(own_text):
+                    categories.append('our_developments')
+                    continue
                 categories.append(str(existing_cat).strip())
                 continue
         
@@ -1228,7 +1241,7 @@ def compare_processed_files(file1_path: str, file2_path: str, output_path: str) 
                     if col in df1.columns:
                         name_col = col
                         break
-                for col in ['Кол-во', 'Количество', 'qty']:
+                for col in ['шт.', 'шт', 'Кол-во', 'Количество', 'qty', 'quantity']:
                     if col in df1.columns:
                         qty_col = col
                         break
@@ -1242,7 +1255,7 @@ def compare_processed_files(file1_path: str, file2_path: str, output_path: str) 
                             qty = 0
                             if pd.notna(row[qty_col]):
                                 try:
-                                    qty = int(float(row[qty_col]))
+                                    qty = require_number(row[qty_col])
                                 except:
                                     pass
                             items1[name_normalized] = items1.get(name_normalized, 0) + qty
@@ -1262,7 +1275,7 @@ def compare_processed_files(file1_path: str, file2_path: str, output_path: str) 
                     if col in df2.columns:
                         name_col = col
                         break
-                for col in ['Кол-во', 'Количество', 'qty']:
+                for col in ['шт.', 'шт', 'Кол-во', 'Количество', 'qty', 'quantity']:
                     if col in df2.columns:
                         qty_col = col
                         break
@@ -1276,7 +1289,7 @@ def compare_processed_files(file1_path: str, file2_path: str, output_path: str) 
                             qty = 0
                             if pd.notna(row[qty_col]):
                                 try:
-                                    qty = int(float(row[qty_col]))
+                                    qty = require_number(row[qty_col])
                                 except:
                                     pass
                             items2[name_normalized] = items2.get(name_normalized, 0) + qty
@@ -1922,14 +1935,14 @@ def _validate_existing_files(paths: List[str], label: str) -> None:
         )
 
 
-def main():
+def main(argv=None):
     """
     Главная функция CLI
     """
     parser = _build_arg_parser()
 
     # Без аргументов — показать справку (не сухой "[ОШИБКА]")
-    if len(sys.argv) == 1:
+    if argv is None and len(sys.argv) == 1:
         parser.print_help()
         print(
             "\nПодсказка: для обработки нужны --inputs и --xlsx; "
@@ -1937,7 +1950,7 @@ def main():
         )
         sys.exit(0)
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     prog = _cli_prog_name()
 
     # Режим сравнения файлов
@@ -2248,6 +2261,17 @@ def main():
         write_txt_reports(formatted_outputs, args.txt_dir, desc_col)
     
     print("Готово.")
+    return formatted_outputs
+
+
+def process_files(input_files, output_xlsx, combine=False, loose=False):
+    """Run the same local pipeline as CLI, without interactive prompts."""
+    argv = ['--inputs', *map(str, input_files), '--xlsx', str(output_xlsx), '--no-interactive']
+    if combine:
+        argv.append('--combine')
+    if loose:
+        argv.append('--loose')
+    return main(argv)
 
 
 if __name__ == "__main__":

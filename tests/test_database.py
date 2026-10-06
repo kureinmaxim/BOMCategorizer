@@ -141,7 +141,9 @@ class TestComponentDatabase:
         # Проверяем содержимое файла
         with open(db_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
-        assert data == test_db
+        assert data['components'] == test_db
+        assert data['metadata']['total_components'] == len(test_db)
+        assert load_component_database() == test_db
     
     def test_database_json_format(self, mock_component_database):
         """Тест что база сохраняется в правильном JSON формате"""

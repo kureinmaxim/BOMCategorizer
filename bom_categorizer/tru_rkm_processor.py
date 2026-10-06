@@ -15,6 +15,7 @@ from typing import List, Dict, Optional, Tuple
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from .utils import parse_number, require_number
 
 
 def detect_file_type(filename: str) -> Optional[str]:
@@ -139,7 +140,7 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
         # Предикат: строка итогов
         def is_total_row(row) -> bool:
             # ИТОГО может встречаться в разных колонках, чаще в Наименовании/Артикуле
-            for col in ['Артикул', 'Наименование']:
+            for col in ['Артикул', 'Наименование', 'Цена']:
                 if col in df.columns and norm(row.get(col, "")).startswith('итого'):
                     return True
             return False
@@ -384,6 +385,9 @@ def _read_tru_file(input_path: str) -> Optional[pd.DataFrame]:
         result_df['Количество'] = df[col_mapping['Количество']] if 'Количество' in col_mapping else ''
         result_df['Цена'] = df[col_mapping['Цена']] if 'Цена' in col_mapping else ''
         result_df['Стоимость'] = df[col_mapping['Стоимость']] if 'Стоимость' in col_mapping else ''
+        unit_idx = next((i for i, c in enumerate(cols_lower)
+                         if c in ('единица измерения', 'беи', 'ед. изм.', 'единица измерения (беи)')), None)
+        result_df['Единица измерения'] = df.iloc[:, unit_idx] if unit_idx is not None else ''
         
         # Ответственные: берем из найденных колонок или пытаемся по индексам если заголовки есть но странные?
         # Лучше брать по имени
@@ -447,10 +451,11 @@ def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[b
             try:
                 if isinstance(val, (int, float)):
                     return float(val)
-                val_str = str(val).replace(',', '.').replace(' ', '')
-                return float(val_str)
+                if pd.isna(val) or not str(val).strip():
+                    return float('nan')
+                return require_number(val)
             except:
-                return 0.0
+                raise ValueError(f'Некорректное числовое значение ТРУ: {val!r}')
                 
         result_df['Количество'] = result_df['Количество'].apply(parse_price)
         result_df['Цена'] = result_df['Цена'].apply(parse_price)
@@ -473,6 +478,8 @@ def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[b
 
         # Упорядочиваем колонки для вывода
         cols_order = ['Артикул', 'Наименование', 'Количество', 'Цена', 'Стоимость', 'Ответственные', 'Код ОКПД']
+        if 'Единица измерения' in result_df:
+            cols_order.append('Единица измерения')
         result_df = result_df[cols_order]
         
         # Удаляем пустые строки
@@ -534,7 +541,7 @@ def process_tru_files_batch(input_paths: List[str], output_path: str) -> Tuple[b
                 row[6].alignment = center_align # Код ОКПД
                 row[6].number_format = '@'
 
-            column_widths = {'A': 15, 'B': 50, 'C': 12, 'D': 15, 'E': 15, 'F': 40, 'G': 20}
+            column_widths = {'A': 15, 'B': 50, 'C': 12, 'D': 15, 'E': 15, 'F': 40, 'G': 20, 'H': 18}
             for col_letter, width in column_widths.items():
                 worksheet.column_dimensions[col_letter].width = width
 
@@ -589,7 +596,36 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
     try:
         # Читаем весь файл
         df_raw = pd.read_excel(input_path, header=None)
-        
+
+        # Повторное чтение нашего плоского результата: определяем колонки по
+        # заголовкам, не выдаём 7-колоночную таблицу за исходную форму РКМ.
+        legacy_units = False
+        processed_form = False
+        for header_idx, header in df_raw.head(10).iterrows():
+            labels = {str(v).strip().lower(): i for i, v in enumerate(header) if pd.notna(v)}
+            qty_label = next((v for v in ('количество', 'шт.', 'шт') if v in labels), None)
+            if {'наименование', 'цена', 'стоимость'}.issubset(labels) and qty_label:
+                processed_form = True
+                unit_idx = labels.get('единица измерения')
+                legacy_units = unit_idx is None
+                records = [['№ п/п', 'Наименование'] + [None] * 22]
+                for _, source_row in df_raw.iloc[header_idx + 1:].iterrows():
+                    name = source_row.iloc[labels['наименование']]
+                    if pd.isna(name) or not str(name).strip():
+                        continue
+                    if str(name).strip().lower().startswith('итого'):
+                        continue
+                    record = [None] * 24
+                    record[0:2] = [f'1.1.{len(records)}', name]
+                    record[5] = source_row.iloc[unit_idx] if unit_idx is not None else ''
+                    for label, dest in ((qty_label, 17), ('цена', 18), ('стоимость', 19),
+                                        ('документы', 20), ('поставщик', 22)):
+                        if label in labels:
+                            record[dest] = source_row.iloc[labels[label]]
+                    records.append(record)
+                df_raw = pd.DataFrame(records)
+                break
+
         # Фиксированные индексы колонок для PKM формата (на основе анализа заголовков)
         # План (правая часть): 17-22
         # Факт (левая часть): 6-15
@@ -629,25 +665,17 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
         # Извлечение данных
         data = []
         
-        def clean_float(val):
-            if pd.isna(val) or str(val).lower() == 'nan': return 0.0
-            try: return float(val)
-            except:
-                try: return float(str(val).replace(',','.').replace(' ','').replace('\xa0', ''))
-                except: return 0.0
-
         def get_val(row, plan_col, fact_col, is_num=False):
             # Сначала пробуем План, потом Факт
             for col_idx in [plan_col, fact_col]:
                 if col_idx < len(row):
                     val = row.iloc[col_idx]
-                    if pd.isna(val) or str(val).lower() == 'nan': continue
+                    if pd.isna(val) or not str(val).strip(): continue
                     if is_num:
-                        f_v = clean_float(val)
-                        if f_v > 0: return f_v
+                        return require_number(val)
                     else:
                         s_v = str(val).strip()
-                        if s_v and len(s_v) > 1: return s_v
+                        if s_v: return s_v
             return 0.0 if is_num else ""
 
         for idx, row in df_raw.iloc[header_row_idx+1:].iterrows():
@@ -670,6 +698,7 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
                 item = {
                     '№': no_val,
                     'Наименование': name_val,
+                    'Единица измерения': '' if len(row) <= 5 or pd.isna(row.iloc[5]) else str(row.iloc[5]).strip(),
                     'Количество': get_val(row, PLAN_COLS['Количество'], FACT_COLS['Количество'], is_num=True),
                     'Цена': get_val(row, PLAN_COLS['Цена'], FACT_COLS['Цена'], is_num=True),
                     'Стоимость': get_val(row, PLAN_COLS['Стоимость'], FACT_COLS['Стоимость'], is_num=True),
@@ -678,7 +707,8 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
                 }
                 
                 # Пропускаем подзаголовки категорий (все числовые значения = 0)
-                if item['Количество'] == 0 and item['Цена'] == 0 and item['Стоимость'] == 0:
+                if (not processed_form and not re.fullmatch(r'\d+\.\d+\.\d+(?:\.\d+)*', no_val)
+                        and item['Количество'] == 0 and item['Цена'] == 0 and item['Стоимость'] == 0):
                     continue
                 
                 # Чистка поставщика и документов
@@ -687,8 +717,8 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
                 item['Документы'] = " ".join(line.strip() for line in str(item['Документы']).split('\n') if line.strip())
                 
                 data.append(item)
-            except Exception:
-                continue
+            except Exception as exc:
+                raise ValueError(f'РКМ, строка {idx + 1}: {exc}') from exc
                 
         if not data:
             return False, "Данные не найдены"
@@ -746,15 +776,13 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
         # 2. Deduplicate: Group by Наименование
         aggregation = {
             '№': 'first',
-            'Цена': 'max',      # Берем максимальную цену если есть разброс
             'Количество': 'sum',
             'Стоимость': 'sum',
             'Документы': lambda x: '; '.join(sorted(set(str(v).strip() for v in x if str(v).strip() and str(v).lower() != 'nan'))),
-            'Поставщик': first_non_empty,
         }
         
         # Group by cleaned name
-        result_df = result_df.groupby('Наименование', as_index=False).agg(aggregation)
+        result_df = result_df.groupby(['Наименование', 'Единица измерения', 'Поставщик', 'Цена'], as_index=False, dropna=False).agg(aggregation)
         
         # 3. Re-number rows sequentially
         result_df['№'] = range(1, len(result_df) + 1)
@@ -763,10 +791,9 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
         result_df = result_df.sort_values('№')
         
         # Rename column to "шт."
-        result_df = result_df.rename(columns={'Количество': 'шт.'})
         
         # Упорядочиваем колонки
-        cols_order = ['№', 'Наименование', 'шт.', 'Цена', 'Стоимость', 'Документы', 'Поставщик']
+        cols_order = ['№', 'Наименование', 'Количество', 'Цена', 'Стоимость', 'Документы', 'Поставщик', 'Единица измерения']
         # Проверяем, все ли есть, если каких-то нет в result_df, добавляем пустые
         for c in cols_order:
             if c not in result_df.columns:
@@ -796,7 +823,7 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
             # Apply widths
             # User request: Name -20% (60->48), Docs +40% (35->49), Provider -30% (45->31.5 -> 32)
             # Plus new "шт." column
-            ws_widths = {'A': 8, 'B': 48, 'C': 10, 'D': 15, 'E': 15, 'F': 49, 'G': 32}
+            ws_widths = {'A': 8, 'B': 48, 'C': 12, 'D': 15, 'E': 15, 'F': 49, 'G': 32, 'H': 18}
             for col_l, w in ws_widths.items():
                 worksheet.column_dimensions[col_l].width = w
                 
@@ -836,7 +863,10 @@ def process_rkm_file(input_path: str, output_path: str) -> Tuple[bool, str]:
             total_label_cell.fill = total_fill
             total_value_cell.fill = total_fill
 
-        return True, f"РКМ обработан: {len(result_df)} строк (дедуплицировано)"
+        message = f"РКМ обработан: {len(result_df)} строк (дедуплицировано)"
+        if legacy_units:
+            message += '; в исходном обработанном файле нет единиц измерения — требуется сверка с оригиналом'
+        return True, message
 
 
     except Exception as e:

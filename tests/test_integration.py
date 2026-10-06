@@ -4,7 +4,22 @@
 import pytest
 import os
 from pathlib import Path
-from bom_categorizer.main import process_files
+from bom_categorizer.main import main
+
+
+def process_files(input_files, output_xlsx, combine=False, loose=False):
+    """Exercise the production CLI instead of a removed historical API."""
+    import sys
+    argv = ['bom-categorizer', '--inputs', *input_files, '--xlsx', output_xlsx,
+            '--no-interactive', '--assign-json', str(Path(output_xlsx).parent / 'no_rules.json')]
+    if combine:
+        argv.append('--combine')
+    if loose:
+        argv.append('--loose')
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(sys, 'argv', argv)
+        main()
+    return Path(output_xlsx)
 
 
 class TestRealFileProcessing:

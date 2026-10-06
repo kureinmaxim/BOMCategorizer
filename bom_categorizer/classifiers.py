@@ -15,6 +15,7 @@ from typing import Any, Optional
 
 from .utils import has_any, RESISTOR_VALUE_RE, CAP_VALUE_RE, IND_VALUE_RE
 from .component_database import get_component_category
+from .utils import contains_our_development_code
 
 
 def classify_row(
@@ -77,6 +78,11 @@ def classify_row(
     our_blob = " ".join([desc, val, part, group_type_text]) if note_is_replacement_hint else text_blob
     our_blob_lower = our_blob.lower()
 
+    # Коды собственных разработок имеют приоритет над базой и типовыми словами.
+    # Поддерживаются ДЕ1/ДЕ-1/ДЕ 1, DE1, Е1 и запись номера словами.
+    if any(contains_our_development_code(value) for value in (desc, val, part, group_type_text)):
+        return "our_developments"
+
     # Refdes first where reliable
     ref_prefix = ref.split(" ")[0].upper() if ref else ""
     ref_prefix = re.sub(r"\d.*$", "", ref_prefix)  # take letters before digits
@@ -118,7 +124,7 @@ def classify_row(
     
         # Очень короткие строки без позиционного обозначения - скорее всего мусор
         # НО НЕ для замен и подборов!
-        if len(text_blob.strip()) < 10:
+        if not text_blob.strip():
             return "non_bom"
     
         # Строки, состоящие только из чисел или спецсимволов

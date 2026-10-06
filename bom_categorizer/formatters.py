@@ -14,6 +14,7 @@ import math
 from typing import Optional, Tuple, Any
 
 from .parsers import normalize_dashes
+from .utils import OUR_DEVELOPMENT_RE, normalize_special_letters
 
 
 def clean_component_name(original_text: str, note: str = "") -> str:
@@ -33,7 +34,7 @@ def clean_component_name(original_text: str, note: str = "") -> str:
     if not original_text:
         return ""
     
-    text = str(original_text).strip()
+    text = normalize_special_letters(str(original_text).strip())
     
     # Нормализуем все виды тире к обычному дефису
     # Это критично для правильного объединения компонентов после конвертации .doc → .docx
@@ -306,6 +307,8 @@ def extract_tu_code(text: str) -> Tuple[str, str]:
         re.compile(r'\b((?:АМФИ|ГВАТ|ИГНД)\.\d+(?:\.\d+)+)\b', re.IGNORECASE),
         # де + цифра(ы) + опционально .группы: де4.835.001 / де2 / де4.835
         re.compile(r'\b(де\s*\d+(?:\.\d+){0,3})\b', re.IGNORECASE),
+        # ДЕ1, ДЕ-1, ДЕ 1.234.005, DE1, Е1 и запись первого номера словами.
+        OUR_DEVELOPMENT_RE,
     ]
 
     for rx in our_code_patterns:

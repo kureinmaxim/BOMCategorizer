@@ -1,4 +1,4 @@
-#define MyAppVersion "5.6.3"
+#define MyAppVersion "5.7.2"
 #define MyAppEdition "Modern Edition"
 #define MyAppPublisher "Kurein M.N."
 ; Стабильный AppId — как identifier у ApiHA: при установке новой версии

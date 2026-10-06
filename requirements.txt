@@ -2,6 +2,7 @@ pandas
 openpyxl
 xlrd
 python-docx
+pywin32; sys_platform == 'win32'
 pytest
 pytest-html
 pytest-cov

@@ -341,9 +341,13 @@ class TestFindMatchingTruRow:
 
     def test_prefixed_match(self, tru_df):
         """Матч с префиксом категории"""
-        result = find_matching_tru_row("Микросхема 1564АП3У2", "", tru_df)
+        result = find_matching_tru_row("Микросхема 1564АП3У2 ЭП", "", tru_df)
         assert result is not None
         assert '12345' in str(result.get('Артикул', ''))
+
+    def test_missing_grade_is_not_assumed_equivalent(self, tru_df):
+        # Без утвержденного правила нельзя потерять квалификацию ЭП.
+        assert find_matching_tru_row("Микросхема 1564АП3У2", "", tru_df) is None
 
     def test_type_keyword_vilka_vs_rozetka(self, tru_df):
         """Различение Вилка/Розетка"""

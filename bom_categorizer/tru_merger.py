@@ -16,6 +16,7 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.cell.rich_text import TextBlock, CellRichText
 from openpyxl.cell.text import InlineFont
 from .formatters import extract_tu_code
+from .utils import parse_number, require_number, format_number
 
 
 # Цвета для форматирования
@@ -68,7 +69,7 @@ def normalize_for_matching(text: str) -> str:
     Нормализует строку для сопоставления:
     - Удаляет лишние пробелы
     - Заменяет разные виды тире на обычный дефис
-    - Убирает подчёркивания и суффиксы типа _LW
+    - Убирает подтверждённый служебный суффикс _LW
     - Приводит к нижнему регистру
     """
     if not text or pd.isna(text):
@@ -84,7 +85,7 @@ def normalize_for_matching(text: str) -> str:
     text = re.sub(r'[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]', '-', text)  # Различные тире
     text = re.sub(r'\s+', ' ', text)  # Множественные пробелы → один
     text = re.sub(r'\s*-\s*', '-', text)  # Пробелы вокруг тире
-    text = re.sub(r'_[A-Za-z]{1,3}$', '', text)  # Суффиксы типа _LW, _AB
+    text = re.sub(r'_LW$', '', text, flags=re.IGNORECASE)  # Подтвержденный служебный суффикс
     text = text.replace('_', '-')  # Подчёркивания → дефисы
     
     return text.lower()
@@ -131,7 +132,7 @@ def _find_qty_col(columns) -> Optional[str]:
     return None
 
 
-_QTY_PAIR_RE = re.compile(r'^\s*(\d+)\s*\(\s*(\d+)\s*\)\s*$')
+_QTY_PAIR_RE = re.compile(r'^\s*([+-]?\d+(?:[.,]\d+)?)\s*\(\s*([+-]?\d+(?:[.,]\d+)?)\s*\)\s*$')
 
 
 def _parse_qty_pair(value) -> Optional[Tuple[int, int]]:
@@ -144,7 +145,7 @@ def _parse_qty_pair(value) -> Optional[Tuple[int, int]]:
     m = _QTY_PAIR_RE.match(str(value))
     if not m:
         return None
-    return int(m.group(1)), int(m.group(2))
+    return require_number(m.group(1)), require_number(m.group(2))
 
 
 def _concat_preserve_columns(parts: List[pd.DataFrame]) -> pd.DataFrame:
@@ -339,7 +340,7 @@ def extract_pure_code(text: str) -> str:
     """
     Извлекает чистый код компонента, убирая:
     - Слова-категории (Микросхема, Чип катушки индуктивности и т.п.)
-    - Суффиксы типа _LW, _AB
+    - Подтверждённый служебный суффикс _LW
     - Пробелы и приводит к единому формату
     
     Примеры:
@@ -355,6 +356,7 @@ def extract_pure_code(text: str) -> str:
     text = text.replace('«', '"').replace('»', '"')
     text = text.replace('\u201c', '"').replace('\u201d', '"').replace('\u201e', '"')
     
+    text = re.sub(r'_LW(?=\s|$)', '', text, flags=re.IGNORECASE)
     # Список слов-категорий для удаления
     category_words = [
         'чип катушки индуктивности', 'чип катушка индуктивности',
@@ -401,7 +403,7 @@ def extract_pure_code(text: str) -> str:
     while changed:
         changed = False
         for word in category_words:
-            if text_lower.startswith(word):
+            if text_lower.startswith(word) and (len(text_lower) == len(word) or text_lower[len(word)] in ' -'):
                 text = text[len(word):].lstrip(' -')
                 text_lower = text.lower()
                 changed = True
@@ -421,7 +423,7 @@ def extract_pure_code(text: str) -> str:
     # Удаляем производителей (с начала, с конца и из середины строки)
     for mfr in manufacturers:
         # С конца
-        if text_lower.endswith(mfr):
+        if text_lower == mfr or text_lower.endswith(' ' + mfr) or text_lower.endswith('/' + mfr):
             text = text[:-len(mfr)].strip()
             text_lower = text.lower()
         elif text_lower.endswith(' ' + mfr):
@@ -430,9 +432,6 @@ def extract_pure_code(text: str) -> str:
         # С начала
         if text_lower.startswith(mfr + ' '):
             text = text[len(mfr) + 1:].strip()
-            text_lower = text.lower()
-        elif text_lower.startswith(mfr):
-            text = text[len(mfr):].strip()
             text_lower = text.lower()
         # Из середины (окружён пробелами)
         mid_pattern = ' ' + mfr + ' '
@@ -477,9 +476,9 @@ def extract_pure_code(text: str) -> str:
     # Fix 5: Нормализация мощности: "2,0" → "2" (перед дефисом)
     text = re.sub(r'(\d),0(?=-)', r'\1', text)
 
-    # Убираем суффикс типа -LW, -AB в конце (если код > 9 символов)
-    if len(text) > 9:
-        text = re.sub(r'-[A-Za-z]{1,3}$', '', text)
+    # Значимые суффиксы -A/-B/-R сохраняем.
+    # Документированное написание серии РП-10 / РП10, не произвольные дефисы MPN.
+    text = re.sub(r'^pп-(?=\d)', 'pп', text)
 
     # Fix 4: Убираем мусорные символы в конце (запятые, слэши)
     text = text.rstrip(',-/')
@@ -492,172 +491,113 @@ def extract_pure_code(text: str) -> str:
 
 
 def find_matching_tru_row(
-    bom_name: str,
-    bom_nominal: str,
-    tru_df: pd.DataFrame,
-    name_col: str = 'Наименование',
-    min_name_similarity: float = 0.70,
+    bom_name: str, bom_nominal: str, tru_df: pd.DataFrame,
+    name_col: str = 'Наименование', min_name_similarity: float = 0.70,
     required_code: Optional[str] = None,
 ) -> Optional[pd.Series]:
+    """Match complete normalized identities; reject conflicts and ambiguous ERP codes.
+
+    min_name_similarity remains accepted for API compatibility. Similarity alone
+    is never sufficient evidence of component identity.
     """
-    Ищет соответствующую строку в ТРУ DataFrame.
-    Использует несколько стратегий:
-    1. Точное совпадение кода компонента
-    2. Вхождение BOM названия в ТРУ название (или наоборот)
-    3. Общая схожесть строк
-    
-    Args:
-        bom_name: Название из BOM (Наименование ИВП)
-        bom_nominal: Номинал из BOM (если есть)
-        tru_df: DataFrame из файла ТРУ
-        name_col: Название колонки с наименованием в ТРУ
-        min_name_similarity: Минимальный порог совпадения названия (0.0-1.0)
-    
-    Returns:
-        Строка из ТРУ или None
-    """
-    if name_col not in tru_df.columns:
+    if name_col not in tru_df or not isinstance(bom_name, str) or not bom_name.strip():
         return None
-    
-    norm_bom_name = normalize_for_matching(bom_name)
-    bom_code = extract_component_code(bom_name)
-    required_norm = None
-    if required_code:
-        required_norm = str(required_code).strip().lower().replace(" ", "")
-    
-    # Если BOM название короткое (только код без описания типа "Микросхема" и т.п.)
-    # Считаем коротким, если нет типичных слов-описаний
-    description_words = ['микросхема', 'конденсатор', 'резистор', 'катушка', 'дроссель', 
-                         'диод', 'транзистор', 'индикатор', 'трансформатор', 'модуль',
-                         'плата', 'чип', 'стабилитрон', 'фильтр', 'реле']
-    bom_lower = bom_name.lower()
-    bom_is_short_code = not any(word in bom_lower for word in description_words)
-    
-    # Извлекаем чистый код из BOM
-    bom_pure_code = extract_pure_code(bom_name)
-    
-    # Если в названии есть различающие слова (например, Вилка/Розетка),
-    # требуем их совпадения, чтобы избежать ложных матчей по коду.
-    def _extract_type_keywords(text: str) -> Set[str]:
-        if not text:
-            return set()
-        tokens = re.findall(r'[A-Za-zА-Яа-я]+', text.lower())
-        special = {'вилка', 'розетка', 'штекер', 'гнездо'}
-        return {t for t in tokens if t in special}
-
-    bom_type_keywords = _extract_type_keywords(bom_name)
-
-    best_match = None
-    best_score = 0.0
-    
-    for idx, row in tru_df.iterrows():
-        tru_name = str(row.get(name_col, ''))
-
-        # Если требуется конкретный код (например АМФИ./ГВАТ./де...), то матчим только строки,
-        # где этот код реально присутствует (иначе будут ложные совпадения на "Плата 1", "Плата 2" и т.п.)
-        if required_norm:
-            tru_hay = tru_name.lower().replace(" ", "")
-            if required_norm not in tru_hay:
-                continue
-
-        norm_tru_name = normalize_for_matching(tru_name)
-        tru_code = extract_component_code(tru_name)
-        tru_pure_code = extract_pure_code(tru_name)
-
-        score = 0.0
-
-        # НОВАЯ Стратегия: Сравнение чистых кодов (без категорий и суффиксов)
-        # Это самый надёжный способ — включает полный номер модели (напр. МДМ30-1В15ТУП)
-        if bom_pure_code and tru_pure_code:
-            if bom_pure_code == tru_pure_code:
-                score = 0.99  # Точное совпадение — максимальный приоритет
-            elif bom_pure_code in tru_pure_code or tru_pure_code in bom_pure_code:
-                score = 0.97  # Один содержит другой — высокий приоритет
-            # Fix 9: сравнение без дефисов (РП-10-11 vs РП10-11)
-            elif bom_pure_code.replace('-', '') == tru_pure_code.replace('-', ''):
-                score = 0.95  # Одинаковые без дефисов — высокий приоритет
-            elif (bom_pure_code.replace('-', '') in tru_pure_code.replace('-', '') or
-                  tru_pure_code.replace('-', '') in bom_pure_code.replace('-', '')):
-                score = 0.93  # Вхождение без дефисов
-
-        # Fix 8: Типовые различающие слова (вилка/розетка/штекер/гнездо).
-        # Блокируем матч только если ТРУ тоже содержит специфичные типовые слова,
-        # но они не совпадают (вилка vs розетка). Если у ТРУ нет типовых слов
-        # (например "Разъем" без "вилка/розетка"), разрешаем матч (разъем — общий тип).
-        if bom_type_keywords:
-            tru_type_keywords = _extract_type_keywords(tru_name)
-            if tru_type_keywords and not bom_type_keywords.issubset(tru_type_keywords):
-                continue
-
-        # Стратегия: Сопоставление по артикулу / part number
-        # BOM: "Вилка D-SUB p/n: 09 65262681 7"  →  digits "09652626817"
-        # ТРУ: "Вилка Harting D-SUB артикул 09 65 262 6817"  → digits "09652626817"
-        if score < 0.9:
-            def _extract_article_digits(t: str) -> str:
-                """Извлекает цифровой артикул из строки с p/n или 'артикул'."""
-                # Ищем паттерн p/n: XXXXX или артикул XXXXX
-                m = re.search(r'(?:p/n\s*:?|артикул)\s*([\d\s]{6,})', t, re.IGNORECASE)
-                if m:
-                    return re.sub(r'\s+', '', m.group(1))
-                return ''
-            bom_article = _extract_article_digits(bom_name)
-            if bom_article and len(bom_article) >= 6:
-                tru_article = _extract_article_digits(tru_name)
-                if tru_article and bom_article == tru_article:
-                    score = max(score, 0.98)
-                elif not tru_article:
-                    # Пробуем найти артикул просто как длинную последовательность цифр в ТРУ
-                    tru_digits = re.findall(r'\d{5,}', tru_name.replace(' ', ''))
-                    for td in tru_digits:
-                        if bom_article in td or td in bom_article:
-                            score = max(score, 0.96)
-                            break
-
-        # Стратегия 0: Если BOM — короткий код, ищем его вхождение в ТРУ
-        if score < 0.9 and bom_is_short_code and norm_bom_name:
-            # Проверяем нормализованную версию
-            if norm_bom_name in norm_tru_name:
-                score = max(score, 0.95)  # Высокий приоритет
-            # Проверяем оригинальные строки (до нормализации)
-            elif bom_name.strip().lower().replace(' ', '') in tru_name.lower().replace(' ', ''):
-                score = max(score, 0.95)
-
-        # Стратегия 1: Совпадение кода компонента (напр. МДМ30)
-        # ВНИМАНИЕ: Это менее точный метод — может давать ложные совпадения!
-        # Например, МДМ30-1В12 и МДМ30-1В15 оба имеют код МДМ30
-        if score < 0.9 and bom_code and tru_code:
-            if bom_code.lower() == tru_code.lower():
-                score = max(score, 0.92)  # Ниже чем pure code чтобы избежать ложных матчей
-            elif bom_code.lower() in tru_code.lower() or tru_code.lower() in bom_code.lower():
-                score = max(score, 0.85)
-
-        # Стратегия 2: BOM название содержится в ТРУ (или наоборот)
-        if score < 0.8:
-            if norm_bom_name in norm_tru_name:
-                score = max(score, 0.90)
-            elif norm_tru_name in norm_bom_name:
-                score = max(score, 0.85)
-
-        # Стратегия 3: Общая схожесть
-        if score < min_name_similarity:
-            sim = similarity_ratio(norm_bom_name, norm_tru_name)
-            score = max(score, sim)
-
-        if score < min_name_similarity:
+    code = extract_pure_code(bom_name)
+    if not code:
+        return None
+    bom_types = _connector_types(bom_name)
+    _, bom_origin = extract_tu_code(bom_name)
+    candidates = []
+    for _, row in tru_df.iterrows():
+        name = row.get(name_col)
+        if not isinstance(name, str) or not name.strip():
             continue
-        
-        # Если есть номинал, проверяем совпадение
-        if bom_nominal:
-            tru_nominal = extract_nominal(tru_name)
-            if tru_nominal and tru_nominal != bom_nominal:
-                continue  # Номинал не совпал — пропускаем
-        
-        # Нашли подходящее совпадение
-        if score > best_score:
-            best_score = score
-            best_match = row
-    
-    return best_match
+        if required_code and normalize_for_matching(required_code) not in normalize_for_matching(name):
+            continue
+        if code != extract_pure_code(name):
+            continue
+        types = _connector_types(name)
+        if bom_types and types and bom_types != types:
+            continue
+        _, origin = extract_tu_code(name)
+        if bom_origin and origin and normalize_for_matching(bom_origin) != normalize_for_matching(origin):
+            continue
+        nominal = extract_nominal(name)
+        if bom_nominal and nominal and nominal != bom_nominal:
+            continue
+        candidates.append(row)
+    if not candidates:
+        return None
+    # Different ERP, connector types or explicit provenance cannot be resolved
+    # by the order of files. Repeated rows of the same purchase item may aggregate.
+    for signatures in (
+        {normalize_erp_code_from_artikul(r.get('Артикул')) for r in candidates},
+        {_connector_types(str(r[name_col])) for r in candidates},
+        {normalize_for_matching(extract_tu_code(str(r[name_col]))[1]) for r in candidates},
+        {_unit_key(r.get('Единица измерения')) for r in candidates},
+    ):
+        if len(signatures) > 1:
+            return None
+    return candidates[0]
+
+
+def _connector_types(name: str) -> tuple:
+    return tuple(sorted(set(re.findall(r'\b(?:вилка|розетка|штекер|гнездо)\b', name.lower()))))
+
+
+def _unit_key(value) -> str:
+    unit = '' if value is None or pd.isna(value) else str(value).strip().lower()
+    return {'штука': 'шт', 'штук': 'шт', 'шт.': 'шт', 'pcs': 'шт',
+            'метр': 'м', 'метры': 'м', 'м.': 'м'}.get(unit, unit)
+
+
+def _units_conflict(bom_row, tru_row) -> bool:
+    bom_unit = next((_unit_key(bom_row.get(c)) for c in
+                     ('Единица измерения', 'единица измерения', 'unit', 'ед. изм.', 'Ед. изм. КТД')
+                     if _unit_key(bom_row.get(c))), '')
+    tru_unit = _unit_key(tru_row.get('Единица измерения'))
+    return bool(bom_unit and tru_unit and bom_unit != tru_unit)
+
+
+def _excluded_from_purchase(row, name_col) -> bool:
+    name = _unit_key(row.get(name_col))
+    if not name or name in ('перемычка', 'на перемычку'):
+        return True
+    own_code = r'\b(?:гват|амфи|игнд|гнди|арвд)\.\d+(?:\.\d+)*\b|\bде\s*\d+(?:\.\d+){0,3}\b|\b[её]\d+\.\d+(?:\.\d+){0,3}\b|\bост\s*\d+'
+    return any(re.search(own_code, _unit_key(row.get(c)), re.IGNORECASE)
+               for c in [name_col, 'ТУ/Производитель', 'ТУ', 'ту', '_extracted_tu_'])
+
+
+def _allocation_key(row, name_col='Наименование', article_col='Артикул') -> tuple:
+    name = str(row.get(name_col, ''))
+    return (normalize_erp_code_from_artikul(row.get(article_col)), extract_pure_code(name),
+            _connector_types(name), _unit_key(row.get('Единица измерения')),
+            normalize_for_matching(extract_tu_code(name)[1]))
+
+
+def prepare_merge_context(bom_frames, tru_dfs, bom_name_col=None, tru_name_col='Наименование', article_col='Артикул', bom_qty_col=None) -> dict:
+    """Count consumers across all workbook sheets before allocating supply."""
+    counts = {}
+    combined = pd.concat(tru_dfs, ignore_index=True) if tru_dfs else pd.DataFrame()
+    for frame in bom_frames:
+        col = bom_name_col or next((c for c in frame if str(c).lower() in ('наименование ивп', 'наименование')), None)
+        if col is None or col not in frame:
+            continue
+        qty_col = bom_qty_col or next((c for c in frame if str(c).lower() in ('шт.', 'шт', 'количество', 'qty', 'quantity', 'кол-во')), None)
+        for _, row in frame.iterrows():
+            if _excluded_from_purchase(row, col):
+                continue
+            demand = parse_number(row.get(qty_col))
+            if demand is None or demand < 0:
+                continue
+            name = row[col]
+            match = find_matching_tru_row(name, extract_nominal(name) if isinstance(name, str) else '', combined, tru_name_col)
+            if match is not None:
+                if _units_conflict(row, match):
+                    continue
+                key = _allocation_key(match, tru_name_col, article_col)
+                counts[key] = counts.get(key, 0) + 1
+    return {'remaining_consumers': counts, 'balances': {}}
 
 
 def extract_tru_number(filename: str) -> str:
@@ -691,7 +631,8 @@ def merge_tru_into_bom(
     tru_name_col: str = 'Наименование',
     tru_article_col: str = 'Артикул',
     tru_qty_col: str = 'Количество',
-    tru_cost_col: str = 'Стоимость'
+    tru_cost_col: str = 'Стоимость',
+    allocation_context: Optional[dict] = None,
 ) -> Tuple[pd.DataFrame, Set[int], pd.DataFrame]:
     """
     Объединяет данные из ТРУ файлов с BOM DataFrame.
@@ -714,7 +655,10 @@ def merge_tru_into_bom(
     merged_indices: Set[int] = set()
     
     if not tru_dfs:
-        return result_df, merged_indices
+        return result_df, merged_indices, set()
+
+    if allocation_context is None:
+        allocation_context = prepare_merge_context([bom_df], tru_dfs, bom_name_col, tru_name_col, tru_article_col, bom_qty_col)
     
     # Добавляем имя файла в каждый ТРУ DataFrame для извлечения № ТРУ
     for i, tru_df in enumerate(tru_dfs):
@@ -772,13 +716,12 @@ def merge_tru_into_bom(
         s = str(v).strip()
         if not s:
             return 0.0
-        # если формат "15 (10)" -> берём первое число
-        m = re.match(r'^\s*(\d+(?:[.,]\d+)?)', s)
-        if m:
-            s = m.group(1)
+        pair = _parse_qty_pair(s)
+        if pair:
+            return pair[0]
         s = s.replace('\u00A0', '').replace(' ', '').replace(',', '.')
         try:
-            return float(s)
+            return require_number(s)
         except Exception:
             return 0.0
 
@@ -905,9 +848,11 @@ def merge_tru_into_bom(
         
         if tru_match is None:
             continue
+        if _units_conflict(bom_row, tru_match):
+            result_df.at[idx, 'Статус сопоставления'] = 'Требуется проверка единиц измерения'
+            continue
         
         # Нашли совпадение — обновляем данные
-        merged_indices.add(idx)
         
         # Запоминаем индекс использованной строки ТРУ
         # (важно: если позиция встречается в нескольких ТРУ, помечаем использованными ВСЕ такие строки,
@@ -941,7 +886,28 @@ def merge_tru_into_bom(
         elif tru_match.name is not None:
             group_indices = [tru_match.name]
 
+        allocation_key = _allocation_key(tru_match, tru_name_col, tru_article_col)
+        # ERP сам по себе не дает права суммировать разные исполнения.
+        group_indices = [i for i in group_indices if _allocation_key(combined_tru.loc[i], tru_name_col, tru_article_col) == allocation_key]
+        block_qty = combined_tru.loc[group_indices].get(tru_qty_col, pd.Series(dtype=object))
+        bom_demand = parse_number(bom_row.get(bom_qty_col))
+        if bom_demand is None or bom_demand < 0 or block_qty.empty or any(parse_number(v) is None or parse_number(v) < 0 for v in block_qty):
+            result_df.at[idx, 'Статус сопоставления'] = 'Требуется проверка количества'
+            continue
+        merged_indices.add(idx)
+
         matched_tru_block, tru_qty_num_agg, tru_cost_agg, tru_nums_joined = _aggregate_tru_block(group_indices, required_code)
+        balances = allocation_context['balances']
+        if allocation_key not in balances:
+            balances[allocation_key] = [tru_qty_num_agg, tru_cost_agg]
+        available_qty, available_cost = balances[allocation_key]
+        consumers = allocation_context['remaining_consumers']
+        count = consumers.get(allocation_key, 1)
+        allocated_qty = min(bom_demand, available_qty) if count > 1 else available_qty
+        allocated_cost = round(available_cost * allocated_qty / available_qty, 2) if available_qty else 0.0
+        balances[allocation_key] = [max(0.0, available_qty - allocated_qty), max(0.0, available_cost - allocated_cost)]
+        consumers[allocation_key] = max(0, count - 1)
+        tru_qty_num_agg, tru_cost_agg = allocated_qty, allocated_cost
         if matched_tru_block is not None and not matched_tru_block.empty:
             used_tru_indices.update(set(matched_tru_block.index))
         elif tru_match.name is not None:
@@ -982,9 +948,9 @@ def merge_tru_into_bom(
                 pass
         
         # Если есть агрегированная стоимость по нескольким ТРУ — используем её
-        if tru_cost_agg is not None and isinstance(tru_cost_agg, (int, float)) and tru_cost_agg > 0:
+        if tru_cost_agg is not None and isinstance(tru_cost_agg, (int, float)):
             try:
-                result_df.at[idx, 'Стоимость'] = int(round(float(tru_cost_agg)))
+                result_df.at[idx, 'Стоимость'] = round(float(tru_cost_agg), 2)
             except Exception:
                 result_df.at[idx, 'Стоимость'] = tru_cost_agg
         elif cost_value is not None and not pd.isna(cost_value):
@@ -1006,23 +972,23 @@ def merge_tru_into_bom(
         # 4. Количество: TRU_qty (BOM_qty) если разное
         if bom_qty_col in result_df.columns:
             tru_qty = None
-            if tru_qty_num_agg is not None and isinstance(tru_qty_num_agg, (int, float)) and tru_qty_num_agg > 0:
+            if tru_qty_num_agg is not None and isinstance(tru_qty_num_agg, (int, float)):
                 tru_qty = tru_qty_num_agg
             elif tru_qty_col in tru_match.index:
                 tru_qty = tru_match[tru_qty_col]
             bom_qty = bom_row.get(bom_qty_col, '')
             
-            if tru_qty and not pd.isna(tru_qty):
+            if tru_qty is not None and not pd.isna(tru_qty):
                 try:
                     tru_qty_num = _safe_float(tru_qty)
                     bom_qty_num = _safe_float(bom_qty) if bom_qty and not pd.isna(bom_qty) else 0
                     
-                    if tru_qty_num != bom_qty_num and bom_qty_num > 0:
+                    if tru_qty_num != bom_qty_num:
                         # Формат: "15 (10)" где 15 — из ТРУ, 10 — исходное
-                        new_qty_str = f"{int(tru_qty_num)} ({int(bom_qty_num)})"
+                        new_qty_str = f"{format_number(tru_qty_num)} ({format_number(bom_qty_num)})"
                         result_df.at[idx, bom_qty_col] = new_qty_str
                     elif bom_qty_num == 0:
-                        result_df.at[idx, bom_qty_col] = int(tru_qty_num)
+                        result_df.at[idx, bom_qty_col] = tru_qty_num
                 except (ValueError, TypeError):
                     pass
     
@@ -1032,7 +998,7 @@ def merge_tru_into_bom(
     
     # Создаём DataFrame с несопоставленными ТРУ в формате BOM
     if unmatched_indices:
-        unmatched_raw = combined_tru.loc[list(unmatched_indices)].copy()
+        unmatched_raw = combined_tru.loc[sorted(unmatched_indices)].copy()
         
         # Фильтруем пустые строки (где нет наименования)
         if 'Наименование' in unmatched_raw.columns:
@@ -1164,7 +1130,7 @@ def generate_unmatched_report(
     unmatched_indices = all_tru_indices - used_tru_indices
     
     if unmatched_indices:
-        unmatched_raw = combined_tru.loc[list(unmatched_indices)].copy()
+        unmatched_raw = combined_tru.loc[sorted(unmatched_indices)].copy()
         
         # Фильтруем пустые строки
         if tru_name_col in unmatched_raw.columns:
@@ -1186,7 +1152,7 @@ def generate_unmatched_report(
         
         # Обработка артикула (КОД ERP)
         if 'Артикул' in unmatched_raw.columns:
-            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].map(normalize_erp_code_from_artikul)
+            unmatched_tru['КОД ERP(МР)'] = unmatched_raw['Артикул'].map(normalize_erp_code_from_artikul).to_numpy()
         else:
             unmatched_tru['КОД ERP(МР)'] = ''
             

@@ -16,7 +16,7 @@ import pandas as pd
 from openpyxl.styles import Alignment, Border, Side
 
 from .formatters import clean_component_name, extract_nominal_value, extract_tu_code
-from .utils import find_column
+from .utils import find_column, QUANTITY_COLUMNS, require_number, parse_number, contains_our_development_code
 
 
 def remove_duplicate_suffix(text: str) -> str:
@@ -175,19 +175,16 @@ def enrich_with_mr_and_total(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     mr_col = find_column(["код мр", "part number", "pn", "mpn"], df.columns)
-    qty_col = find_column(["количество", "qty", "quantity", "_merged_qty_"], df.columns)
+    qty_col = find_column(QUANTITY_COLUMNS, df.columns)
     
     enriched = df.copy()
     tmp = enriched.copy()
 
     # Обработка колонки количества: безопасное преобразование в float
     if qty_col and qty_col in tmp.columns:
-        # Используем pd.to_numeric с errors='coerce' для безопасного преобразования
-        qty_series = pd.to_numeric(tmp[qty_col], errors='coerce')
-        # Заменяем все NaN на 1
-        qty_series = qty_series.fillna(1).astype(float)
+        qty_series = tmp[qty_col].map(require_number)
     else:
-        qty_series = pd.Series([1] * len(tmp), dtype=float)
+        qty_series = pd.Series(float('nan'), index=tmp.index, dtype=float)
 
     # Определяем ключи для группировки
     # ВАЖНО: если mr_col пустой или отсутствует, используем _merged_description_
@@ -367,10 +364,8 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
                 if re.search(r'ТУ|TU', s, re.IGNORECASE):
                     return True
                 return bool(re.search(
-                    r'\b(гват|амфи|игнд)\.\d+(?:\.\d+)+\b|\bде\s*\d+(?:\.\d+){0,3}\b',
-                    s,
-                    re.IGNORECASE
-                ))
+                    r'\b(гват|амфи|игнд)\.\d+(?:\.\d+)+\b', s, re.IGNORECASE
+                )) or contains_our_development_code(s)
 
             if note_tu:
                 text_is_tu = _looks_like_tu_or_our_code(tu_code)
@@ -466,9 +461,16 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
     if desc_col_name in result_df.columns:
         # Определяем колонки для группировки
         group_cols = [desc_col_name, 'ТУ/Производитель']
+        # Финальная запись не должна отменять сохранение идентичности в main.
+        identity_columns = {'partnumber', 'part number', 'mfr part', 'mpn', 'pn',
+                            'артикул', 'part', 'part name', 'value', 'номинал',
+                            'manufacturer', 'производитель', 'unit', 'единица измерения',
+                            'ед. изм.', 'ед. изм. ктд', 'код erp(мр)', 'note'}
+        group_cols.extend(c for c in result_df.columns
+                          if str(c).lower() in identity_columns and c not in group_cols)
         
         # Находим колонку с quantity и примечанием
-        qty_col = find_column(['шт.', 'qty', 'quantity', '_merged_qty_'], result_df.columns)
+        qty_col = find_column(QUANTITY_COLUMNS, result_df.columns)
         # ВАЖНО: сначала ищем "Примечание", а не "reference"
         ref_col = None
         for col_name in ['Примечание', 'примечание']:
@@ -482,6 +484,7 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             # Проверяем, есть ли дубликаты для группировки
             duplicates_mask = result_df.duplicated(subset=group_cols, keep=False)
             if duplicates_mask.any():
+                result_df[qty_col] = result_df[qty_col].map(require_number)
                 # Агрегация: сумма для quantity, объединение для reference/Примечание
                 agg_dict = {
                     qty_col: 'sum',
@@ -612,8 +615,12 @@ def format_excel_output(df: pd.DataFrame, sheet_name: str, desc_col: str, force_
             result_df['Примечание'] = result_df['reference'].fillna('')
     
     # Удалить ненужные колонки (включая старую Код МР, замененную на КОД ERP(МР))
-    cols_to_remove = ['ед. изм. ктд', '_merged_qty_', 
-                      'ед. изм. КТД',
+    # Не теряем исходный текст, если извлечение вариантов его не разобрало.
+    if 'original_note' in result_df:
+        original = result_df['original_note'].fillna('').astype(str)
+        if original.str.strip().any():
+            result_df['Исходное примечание'] = original
+    cols_to_remove = ['_merged_qty_',
                       'первоначальная цена, тыс.руб.', 'первоначальная стоимость, тыс.руб.',
                       'источник',  # дубликат "Источник" (с маленькой буквы)
                       'категория',  # дубликат категории
@@ -1006,7 +1013,7 @@ def write_categorized_excel(
                     for val in df_sheet[qty_col]:
                         try:
                             if pd.notna(val):
-                                total_qty += int(float(val))
+                                total_qty += require_number(val)
                         except (ValueError, TypeError):
                             pass
                 else:
@@ -1018,7 +1025,7 @@ def write_categorized_excel(
                     for val in df_sheet[cost_col]:
                         try:
                             if pd.notna(val) and str(val).strip():
-                                total_cost += int(float(str(val).replace(' ', '').replace(',', '.')))
+                                total_cost += require_number(val)
                         except (ValueError, TypeError):
                             pass
                 

@@ -1252,7 +1252,7 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
         import pandas as pd
         from openpyxl import load_workbook
         from openpyxl.styles import Font, PatternFill, Border, Side
-        from ..tru_merger import merge_tru_into_bom, apply_merge_styles
+        from ..tru_merger import merge_tru_into_bom, apply_merge_styles, prepare_merge_context
         from ..tru_merger import build_ostatki_and_zapas_reports
         from ..tru_rkm_processor import _read_tru_file
         
@@ -1382,6 +1382,7 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                     merged_sheets = {}
                     merged_rows_per_sheet = {}
                     all_used_tru_indices = set()
+                    allocation_context = prepare_merge_context(list(all_sheets.values()), tru_dfs)
                     
                     # Для дополнительных отчетов (плоские списки, без разбиения по категориям)
                     # *_ostatki.xlsx: BOM позиции без ТРУ + позиции где TRU_qty < BOM_qty (разница)
@@ -1492,7 +1493,8 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
                             tru_dfs=tru_dfs,
                             tru_filenames=list(self.tru_rkm_files),
                             bom_name_col=bom_name_col,
-                            bom_qty_col=bom_qty_col if bom_qty_col else 'шт.'
+                            bom_qty_col=bom_qty_col if bom_qty_col else 'шт.',
+                            allocation_context=allocation_context,
                         )
 
                         merged_df = _apply_category_prefix(merged_df, bom_name_col, sheet_name)
