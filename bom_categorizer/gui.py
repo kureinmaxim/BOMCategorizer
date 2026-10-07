@@ -1174,10 +1174,12 @@ class BOMCategorizerApp(tk.Tk):
             import pandas as pd
             # Проверяем наличие листа "Не распределено"
             xls = pd.ExcelFile(output_file)
+            sheet_names = list(xls.sheet_names)
+            xls.close()
             
-            self.txt.insert(tk.END, f"\n📊 Листы в файле: {', '.join(xls.sheet_names)}\n")
+            self.txt.insert(tk.END, f"\n📊 Листы в файле: {', '.join(sheet_names)}\n")
             
-            if 'Не распределено' not in xls.sheet_names:
+            if 'Не распределено' not in sheet_names:
                 self.txt.insert(tk.END, "✅ Все элементы успешно классифицированы!\n")
                 return
             
@@ -1226,8 +1228,10 @@ class BOMCategorizerApp(tk.Tk):
             try:
                 import pandas as pd
                 xls = pd.ExcelFile(output_file)
+                sheet_names = list(xls.sheet_names)
+                xls.close()
                 
-                if 'Не распределено' in xls.sheet_names:
+                if 'Не распределено' in sheet_names:
                     df_un = pd.read_excel(output_file, sheet_name='Не распределено')
                     df_un_valid = df_un[df_un['Наименование ИВП'].notna()]
                     
@@ -2021,6 +2025,8 @@ class BOMCategorizerApp(tk.Tk):
             
             # Читаем файл Excel
             xl_file = pd.ExcelFile(output_file, engine='openpyxl')
+            sheet_names = list(xl_file.sheet_names)
+            xl_file.close()
             
             added_count = 0
             skipped_count = 0
@@ -2030,7 +2036,7 @@ class BOMCategorizerApp(tk.Tk):
             self.update_idletasks()
             
             # Обрабатываем каждый лист
-            for sheet_name in xl_file.sheet_names:
+            for sheet_name in sheet_names:
                 # Пропускаем служебные листы
                 if sheet_name in ['SOURCES', 'SUMMARY', 'Не распределено', 'INFO']:
                     continue

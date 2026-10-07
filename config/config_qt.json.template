@@ -1,14 +1,14 @@
 {
   "_comment": "MAIN CONFIGURATION FILE for Modern GUI Edition (v4+). Use this for AI, Telegram, and Port settings.",
   "app_info": {
-    "version": "5.7.2",
+    "version": "5.7.4",
     "edition": "Modern Edition",
-    "release_date": "06.10.2026",
+    "release_date": "07.10.2026",
     "developer": "Куреин М.Н.",
     "developer_en": "Kurein M.N.",
     "description": "Категоризатор BOM файлов Modern Edition",
     "description_en": "BOM Categorizer Modern Edition - Bill of Materials Categorization Tool",
-    "last_updated": "2026-10-06"
+    "last_updated": "2026-10-07"
   },
   "security": {
     "pin": "1234",

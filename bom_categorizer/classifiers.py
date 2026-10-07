@@ -192,6 +192,12 @@ def classify_row(
         if not is_standard_component:
             return "our_developments"
 
+    # Явный артикул EVAL-платы важнее назначения RF и позиции W/U.
+    # Проверяем название/артикул, а не примечания с возможными заменами.
+    if any(re.search(r"(?<!\w)eval\s*[-–—‑]\s*[a-z0-9]", field, re.IGNORECASE)
+           for field in (desc, part)):
+        return "dev_boards"
+
     # Доп. правило: децимальные номера "де<цифра>" считаем нашими разработками
     # (но только если есть цифра после "де", чтобы не ловить обычные слова)
     if re.search(r"\bде\s*\d+", our_blob_lower):

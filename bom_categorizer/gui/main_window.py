@@ -2302,8 +2302,10 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
             
             # Проверяем наличие листа "Не распределено"
             xls = pd.ExcelFile(output_file, engine='openpyxl')
+            sheet_names = list(xls.sheet_names)
+            xls.close()
             
-            if 'Не распределено' not in xls.sheet_names:
+            if 'Не распределено' not in sheet_names:
                 QMessageBox.information(
                     self,
                     "Информация",
@@ -2791,6 +2793,8 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
             
             # Читаем файл Excel
             xl_file = pd.ExcelFile(output_file, engine='openpyxl')
+            sheet_names = list(xl_file.sheet_names)
+            xl_file.close()
             
             added_count = 0
             skipped_count = 0
@@ -2800,7 +2804,7 @@ class BOMCategorizerMainWindow(ProcessingHandlersMixin, HelpDialogsMixin, FileHa
             QApplication.processEvents()
             
             # Обрабатываем каждый лист
-            for sheet_name in xl_file.sheet_names:
+            for sheet_name in sheet_names:
                 # Пропускаем служебные листы
                 if sheet_name in ['SOURCES', 'SUMMARY', 'Не распределено', 'INFO']:
                     continue
